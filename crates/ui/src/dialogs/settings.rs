@@ -33,10 +33,10 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut SettingsState, actions:
         v.extend(doc.project.storms.iter().map(|s| s.name.clone()));
         v
     };
-    crate::frame::Win::new("Calculation Settings").id(egui::Id::new("calc-settings")).collapsible(false).resizable(false).default_width(470.0).show(ctx, |ui| {
+    crate::frame::Win::new("Calculation Settings").id(egui::Id::new("calc-settings")).collapsible(false).resizable(false).default_width(560.0).show(ctx, |ui| {
         widgets::tabs(ui, &["General", "Rainfall", "Time Span", "Reports", "Unit Hydro", "Advanced"], &mut st.tab);
         widgets::tab_body(ui, |ui| {
-            ui.set_min_size(vec2(440.0, 260.0));
+            ui.set_min_size(vec2(530.0, 280.0));
             match st.tab {
                 0 => general(ui, &mut st.draft),
                 1 => rainfall(ui, st, &units, &storms, doc, actions),
@@ -135,8 +135,8 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
             if conv_field(ui, "amc", "AMC:", "", &mut amc, |x| x, |x| x.clamp(1.0, 3.0), 0, 80.0) {
                 e.amc = Amc::from_number(amc.round().clamp(1.0, 3.0) as u8);
             }
-            opt_field(ui, "ri", "Rational Intensity:", "in/hr", &mut e.rational_intensity, |x| x, |x| x, 2, 120.0);
-            opt_field(ui, "rd", "Rational Duration:", "min", &mut e.rational_duration, |x| x * 60.0, |x| x / 60.0, 1, 120.0);
+            opt_field(ui, "ri", "Rational Intensity:", "in/hr", &mut e.rational_intensity, |x| x, |x| x, 2, 170.0);
+            opt_field(ui, "rd", "Rational Duration:", "min", &mut e.rational_duration, |x| x * 60.0, |x| x / 60.0, 1, 170.0);
         });
         if let Some(slot) = s.events.get_mut(idx) {
             *slot = e.clone();
@@ -144,16 +144,16 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
         ui.add_space(8.0);
         widgets::group(ui, "Rainfall Event", |ui| {
             ui.horizontal(|ui| {
-                ui.label("Name:");
+                ui.label("Name: ");
                 if let Some(cur) = s.events.get_mut(s.current_event) {
-                    widgets::text_box(ui, &mut cur.name, 120.0);
+                    widgets::text_box(ui, &mut cur.name, 170.0);
                 }
             });
             let names: Vec<(usize, String)> = s.events.iter().enumerate().map(|(i, e)| (i, format!("{}  ({:.2})", e.name, u.rain(e.depth)))).collect();
             let mut cur = s.current_event;
             ui.horizontal(|ui| {
-                ui.label("Select:");
-                if widgets::combo(ui, "ev", &mut cur, &names, 150.0) {
+                ui.label("Event:");
+                if widgets::combo(ui, "ev", &mut cur, &names, 170.0) {
                     s.current_event = cur;
                 }
             });

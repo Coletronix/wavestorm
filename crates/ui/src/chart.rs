@@ -179,7 +179,7 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
             // Filled area and ribbon as plain triangle meshes (no feathering, so no spikes on
             // degenerate quads).
             let mut mesh = egui::Mesh::default();
-            let mut quad = |m: &mut egui::Mesh, q: [Pos2; 4], c: Color32| {
+            let quad = |m: &mut egui::Mesh, q: [Pos2; 4], c: Color32| {
                 let i = m.vertices.len() as u32;
                 for v in q {
                     m.colored_vertex(v, c);

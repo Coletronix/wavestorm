@@ -26,6 +26,9 @@ pub struct EditState {
     pub volume_edit: Option<(Option<usize>, StorageVolume)>,
     pub device_edit: Option<DeviceEditor>,
     pub manual_text: String,
+    /// Text of the Area grid while editing (area, CN, description).
+    pub area_rows: Vec<Vec<String>>,
+    pub add_kind: usize,
 }
 
 impl EditState {
@@ -47,6 +50,8 @@ impl EditState {
             volume_edit: None,
             device_edit: None,
             manual_text,
+            area_rows: Vec::new(),
+            add_kind: 0,
         }
     }
 }
@@ -201,47 +206,43 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
     let from_area = |v: f64| if large { u.area_in(v) } else if u.metric() { v * stormwaves_core::units::FT_PER_M.powi(2) } else { v };
     let t = Tokens::get(ui.ctx());
     if tab == "Area" {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{:>4}  {:<12}{:<8}Description", "#", format!("Area ({area_unit})"), "CN")).monospace());
-        });
-        let mut delete = None;
-        egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-            for (i, a) in sc.areas.iter_mut().enumerate() {
-                ui.horizontal(|ui| {
-                    let sel = st.sel_row == Some(i);
-                    if ui.selectable_label(sel, format!("{:>3}", i + 1)).clicked() {
-                        st.sel_row = Some(i);
-                    }
-                    let mut v = to_area(a.area);
-                    if widgets::num_box(ui, ui.id().with(("area", i)), &mut v, if large { 3 } else { 0 }, 90.0, None) {
-                        a.area = from_area(v).max(0.0);
-                    }
-                    widgets::num_box(ui, ui.id().with(("cn", i)), &mut a.cn, 1, 54.0, None);
-                    if widgets::text_box(ui, &mut a.description, 280.0).changed() {
-                        a.hsg = stormwaves_core::cn::soil_from_description(&a.description);
-                    }
-                    if widgets::button(ui, "X", 22.0).on_hover_text("Delete this line").clicked() {
-                        delete = Some(i);
-                    }
-                });
-            }
-        });
-        if let Some(i) = delete {
-            sc.areas.remove(i);
-            st.sel_row = None;
+        // Refresh the text buffer when it no longer matches the data (first show, lookups).
+        let parsed: Vec<(f64, f64, String)> = st.area_rows.iter().filter(|r| r.iter().any(|c| !c.trim().is_empty())).map(|r| (widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0), widgets::cell_num(&r[1]).unwrap_or(0.0), r[2].clone())).collect();
+        let same = parsed.len() == sc.areas.len() && parsed.iter().zip(&sc.areas).all(|(p, a)| (p.0 - a.area).abs() < 1e-6 * a.area.abs().max(1.0) && (p.1 - a.cn).abs() < 1e-9 && p.2 == a.description);
+        if !same {
+            st.area_rows = sc.areas.iter().map(|a| vec![widgets::cell_fmt(to_area(a.area), if large { 3 } else { 0 }), format!("{}", a.cn), a.description.clone()]).collect();
+        }
+        let cols = [
+            widgets::Column { title: &format!("Area ({area_unit})"), width: 100.0, numeric: true },
+            widgets::Column { title: "CN", width: 56.0, numeric: true },
+            widgets::Column { title: "Description", width: 300.0, numeric: false },
+        ];
+        let ev = widgets::grid(ui, "areas", &cols, &mut st.area_rows, &mut st.sel_row, 210.0, true);
+        if ev.changed {
+            sc.areas = st
+                .area_rows
+                .iter()
+                .filter(|r| r.iter().any(|c| !c.trim().is_empty()))
+                .map(|r| {
+                    let mut a = SubArea::new(widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0).max(0.0), widgets::cell_num(&r[1]).unwrap_or(0.0).clamp(0.0, 100.0), r[2].trim());
+                    a.c = None;
+                    a
+                })
+                .collect();
+        }
+        if ev.double_clicked.is_some() {
+            st.cn_lookup.open = true;
         }
         ui.horizontal(|ui| {
-            if widgets::button(ui, "Add Line", 80.0).clicked() {
-                sc.areas.push(SubArea::new(0.0, 98.0, ""));
-            }
-            if widgets::button(ui, "Lookup CN...", 96.0).on_hover_text("Pick a ground cover for the selected line (or a new line)").clicked() {
+            if widgets::button(ui, "Lookup CN...", 100.0).on_hover_text("Pick a ground cover for the selected line (double-click a line number also opens it)").clicked() {
                 st.cn_lookup.open = true;
             }
+            ui.label(RichText::new("Right-click a line number to insert or delete a line.").color(t.text_dim));
         });
         let comp = stormwaves_core::cn::composite(&sc.areas, doc.project.settings.round_cn, 0);
         ui.add_space(6.0);
         ui.label(format!(
-            "Total area = {} {area_unit}   Weighted CN = {:.1} ({})   Impervious = {:.1}%",
+            "{} {area_unit}   Weighted Average CN = {:.1} ({})   Impervious = {:.1}%",
             stormwaves_core::units::group(to_area(comp.total_area), if large { 3 } else { 0 }),
             comp.cn_raw,
             if doc.project.settings.round_cn { format!("{:.0} used", comp.cn) } else { "full precision".into() },
@@ -250,46 +251,42 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
     } else {
         // Tc tab.
         let cn = stormwaves_core::cn::composite(&sc.areas, true, 0).cn;
-        ui.label(RichText::new(format!("{:>3} {:>7} {:>8} {:>8} {:>8}  Description", "#", "Tc(min)", "Length", "Slope", "Vel.")).monospace());
-        let mut delete = None;
-        let mut edit = None;
-        let mut up = None;
-        egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-            for (i, s) in sc.tc.iter().enumerate() {
+        let rows: Vec<Vec<String>> = sc
+            .tc
+            .iter()
+            .map(|s| {
                 let r = s.kind.evaluate(cn);
-                ui.horizontal(|ui| {
-                    let line = format!(
-                        "{:>3} {:>7.1} {:>8} {:>8} {:>8.2}  {}{}",
-                        i + 1,
-                        tc::rounded_minutes(r.minutes, 1),
-                        stormwaves_core::units::group(u.len(r.length), 0),
-                        if r.slope > 0.0 { format!("{:.4}", r.slope) } else { String::new() },
-                        u.vel(r.velocity),
-                        s.kind.label(),
-                        if s.description.is_empty() { String::new() } else { format!(", {}", s.description) }
-                    );
-                    let resp = ui.add(egui::Label::new(RichText::new(line).monospace()).sense(egui::Sense::click()));
-                    if resp.double_clicked() {
-                        edit = Some(i);
-                    }
-                    if widgets::button(ui, "Edit", 40.0).clicked() {
-                        edit = Some(i);
-                    }
-                    if i > 0 && widgets::button(ui, "^", 22.0).on_hover_text("Move up").clicked() {
-                        up = Some(i);
-                    }
-                    if widgets::button(ui, "X", 22.0).on_hover_text("Delete segment").clicked() {
-                        delete = Some(i);
-                    }
-                });
+                vec![
+                    format!("{:.1}", tc::rounded_minutes(r.minutes, 1)),
+                    stormwaves_core::units::group(u.len(r.length), 0),
+                    if r.slope > 0.0 { format!("{:.4}", r.slope) } else { String::new() },
+                    format!("{:.2}", u.vel(r.velocity)),
+                    r.capacity.map(|c| format!("{:.2}", u.flow(c))).unwrap_or_default(),
+                    if s.description.is_empty() { s.kind.label().to_string() } else { format!("{}, {}", s.kind.label(), s.description) },
+                ]
+            })
+            .collect();
+        let cols = [("Tc (min)", 64.0, true), ("Length", 64.0, true), ("Slope", 60.0, true), ("Velocity", 62.0, true), ("Capacity", 62.0, true), ("Description", 230.0, false)];
+        let ev = widgets::list_table(ui, "tc", &cols, &rows, &mut st.sel_row, 180.0);
+        let mut edit = ev.double_clicked;
+        let sel = st.sel_row.filter(|i| *i < sc.tc.len());
+        ui.horizontal(|ui| {
+            if widgets::button_enabled(ui, "Edit...", 70.0, sel.is_some()).clicked() {
+                edit = sel;
+            }
+            if widgets::button_enabled(ui, "Delete", 70.0, sel.is_some()).clicked() {
+                if let Some(i) = sel {
+                    sc.tc.remove(i);
+                    st.sel_row = None;
+                }
+            }
+            if widgets::button_enabled(ui, "Move Up", 70.0, sel.is_some_and(|i| i > 0)).clicked() {
+                if let Some(i) = sel {
+                    sc.tc.swap(i, i - 1);
+                    st.sel_row = Some(i - 1);
+                }
             }
         });
-        if let Some(i) = delete {
-            sc.tc.remove(i);
-        }
-        if let Some(i) = up {
-            sc.tc.swap(i, i - 1);
-        }
         if let Some(i) = edit {
             if let Some(s) = sc.tc.get(i) {
                 st.tc_edit = Some((Some(i), s.clone()));
@@ -627,23 +624,29 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
     let vol = |v: f64| if large { u.fmt_volume(v) } else { format!("{} {}", stormwaves_core::units::group(if u.metric() { v / stormwaves_core::units::CF_PER_M3 } else { v }, 0), if u.metric() { "m³" } else { "cf" }) };
     match tab {
         "Storage" => {
-            ui.label(RichText::new(format!("{:>3} {:>10} {:>14}  Storage Description", "#", "Invert", "Avail.Storage")).monospace());
+            let rows: Vec<Vec<String>> = p
+                .storage
+                .volumes
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    let emb = v.embedded_in.map(|j| format!(" (in #{})", j + 1)).unwrap_or_default();
+                    vec![u.fmt_elev(v.bottom()), vol(p.storage.available(i)), format!("{}: {}{emb}", v.description, v.shape.label())]
+                })
+                .collect();
+            let ev = widgets::list_table(ui, "storage", &[("Invert", 80.0, true), ("Avail.Storage", 100.0, true), ("Storage Description", 300.0, false)], &rows, &mut st.sel_row, 150.0);
+            let mut edit = ev.double_clicked;
             let mut del = None;
-            let mut edit = None;
-            for (i, v) in p.storage.volumes.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    let line = format!("{:>3} {:>10} {:>14}  {}: {}", i + 1, u.fmt_elev(v.bottom()), vol(p.storage.available(i)), v.description, v.shape.label());
-                    if ui.add(egui::Label::new(RichText::new(line).monospace()).sense(egui::Sense::click())).double_clicked() {
-                        edit = Some(i);
-                    }
-                    if widgets::button(ui, "Edit", 40.0).clicked() {
-                        edit = Some(i);
-                    }
-                    if widgets::button(ui, "X", 22.0).clicked() {
-                        del = Some(i);
-                    }
-                });
-            }
+            let sel = st.sel_row.filter(|i| *i < p.storage.volumes.len());
+            ui.horizontal(|ui| {
+                if widgets::button_enabled(ui, "Edit...", 70.0, sel.is_some()).clicked() {
+                    edit = sel;
+                }
+                if widgets::button_enabled(ui, "Delete", 70.0, sel.is_some()).clicked() {
+                    del = sel;
+                    st.sel_row = None;
+                }
+            });
             if let Some(i) = del {
                 p.storage.volumes.remove(i);
                 for v in &mut p.storage.volumes {
@@ -684,24 +687,24 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
             }
         }
         "Outlets" => {
-            ui.label(RichText::new(format!("{:>3} {:>10}  {:<34} {}", "#", "Invert", "Description", "Routing")).monospace());
+            let rows: Vec<Vec<String>> = p
+                .devices
+                .iter()
+                .map(|d| vec![u.fmt_elev(d.invert), if d.description.is_empty() { d.kind.label().to_string() } else { d.description.clone() }, d.routing.label()])
+                .collect();
+            let ev = widgets::list_table(ui, "outlets", &[("Invert", 80.0, true), ("Description", 260.0, false), ("Routing", 100.0, false)], &rows, &mut st.sel_row, 150.0);
+            let mut edit = ev.double_clicked;
             let mut del = None;
-            let mut edit = None;
-            for (i, d) in p.devices.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    let name = if d.description.is_empty() { d.kind.label().to_string() } else { d.description.clone() };
-                    let line = format!("{:>3} {:>10}  {:<34} {}", i + 1, u.fmt_elev(d.invert), name, d.routing.label());
-                    if ui.add(egui::Label::new(RichText::new(line).monospace()).sense(egui::Sense::click())).double_clicked() {
-                        edit = Some(i);
-                    }
-                    if widgets::button(ui, "Edit", 40.0).clicked() {
-                        edit = Some(i);
-                    }
-                    if widgets::button(ui, "X", 22.0).clicked() {
-                        del = Some(i);
-                    }
-                });
-            }
+            let sel = st.sel_row.filter(|i| *i < p.devices.len());
+            ui.horizontal(|ui| {
+                if widgets::button_enabled(ui, "Edit Outlet...", 100.0, sel.is_some()).clicked() {
+                    edit = sel;
+                }
+                if widgets::button_enabled(ui, "Delete", 70.0, sel.is_some()).clicked() {
+                    del = sel;
+                    st.sel_row = None;
+                }
+            });
             if let Some(i) = del {
                 p.devices.remove(i);
                 for d in &mut p.devices {

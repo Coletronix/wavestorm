@@ -1,0 +1,24 @@
+[package]
+name = "stormwaves-web"
+description = "Stormwaves in the browser (eframe web runner)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "stormwaves-web"
+path = "src/main.rs"
+
+[dependencies]
+stormwaves-ui.workspace = true
+log.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement"] }
+
+[lints]
+workspace = true

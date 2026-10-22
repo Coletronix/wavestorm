@@ -82,10 +82,89 @@ pub fn caption(ui: &mut Ui, label: &str, unit: &str, width: f32) {
     let t = Tokens::get(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(vec2(width, 15.0), Sense::hover());
     let p = ui.painter();
-    p.text(rect.left_center(), Align2::LEFT_CENTER, label, FontId::proportional(12.5), t.text);
-    if !unit.is_empty() {
-        p.text(rect.right_center(), Align2::RIGHT_CENTER, format!("({unit})"), FontId::proportional(12.5), t.text);
+    let font = FontId::proportional(12.5);
+    let unit_text = if unit.is_empty() { String::new() } else { format!("({unit})") };
+    let (lw, uw) = ui.fonts_mut(|f| {
+        (f.layout_no_wrap(label.to_string(), font.clone(), t.text).size().x, f.layout_no_wrap(unit_text.clone(), font.clone(), t.text).size().x)
+    });
+    if lw + uw + 6.0 <= width || unit.is_empty() {
+        p.with_clip_rect(rect).text(rect.left_center(), Align2::LEFT_CENTER, label, font.clone(), t.text);
+        if !unit.is_empty() {
+            p.text(rect.right_center(), Align2::RIGHT_CENTER, unit_text, font, t.text);
+        }
+    } else {
+        // Not enough room for both: one run of text, clipped to the field width.
+        p.with_clip_rect(rect).text(rect.left_center(), Align2::LEFT_CENTER, format!("{label} {unit_text}"), font, t.text);
     }
+}
+
+/// What happened in a [`list_table`] this frame.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ListEvents {
+    pub clicked: Option<usize>,
+    pub double_clicked: Option<usize>,
+}
+
+/// A read-only grid: sunken white box, bevelled header cells, a row-number column and
+/// navy row selection (the classic data-grid look).
+pub fn list_table(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: &[Vec<String>], selected: &mut Option<usize>, height: f32) -> ListEvents {
+    let t = Tokens::get(ui.ctx());
+    let mut ev = ListEvents::default();
+    let row_h = 18.0;
+    let num_w = 24.0;
+    let width = (num_w + cols.iter().map(|c| c.1).sum::<f32>() + 18.0).min(ui.available_width()).max(120.0);
+    let (outer, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    sunken(ui.painter(), outer, t.field, &t);
+    let inner = outer.shrink(2.0);
+    let font = FontId::proportional(12.5);
+    let p = ui.painter().with_clip_rect(inner);
+    let mut x = inner.min.x;
+    for (title, w) in std::iter::once(("#", num_w)).chain(cols.iter().map(|c| (c.0, c.1))) {
+        let r = Rect::from_min_size(pos2(x, inner.min.y), vec2(w, row_h + 1.0));
+        p.rect_filled(r, 0.0, t.face);
+        bevel(&p, r, true, &t);
+        p.with_clip_rect(r.shrink(1.0).intersect(inner)).text(r.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, title, font.clone(), t.text);
+        x += w;
+    }
+    let body = Rect::from_min_max(pos2(inner.min.x, inner.min.y + row_h + 1.0), inner.max);
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body).id_salt(id));
+    egui::ScrollArea::vertical().id_salt((id, "scroll")).auto_shrink([false, false]).max_height(body.height()).show(&mut child, |ui| {
+        ui.spacing_mut().item_spacing = Vec2::ZERO;
+        let total_rows = rows.len().max(((body.height() / row_h) as usize).saturating_sub(0));
+        for i in 0..total_rows {
+            let (r, resp) = ui.allocate_exact_size(vec2(width - 18.0, row_h), Sense::click());
+            let p = ui.painter();
+            let num = Rect::from_min_size(r.min, vec2(num_w, row_h));
+            p.rect_filled(num, 0.0, t.face);
+            bevel(p, num, true, &t);
+            p.text(num.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, format!("{}", i + 1), font.clone(), t.text);
+            let Some(row) = rows.get(i) else {
+                p.line_segment([pos2(num.max.x, r.max.y - 0.5), pos2(r.max.x, r.max.y - 0.5)], Stroke::new(1.0, t.face));
+                continue;
+            };
+            let sel = *selected == Some(i);
+            let mut cx = num.max.x;
+            for (j, (_, w, numeric)) in cols.iter().enumerate() {
+                let cell = Rect::from_min_size(pos2(cx, r.min.y), vec2(*w, row_h));
+                cx += w;
+                p.rect_filled(cell, 0.0, if sel { t.select } else { t.field });
+                p.line_segment([cell.right_top(), cell.right_bottom()], Stroke::new(1.0, t.face));
+                p.line_segment([cell.left_bottom(), cell.right_bottom()], Stroke::new(1.0, t.face));
+                let text = row.get(j).map(String::as_str).unwrap_or("");
+                let (at, align) = if *numeric { (cell.right_center() - vec2(4.0, 0.0), Align2::RIGHT_CENTER) } else { (cell.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER) };
+                p.with_clip_rect(cell).text(at, align, text, font.clone(), if sel { t.select_text } else { t.text });
+            }
+            if resp.clicked() {
+                *selected = Some(i);
+                ev.clicked = Some(i);
+            }
+            if resp.double_clicked() {
+                *selected = Some(i);
+                ev.double_clicked = Some(i);
+            }
+        }
+    });
+    ev
 }
 
 fn fmt_value(v: f64, decimals: usize) -> String {
@@ -260,7 +339,7 @@ pub fn group<R>(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
     let t = Tokens::get(ui.ctx());
     let top = ui.cursor().min;
     let frame = egui::Frame::NONE.inner_margin(egui::Margin { left: 8, right: 8, top: 14, bottom: 6 });
-    let inner = frame.show(ui, add);
+    let inner = frame.show(ui, |ui| ui.vertical(add).inner);
     let rect = inner.response.rect;
     let p = ui.painter();
     let r = Rect::from_min_max(pos2(rect.min.x, top.y + 6.0), rect.max);
