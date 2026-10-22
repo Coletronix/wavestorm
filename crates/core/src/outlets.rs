@@ -94,7 +94,8 @@ pub enum ExfilMode {
     SurfaceVelocity { velocity: f64 },
     /// Velocity (ft/s) over the wetted area (bottom and sides).
     WettedVelocity { velocity: f64 },
-    /// Darcy's law: V = Ks·(WSE − GW)/(bottom − GW), applied over the surface area.
+    /// Darcy's law, V = Ks·(WSE − GW)/(e − GW), integrated over the surface (or wetted) area by
+    /// elevation e, so lower parts of the pond seep faster than its upper sides.
     Conductivity { ks: f64, groundwater: f64, wetted: bool },
 }
 
@@ -813,6 +814,35 @@ fn orifice_flow(
     DeviceFlow { flow: q, control, velocity: v }
 }
 
+/// Area weighted by the Darcy gradient, ∫ (HW − GW) / (e − GW) dA(e): each part of the pond
+/// floor or sides seeps under the full head to groundwater across its own distance above
+/// groundwater. Surface area counts the whole footprint from the storage bottom; wetted area
+/// counts from the device invert. Areas at or below groundwater use a gradient of 1.
+fn darcy_area(c: &Conditions, invert: f64, top: f64, groundwater: f64, wetted: bool) -> f64 {
+    let area = |e: f64| if wetted { c.storage.wetted_area(e) } else { c.storage.surface_area(e) }.unwrap_or(0.0);
+    let lo = if wetted { invert } else { c.storage.bottom().unwrap_or(invert) };
+    if top <= lo {
+        return 0.0;
+    }
+    let head = c.hw - groundwater;
+    let gradient = |e: f64| {
+        let dist = e - groundwater;
+        if dist > 0.0 && head > 0.0 { (head / dist).max(0.0) } else { 1.0 }
+    };
+    // The footprint at the bottom (surface mode), then each band of side area at its height.
+    let mut total = if wetted { 0.0 } else { area(lo) * gradient(lo) };
+    const STEPS: usize = 32;
+    let h = (top - lo) / STEPS as f64;
+    let mut below = area(lo);
+    for i in 0..STEPS {
+        let e1 = lo + (i + 1) as f64 * h;
+        let above = area(e1);
+        total += (above - below).max(0.0) * gradient(e1 - 0.5 * h);
+        below = above;
+    }
+    total
+}
+
 fn exfiltration(mode: ExfilMode, phase_in: f64, max_elevation: Option<f64>, invert: f64, c: &Conditions) -> DeviceFlow {
     let head = c.hw - invert;
     if head <= 0.0 {
@@ -830,12 +860,7 @@ fn exfiltration(mode: ExfilMode, phase_in: f64, max_elevation: Option<f64>, inve
         ExfilMode::ConstantFlow { flow } => flow,
         ExfilMode::SurfaceVelocity { velocity } => velocity * area_between(false),
         ExfilMode::WettedVelocity { velocity } => velocity * area_between(true),
-        ExfilMode::Conductivity { ks, groundwater, wetted } => {
-            let bottom = c.storage.bottom().unwrap_or(invert);
-            let dist = bottom - groundwater;
-            let gradient = if dist > 0.0 { (c.hw - groundwater) / dist } else { 1.0 };
-            ks * gradient.max(0.0) * area_between(wetted)
-        }
+        ExfilMode::Conductivity { ks, groundwater, wetted } => ks * darcy_area(c, invert, top, groundwater, wetted),
     };
     DeviceFlow { flow: flow.max(0.0) * phase, control: Control::Exfiltration, velocity: 0.0 }
 }
