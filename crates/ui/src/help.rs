@@ -119,6 +119,18 @@ Common messages: [37] longer time span advised; [40] node not described; [43] po
 Click a message to select its node; double-click to open its report.",
     },
     Topic {
+        id: "tr20",
+        title: "Importing TR-20 input files",
+        body: "Project > Import > TR-20 Input File creates a new project from a legacy NRCS TR-20 input deck. The original file is not changed.\n\n\
+RUNOFF statements become subcatchments (area in square miles, CN and Tc in hours as given), REACH statements become reaches with the XSECTN rating table, \
+RESVOR statements become ponds whose storage and outlet come from the STRUCT table, and ADDHYD statements become links that sum their inflows. \
+SAVMOV moves hydrographs between locations; the routing diagram is drawn from the order of the statements.\n\n\
+Each COMPUT statement becomes a rainfall event (depth, duration, antecedent runoff condition). RAINFL tables become custom storms and a DIMHYD table becomes the project's unit hydrograph. \
+INCREM sets the time step. Composite CNs are not rounded, as in TR-20.\n\n\
+Anything that cannot be converted (DIVERT, READHD, BASFLO, INSERT/ALTER/DELETE) or that should be checked is listed in Project Notes, which open after the import. \
+Results differ somewhat from TR-20 because reaches are routed by this program's own methods rather than Att-Kin.",
+    },
+    Topic {
         id: "print",
         title: "Printing and exporting",
         body: "Print > Report (PDF) writes a report with the routing diagram, node listing, area and soil listing, node summaries, hydrograph graphs and optional tabular hydrographs. \

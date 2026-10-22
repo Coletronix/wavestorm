@@ -11,6 +11,7 @@ pub enum Purpose {
     Underlay,
     LinkCsv,
     ImportSubareas,
+    ImportTr20,
 }
 
 /// A file delivered to the app.
@@ -57,6 +58,7 @@ impl Platform {
             Purpose::ImportSubareas => ("Sub-area table", &["csv", "txt"]),
             Purpose::Underlay => ("Image or PDF", &["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp", "pdf"]),
             Purpose::LinkCsv => ("Hydrograph CSV", &["csv", "txt"]),
+            Purpose::ImportTr20 => ("TR-20 input file", &["inp", "dat", "tr2", "txt"]),
         }
     }
 

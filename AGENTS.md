@@ -107,12 +107,20 @@ Keep this section updated at the end of every session.
   (menus, palette, diagram, dialogs, charts, help), background image/PDF underlay with scale
   calibration and subcatchment tracing, desktop and web (trunk) apps.
 - Remaining parity gaps: TR-55 graphical peak/storage worksheet, node profile report, rainfall
-  event lookup tables, TR-20 import, custom units, rock-fill/asymmetrical weirs, pump priority
+  event lookup tables, custom units, rock-fill/asymmetrical weirs, pump priority
   groups, status-bar hints, pop-up tips on edit screens (General setting).
 - Recently done: tabular-hydrograph "Inflows" columns (right-click the table), Settings >
   General (theme, backup interval, multiple Project Reports; saved via `platform::store`),
   headless app (`StormwavesApp::headless()`) for tests and snapshots — never open native
   dialogs there.
+- TR-20 import (`core::tr20`, Project > Import): whitespace-token parsing of the legacy card
+  format, with two layout rules learned from published decks: COMPUT often fuses duration and
+  rain table ("1.05" = 1.0 + table 5), and REACH/RESVOR hydrograph slots are one-column fields
+  two columns apart ("1   2" vs "2 3 4"). Reaches get `Section::Rating` (depth–flow–area).
+  Rain tables 1–4 → Type I, II, IA, III — only table 2 is confirmed; others are flagged in the
+  notes. Test decks: a public TR-20 training manual (UMD GISHydro) and Howard County, MD flood
+  studies (PDFs in gitignored `reference_images/research/tr20/`). Volumes match TR-20 output;
+  reach-routed peaks differ (storage routing vs Att-Kin).
 - Runoff timing (resolved empirically, 2026-10-22): the current reference version's peaks lag
   the textbook convolution by ≈0.09 Tc. `UH_DELAY_PER_TC = 0.09` fits all current-version data
   (`tests/published_subcatchments.rs`) and brings the 2003 network sums within 0.3 %

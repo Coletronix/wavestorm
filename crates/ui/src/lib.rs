@@ -139,6 +139,20 @@ impl StormwavesApp {
                 self.doc().edit("Project Merge", |p| added = stormwaves_core::exchange::merge(p, &other));
                 self.status = format!("[3] Added {added} nodes from {}", item.name);
             }
+            Purpose::ImportTr20 => {
+                let text = String::from_utf8_lossy(&item.bytes).into_owned();
+                let imp = stormwaves_core::tr20::import(&text)?;
+                let nodes = imp.project.nodes.len();
+                let notes = imp.notes.len();
+                let mut doc = Doc::new(imp.project, None);
+                doc.dirty = true;
+                if notes > 0 {
+                    doc.windows.push(Window::Notes(dialogs::misc::NotesState::new(&doc.project)));
+                }
+                self.docs.push(doc);
+                self.active = self.docs.len() - 1;
+                self.status = format!("Imported {} from TR-20: {nodes} nodes{}", item.name, if notes > 0 { format!(", {notes} notes (see Project Notes)") } else { String::new() });
+            }
             Purpose::ImportSubareas => {
                 let text = String::from_utf8_lossy(&item.bytes).into_owned();
                 let mut result = Ok((0, 0));
@@ -451,6 +465,10 @@ impl StormwavesApp {
                 ui.menu_button("Import", |ui| {
                     if ui.button("Sub-Areas (CSV)...").clicked() {
                         self.platform.pick(Purpose::ImportSubareas);
+                        ui.close();
+                    }
+                    if ui.button("TR-20 Input File...").on_hover_text("Create a new project from a legacy TR-20 input deck").clicked() {
+                        self.platform.pick(Purpose::ImportTr20);
                         ui.close();
                     }
                 });
@@ -1287,7 +1305,8 @@ impl eframe::App for StormwavesApp {
 /// Drives the app from a short command (used by the offscreen snapshot tool and tests):
 /// `report:1P`, `edit:1S`, `tab:<n>`, `select:1R`, `settings`, `settings-tab:<n>`, `messages`,
 /// `project-report`, `storms`, `uhs`, `units`, `theme:<classic|modern|dark>`, `compare`, `new`,
-/// `table`, `inflows` (tabular hydrograph with inflow columns), `general`.
+/// `table`, `inflows` (tabular hydrograph with inflow columns), `general`,
+/// `import-tr20:<path>` (desktop).
 pub fn script(app: &mut StormwavesApp, cmd: &str) {
     let (verb, arg) = cmd.split_once(':').unwrap_or((cmd, ""));
     let find = |app: &mut StormwavesApp, label: &str| app.doc().project.by_label(label).map(|n| n.id);
@@ -1346,6 +1365,11 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             let st = dialogs::misc::GeneralState { draft: app.prefs.clone() };
             app.open_window(Window::General(st));
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        "import-tr20" => match std::fs::read(arg) {
+            Ok(bytes) => app.platform.push(Incoming { purpose: Purpose::ImportTr20, name: arg.to_string(), path: None, bytes }),
+            Err(e) => app.error = Some(format!("Cannot read {arg}: {e}")),
+        },
         "storms" => app.open_window(Window::Storms(reports::CurveState::storms())),
         "uhs" => app.open_window(Window::Storms(reports::CurveState::uhs())),
         "compare" => {
