@@ -55,7 +55,8 @@ pub fn templates() -> Vec<(&'static str, DeviceKind)> {
         ("Sharp-Crested Weir", DeviceKind::SharpCrestedWeir { length: 4.0, end_contractions: 2, crest_height: 0.0, rise: None }),
         ("Broad-Crested Weir", DeviceKind::BroadCrestedWeir { length: 10.0, breadth: 2.0, side_z: 0.0, rise: None }),
         ("Vee/Trapezoidal Weir", DeviceKind::VeeTrapWeir { notch_angle: 90.0, crest_length: 0.0, cv: 2.50, rise: None }),
-        ("Custom Weir", DeviceKind::CustomWeir { points: vec![(0.0, 1.0), (2.0, 0.0), (6.0, 0.0), (8.0, 1.0)], coefficient: 3.0 }),
+        // A crest profile of any shape, symmetrical or not (offset, elevation above the invert).
+        ("Asymmetrical / Custom Weir", DeviceKind::CustomWeir { points: vec![(0.0, 1.5), (3.0, 0.0), (6.0, 0.0), (8.0, 0.5), (12.0, 1.0)], coefficient: 3.0 }),
         ("Exfiltration", DeviceKind::Exfiltration { mode: ExfilMode::SurfaceVelocity { velocity: 1.0 / 12.0 / 3600.0 }, phase_in: 0.01, max_elevation: None }),
         ("Special (Rating Table)", DeviceKind::Special { table: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 3.0)], head_based: true, extrapolate: false }),
         ("Constant Flow/Skimmer", DeviceKind::ConstantFlow { flow: 0.5, phase_in: 0.3 }),
