@@ -9,6 +9,7 @@
 pub mod base64;
 pub mod calc;
 pub mod cn;
+pub mod exchange;
 pub mod geometry;
 pub mod hydrograph;
 pub mod landuse;

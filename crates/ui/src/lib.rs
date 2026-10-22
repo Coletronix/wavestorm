@@ -42,6 +42,7 @@ pub struct StormwavesApp {
     styled: bool,
     untitled: usize,
     canvas_rect: Rect,
+    last_backup: f64,
 }
 
 impl Default for StormwavesApp {
@@ -69,6 +70,7 @@ impl StormwavesApp {
             styled: false,
             untitled: 1,
             canvas_rect: Rect::NOTHING,
+            last_backup: 0.0,
         }
     }
 
@@ -105,9 +107,27 @@ impl StormwavesApp {
                 if self.docs.len() == 1 && !self.docs[0].dirty && self.docs[0].project.nodes.is_empty() {
                     self.docs.clear();
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(p) = &item.path {
+                    platform::recent::push(p);
+                }
                 self.docs.push(Doc::new(project, item.path));
                 self.active = self.docs.len() - 1;
                 self.status = format!("Opened {}", item.name);
+            }
+            Purpose::MergeProject => {
+                let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a Stormwaves project (not text).".to_string())?;
+                let other = Project::from_json(&text)?;
+                let mut added = 0;
+                self.doc().edit("Project Merge", |p| added = stormwaves_core::exchange::merge(p, &other));
+                self.status = format!("[3] Added {added} nodes from {}", item.name);
+            }
+            Purpose::ImportSubareas => {
+                let text = String::from_utf8_lossy(&item.bytes).into_owned();
+                let mut result = Ok((0, 0));
+                self.doc().edit("Import Sub-Areas", |p| result = stormwaves_core::exchange::import_subareas(p, &text));
+                let (created, updated) = result?;
+                self.status = format!("Imported sub-areas: {created} subcatchments added, {updated} updated");
             }
             Purpose::Underlay => {
                 let pages = underlay::page_count(&item.bytes);
@@ -187,6 +207,8 @@ impl StormwavesApp {
             Ok(Some(p)) => {
                 doc.path = Some(p.clone());
                 doc.dirty = false;
+                #[cfg(not(target_arch = "wasm32"))]
+                platform::recent::push(&p);
                 self.status = format!("Saved {p}");
             }
             Ok(None) => {
@@ -196,6 +218,23 @@ impl StormwavesApp {
                 }
             }
             Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Writes a timed backup (`<project>.bak`) of changed projects every five minutes (desktop).
+    fn autosave(&mut self, ctx: &egui::Context) {
+        let now = ctx.input(|i| i.time);
+        if now - self.last_backup < 300.0 {
+            return;
+        }
+        self.last_backup = now;
+        #[cfg(not(target_arch = "wasm32"))]
+        for d in &self.docs {
+            if let (true, Some(path)) = (d.dirty, &d.path) {
+                if let Ok(json) = d.project.to_json() {
+                    let _ = std::fs::write(format!("{path}.bak"), json);
+                }
+            }
         }
     }
 
@@ -344,8 +383,42 @@ impl StormwavesApp {
                 if ui.button("Save As...").clicked() {
                     self.save(true);
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let recent = platform::recent::list();
+                    ui.add_enabled_ui(!recent.is_empty(), |ui| {
+                        ui.menu_button("Recent Projects", |ui| {
+                            for path in recent {
+                                if ui.button(&path).clicked() {
+                                    if let Err(e) = self.platform.open_path(&path) {
+                                        self.error = Some(e);
+                                    }
+                                    ui.close();
+                                }
+                            }
+                        });
+                    });
+                }
+                if ui.button("Add (Merge) Project...").clicked() {
+                    self.platform.pick(Purpose::MergeProject);
+                }
                 ui.separator();
+                ui.menu_button("Import", |ui| {
+                    if ui.button("Sub-Areas (CSV)...").clicked() {
+                        self.platform.pick(Purpose::ImportSubareas);
+                        ui.close();
+                    }
+                });
                 ui.menu_button("Export", |ui| {
+                    if ui.button("Sub-Areas (CSV)...").clicked() {
+                        let doc = self.doc();
+                        let text = stormwaves_core::exchange::export_subareas(&doc.project);
+                        let name = format!("{} subareas.csv", sanitize(&doc.project.title));
+                        if let Err(e) = self.platform.save(&name, None, text.as_bytes(), "csv") {
+                            self.error = Some(e);
+                        }
+                        ui.close();
+                    }
                     if ui.button("Node Listing (text)...").clicked() {
                         self.export_text();
                         ui.close();
@@ -1093,6 +1166,7 @@ impl StormwavesApp {
         let t = Tokens::get(&ctx);
         self.receive(&ctx);
         self.sync_underlay(&ctx);
+        self.autosave(&ctx);
         self.shortcuts(&ctx);
 
         egui::Panel::top("menu").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 1))).show(ui, |ui| self.menu_bar(ui));

@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Purpose {
     OpenProject,
+    MergeProject,
     Underlay,
     LinkCsv,
+    ImportSubareas,
 }
 
 /// A file delivered to the app.
@@ -37,7 +39,8 @@ impl Platform {
 
     fn filters(purpose: Purpose) -> (&'static str, &'static [&'static str]) {
         match purpose {
-            Purpose::OpenProject => ("Stormwaves project", &["waves", "json"]),
+            Purpose::OpenProject | Purpose::MergeProject => ("Stormwaves project", &["waves", "json"]),
+            Purpose::ImportSubareas => ("Sub-area table", &["csv", "txt"]),
             Purpose::Underlay => ("Image or PDF", &["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp", "pdf"]),
             Purpose::LinkCsv => ("Hydrograph CSV", &["csv", "txt"]),
         }
@@ -126,4 +129,35 @@ fn download(name: &str, bytes: &[u8]) -> Result<(), String> {
     a.click();
     web_sys::Url::revoke_object_url(&url).map_err(err)?;
     Ok(())
+}
+
+/// Recently opened project paths (desktop only), most recent first.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod recent {
+    fn file() -> Option<std::path::PathBuf> {
+        let base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
+            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
+        Some(base.join("stormwaves").join("recent.json"))
+    }
+
+    pub fn list() -> Vec<String> {
+        file().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()).unwrap_or_default()
+    }
+
+    pub fn push(path: &str) {
+        let mut v = list();
+        v.retain(|p| p != path);
+        v.insert(0, path.to_string());
+        v.truncate(8);
+        if let Some(f) = file() {
+            if let Some(dir) = f.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Ok(t) = serde_json::to_string_pretty(&v) {
+                let _ = std::fs::write(f, t);
+            }
+        }
+    }
 }
