@@ -21,6 +21,7 @@ pub enum Window {
     Underlay(dialogs::misc::UnderlayState),
     Undo(dialogs::misc::UndoState),
     Storms(reports::CurveState),
+    Print(dialogs::misc::PrintState),
 }
 
 impl Window {
@@ -45,6 +46,7 @@ pub enum WindowAction {
     OpenWindow(Window),
     PickCsvForLink(NodeId),
     Status(String),
+    PrintPdf(stormwaves_core::printing::PrintOptions),
 }
 
 /// Shows every window of the document; returns follow-up actions.
@@ -68,6 +70,13 @@ pub fn show_all(ctx: &egui::Context, doc: &mut Doc) -> Vec<WindowAction> {
             Window::Underlay(s) => dialogs::misc::underlay(ctx, doc, s, &mut actions),
             Window::Undo(s) => dialogs::misc::undo_history(ctx, doc, s),
             Window::Storms(s) => reports::show_curves(ctx, doc, s),
+            Window::Print(s) => {
+                let (keep, go) = dialogs::misc::print(ctx, s);
+                if let Some(o) = go {
+                    actions.push(WindowAction::PrintPdf(o));
+                }
+                keep
+            }
         };
         if open {
             keep.push(w);

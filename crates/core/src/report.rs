@@ -84,7 +84,7 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
             out.push(String::new());
             if !sc.tc.is_empty() {
                 out.push("    Tc  Length    Slope  Velocity  Capacity  Description".into());
-                out.push(format!("  (min)  ({})  ({}/{}) ({}/sec)     ({})", if u.metric() { "meters" } else { "feet" }, u.len_suffix().trim_matches('\''), u.len_suffix().trim_matches('\''), u.len_suffix(), u.flow_label()));
+                out.push(if u.metric() { format!("  (min)  (meters)    (m/m)   (m/sec)    ({})", u.flow_label()) } else { format!("  (min)  (feet)   (ft/ft) (ft/sec)    ({})", u.flow_label()) });
                 for (seg, t) in sc.tc.iter().zip(&d.tc_segments) {
                     let cap = t.capacity.map(|c| format!("{:>9.2}", u.flow(c))).unwrap_or_else(|| " ".repeat(9));
                     let slope = if t.slope > 0.0 { format!("{:.4}", t.slope) } else { String::new() };

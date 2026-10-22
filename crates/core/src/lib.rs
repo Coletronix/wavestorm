@@ -13,6 +13,8 @@ pub mod geometry;
 pub mod hydrograph;
 pub mod link;
 pub mod outlets;
+pub mod pdf;
+pub mod printing;
 pub mod project;
 pub mod report;
 pub mod rainfall;

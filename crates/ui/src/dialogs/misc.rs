@@ -296,3 +296,66 @@ pub fn undo_history(ctx: &egui::Context, doc: &mut Doc, st: &mut UndoState) -> b
     });
     open
 }
+
+pub struct PrintState {
+    pub opts: stormwaves_core::printing::PrintOptions,
+}
+
+impl Default for PrintState {
+    fn default() -> Self {
+        PrintState { opts: stormwaves_core::printing::PrintOptions { date: today(), ..Default::default() } }
+    }
+}
+
+/// Today's date as m/d/yyyy.
+pub fn today() -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let d = js_sys::Date::new_0();
+        format!("{}/{}/{}", d.get_month() + 1, d.get_date(), d.get_full_year())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+        let z = (secs / 86_400) as i64 + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = yoe + era * 400 + i64::from(m <= 2);
+        format!("{m}/{d}/{y}")
+    }
+}
+
+/// Returns Some(options) when the user clicks Print.
+pub fn print(ctx: &egui::Context, st: &mut PrintState) -> (bool, Option<stormwaves_core::printing::PrintOptions>) {
+    let mut keep = true;
+    let mut go = None;
+    crate::frame::Win::new("Print Report").collapsible(false).resizable(false).show(ctx, |ui| {
+        widgets::group(ui, "Include", |ui| {
+            widgets::check(ui, &mut st.opts.diagram, "Routing diagram");
+            widgets::check(ui, &mut st.opts.node_listing, "Node listing");
+            widgets::check(ui, &mut st.opts.area_listing, "Area and soil listing");
+            widgets::check(ui, &mut st.opts.summaries, "Node summaries");
+            widgets::check(ui, &mut st.opts.graphs, "Hydrograph graphs");
+            widgets::check(ui, &mut st.opts.tables, "Tabular hydrographs");
+        });
+        widgets::text_field(ui, "Date printed:", &mut st.opts.date, 160.0);
+        ui.label(RichText::new("The report is saved as a PDF you can print or share.").color(Tokens::get(ui.ctx()).text_dim));
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if widgets::button(ui, "Print to PDF...", 110.0).clicked() {
+                go = Some(st.opts.clone());
+                keep = false;
+            }
+            if widgets::button(ui, "Cancel", 80.0).clicked() {
+                keep = false;
+            }
+        });
+    });
+    (keep, go)
+}

@@ -509,6 +509,15 @@ impl StormwavesApp {
                 });
             });
             ui.menu_button("Print", |ui| {
+                if ui.button("Report (PDF)...").clicked() {
+                    self.open_window(Window::Print(dialogs::misc::PrintState::default()));
+                    ui.close();
+                }
+                if ui.button("Diagram (PDF)...").clicked() {
+                    let o = stormwaves_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today() };
+                    self.print_pdf(&o);
+                    ui.close();
+                }
                 if ui.button("Report to Text File...").clicked() {
                     self.export_text();
                     ui.close();
@@ -591,6 +600,17 @@ impl StormwavesApp {
         let doc = self.doc();
         let sel = doc.selection.clone();
         diagram::fit_view(doc, canvas, if selected && !sel.is_empty() { Some(&sel) } else { None });
+    }
+
+    fn print_pdf(&mut self, opts: &stormwaves_core::printing::PrintOptions) {
+        let doc = self.doc();
+        let bytes = stormwaves_core::printing::report_pdf(&doc.project, &doc.results, opts);
+        let name = format!("{} report.pdf", sanitize(&doc.project.title));
+        match self.platform.save(&name, None, &bytes, "pdf") {
+            Ok(Some(p)) => self.status = format!("Report saved to {p}"),
+            Ok(None) => {}
+            Err(e) => self.error = Some(e),
+        }
     }
 
     fn export_text(&mut self) {
@@ -690,11 +710,12 @@ impl StormwavesApp {
                 self.open_window(Window::ProjectReport(reports::ProjectReportState::default()));
             }
             separator(ui);
-            if tb(ui, Glyph::Print, "Report to text file") {
-                self.export_text();
+            if tb(ui, Glyph::Print, "Print report (PDF)") {
+                self.open_window(Window::Print(dialogs::misc::PrintState::default()));
             }
-            if tb(ui, Glyph::PrintDiagram, "Hydrographs to CSV") {
-                self.export_csv();
+            if tb(ui, Glyph::PrintDiagram, "Print routing diagram (PDF)") {
+                let o = stormwaves_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today() };
+                self.print_pdf(&o);
             }
             separator(ui);
             if tb(ui, Glyph::Notes, "Project Notes") {
@@ -1017,6 +1038,7 @@ impl StormwavesApp {
                     self.platform.pick(Purpose::LinkCsv);
                 }
                 WindowAction::Status(s) => self.status = s,
+                WindowAction::PrintPdf(o) => self.print_pdf(&o),
             }
         }
     }
