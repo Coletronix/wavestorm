@@ -9,7 +9,7 @@ use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{RichText, Ui, vec2};
 use stormwaves_core::cn::SubArea;
-use stormwaves_core::geometry::{PipeShape, Section, XsPoint};
+use stormwaves_core::geometry::{PipeShape, RatingPoint, Section, XsPoint};
 use stormwaves_core::link::{LinkElevation, LinkSource, ManualHydrograph};
 use stormwaves_core::project::{Node, NodeData, NodeId, NodeType, Tailwater};
 use stormwaves_core::storage::{CustomKind, StorageVolume, VolumeShape};
@@ -464,6 +464,7 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
         Section::Pipe { .. } => 3,
         Section::AreaPerimeter { .. } => 4,
         Section::Custom { .. } => 5,
+        Section::Rating { .. } => 6,
     };
     let mut k = kind(section);
     let mut opts = vec![(0, "Rectangular".to_string()), (1, "Trapezoidal / Vee".to_string()), (2, "Parabolic".to_string()), (3, "Pipe / Conduit".to_string())];
@@ -471,6 +472,10 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
         opts.push((4, "Area & Perimeter".to_string()));
     }
     opts.push((5, "Custom Cross-Section".to_string()));
+    // Rating tables describe reaches (Tc segments use Manning's equation).
+    if !allow_area_perimeter {
+        opts.push((6, "Rating Table".to_string()));
+    }
     if widgets::combo_field(ui, "shape", "Shape:", &mut k, &opts, 200.0) {
         let depth = section.full_depth().max(1.0);
         *section = match k {
@@ -479,6 +484,14 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
             2 => Section::Parabolic { width: 6.0, depth },
             3 => Section::circular(1.5),
             4 => Section::AreaPerimeter { area: 10.0, perimeter: 12.0 },
+            6 => Section::Rating {
+                points: vec![
+                    RatingPoint { depth: 0.0, flow: 0.0, area: 0.0 },
+                    RatingPoint { depth: 1.0, flow: 10.0, area: 5.0 },
+                    RatingPoint { depth: 2.0, flow: 40.0, area: 14.0 },
+                ],
+                bank_full: 2.0,
+            },
             _ => Section::Custom {
                 points: vec![
                     XsPoint { offset: 0.0, elev: 2.0, n: 0.035 },
@@ -552,6 +565,42 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
                 if widgets::button(ui, "Add Point", 80.0).clicked() {
                     let last = points.last().copied().unwrap_or(XsPoint { offset: 0.0, elev: 0.0, n: 0.035 });
                     points.push(XsPoint { offset: last.offset + 5.0, ..last });
+                }
+            });
+        }
+        Section::Rating { points, bank_full } => {
+            ui.vertical(|ui| {
+                lf(ui, "bf", "Bank-Full Depth:", bank_full);
+                let area_unit = if u.metric() { "m²" } else { "sf" };
+                let area_k = if u.metric() { stormwaves_core::units::FT_PER_M.powi(2) } else { 1.0 };
+                ui.label(RichText::new(format!("{:>3} {:>10} {:>10} {:>10}", "#", format!("Depth ({})", u.len_label()), format!("Flow ({})", u.flow_label()), format!("Area ({area_unit})"))).monospace());
+                let mut del = None;
+                for (i, p) in points.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("{:>3}", i + 1)).monospace());
+                        let mut d = u.len(p.depth);
+                        if widgets::num_box(ui, ui.id().with(("rd", i)), &mut d, 2, 80.0, None) {
+                            p.depth = u.len_in(d);
+                        }
+                        let mut q = u.flow(p.flow);
+                        if widgets::num_box(ui, ui.id().with(("rq", i)), &mut q, 3, 80.0, None) {
+                            p.flow = u.flow_in(q);
+                        }
+                        let mut a = p.area / area_k;
+                        if widgets::num_box(ui, ui.id().with(("ra", i)), &mut a, 2, 80.0, None) {
+                            p.area = a * area_k;
+                        }
+                        if widgets::button(ui, "X", 22.0).clicked() {
+                            del = Some(i);
+                        }
+                    });
+                }
+                if let Some(i) = del {
+                    points.remove(i);
+                }
+                if widgets::button(ui, "Add Row", 80.0).clicked() {
+                    let last = points.last().copied().unwrap_or(RatingPoint { depth: 0.0, flow: 0.0, area: 0.0 });
+                    points.push(RatingPoint { depth: last.depth + 1.0, ..last });
                 }
             });
         }

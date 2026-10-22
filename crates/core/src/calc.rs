@@ -532,7 +532,14 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
     }
     let peak_in = net_in.peak().value;
     let mut detail = ReachDetail { capacity, ..Default::default() };
-    let outflow = match s.reach_method {
+    // Muskingum-Cunge needs a bed slope; a rating-table reach without one is routed by Stor-Ind+Trans.
+    let method = if s.reach_method == ReachMethod::MuskingumCunge && slope <= 0.0 {
+        msgs.push(Message::new(98, Severity::Hint, Some(node.id), format!("{} No slope for Muskingum-Cunge - Stor-Ind+Trans used", node.label())));
+        ReachMethod::StorIndTrans
+    } else {
+        s.reach_method
+    };
+    let outflow = match method {
         ReachMethod::StorInd | ReachMethod::StorIndTrans => {
             let top_depth = if is_pipe { full } else { (full * 4.0).max(reach.section.normal_depth(peak_in * 1.5, reach.n, slope)) };
             let table = StageTable::build(
@@ -572,7 +579,7 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
             }
             detail.avg_velocity = if qs > 0.0 { qv / qs } else { 0.0 };
             detail.avg_travel_min = if detail.avg_velocity > 0.0 { len / detail.avg_velocity / 60.0 } else { 0.0 };
-            if s.reach_method == ReachMethod::StorIndTrans && detail.max_velocity > 0.0 {
+            if method == ReachMethod::StorIndTrans && detail.max_velocity > 0.0 {
                 detail.translation_hr = len / detail.max_velocity / 3600.0;
                 routing::translate(&res.outflow, detail.translation_hr)
             } else {

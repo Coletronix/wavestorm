@@ -106,6 +106,7 @@ impl TcKind {
                 Section::Pipe { .. } => "Circular Channel (pipe)",
                 Section::AreaPerimeter { .. } => "Channel Flow",
                 Section::Custom { .. } => "Custom Channel",
+                Section::Rating { .. } => "Rated Channel",
             },
             TcKind::Lag { .. } => "Lag/CN Method",
             TcKind::Kirpich { .. } => "Kirpich Method",

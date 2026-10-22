@@ -43,6 +43,15 @@ pub struct XsPoint {
     pub n: f64,
 }
 
+/// One row of a reach rating table: depth above the channel invert, discharge and flow
+/// (end) area, as in a TR-20 cross-section table.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RatingPoint {
+    pub depth: f64,
+    pub flow: f64,
+    pub area: f64,
+}
+
 /// A channel or conduit cross-section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Section {
@@ -58,6 +67,9 @@ pub enum Section {
     AreaPerimeter { area: f64, perimeter: f64 },
     /// Surveyed cross-section (offset, elevation) points.
     Custom { points: Vec<XsPoint> },
+    /// Depth–discharge–area rating table (reaches only). Discharge comes from the table, so
+    /// Manning's n and the slope are not used; `bank_full` is the bank-full depth.
+    Rating { points: Vec<RatingPoint>, bank_full: f64 },
 }
 
 impl Section {
@@ -78,6 +90,9 @@ impl Section {
                 let left = points.first().map(|p| p.elev).unwrap_or(0.0);
                 let right = points.last().map(|p| p.elev).unwrap_or(0.0);
                 (left.min(right) - min).max(0.0)
+            }
+            Section::Rating { points, bank_full } => {
+                if *bank_full > 0.0 { *bank_full } else { points.iter().map(|p| p.depth).fold(0.0, f64::max) }
             }
         }
     }
@@ -106,13 +121,23 @@ impl Section {
                 SectionProps { area: area * f, perimeter: perimeter * f, top_width: if *area > 0.0 { *area } else { 0.0 } }
             }
             Section::Custom { points } => custom_props(points, y),
+            Section::Rating { points, .. } => {
+                let area = rating_lookup(points, y, |p| p.area);
+                // Top width from the slope of the area curve; wide-channel perimeter ≈ top width.
+                let dy = 0.01;
+                let top = ((rating_lookup(points, y + dy, |p| p.area) - area) / dy).max(0.0);
+                SectionProps { area, perimeter: if area > 0.0 { top.max(1e-6) } else { 0.0 }, top_width: top }
+            }
         }
     }
 
-    /// Manning discharge (cfs) at depth `y` for roughness `n` and slope `s` (ft/ft).
+    /// Manning discharge (cfs) at depth `y` for roughness `n` and slope `s` (ft/ft). A rating
+    /// section returns its tabulated discharge.
     pub fn manning_q(&self, y: f64, n: f64, s: f64) -> f64 {
-        if let Section::Custom { points } = self {
-            return custom_manning_q(points, y, s);
+        match self {
+            Section::Custom { points } => return custom_manning_q(points, y, s),
+            Section::Rating { points, .. } => return rating_lookup(points, y, |p| p.flow),
+            _ => {}
         }
         let p = self.props(y);
         manning(p.area, p.perimeter, n, s)
@@ -183,6 +208,31 @@ pub fn manning(area: f64, perimeter: f64, n: f64, s: f64) -> f64 {
         return 0.0;
     }
     MANNING_K / n * area * (area / perimeter).powf(2.0 / 3.0) * s.sqrt()
+}
+
+/// Linear interpolation of a rating-table column at depth `y`. Below the first row the value
+/// runs linearly from zero at zero depth; above the last row the last segment is extended
+/// (never decreasing). Rows need not be sorted.
+fn rating_lookup(points: &[RatingPoint], y: f64, value: impl Fn(&RatingPoint) -> f64) -> f64 {
+    let mut rows: Vec<(f64, f64)> = points.iter().filter(|p| p.depth.is_finite() && value(p).is_finite()).map(|p| (p.depth, value(p))).collect();
+    rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+    if y <= 0.0 || rows.is_empty() {
+        return 0.0;
+    }
+    if rows[0].0 > 0.0 {
+        rows.insert(0, (0.0, 0.0));
+    }
+    let interp = |a: (f64, f64), b: (f64, f64), x: f64| if b.0 > a.0 { a.1 + (b.1 - a.1) * (x - a.0) / (b.0 - a.0) } else { b.1 };
+    for w in rows.windows(2) {
+        if y <= w[1].0 {
+            return interp(w[0], w[1], y).max(0.0);
+        }
+    }
+    match rows.as_slice() {
+        [.., a, b] => interp(*a, *b, y).max(b.1).max(0.0),
+        [a] => a.1.max(0.0),
+        [] => 0.0,
+    }
 }
 
 fn parabolic(width: f64, depth: f64, y: f64) -> SectionProps {
@@ -316,6 +366,23 @@ fn segment_wet(a: XsPoint, b: XsPoint, wse: f64) -> SectionProps {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rating_section_interpolates_and_extends() {
+        // Depth, discharge, end area (a TR-20 style table, invert at 188 ft).
+        let rows = [(0.0, 0.0, 0.0), (2.7, 20.071, 8.203), (5.29, 85.823, 24.671), (7.78, 247.063, 70.625)];
+        let s = Section::Rating { points: rows.iter().map(|&(depth, flow, area)| RatingPoint { depth, flow, area }).collect(), bank_full: 5.29 };
+        assert_eq!(s.full_depth(), 5.29);
+        assert!((s.manning_q(5.29, 0.0, 0.0) - 85.823).abs() < 1e-9);
+        let mid = s.manning_q(4.0, 0.03, 0.01);
+        assert!(mid > 20.071 && mid < 85.823);
+        assert!((s.props(2.7).area - 8.203).abs() < 1e-9);
+        assert!(s.props(4.0).top_width > 0.0);
+        // Above the table: last segment extended; never below the last row.
+        assert!(s.manning_q(9.0, 0.0, 0.0) > 247.063);
+        assert_eq!(s.manning_q(0.0, 0.0, 0.0), 0.0);
+        assert!((s.normal_depth(85.823, 0.03, 0.01) - 5.29).abs() < 1e-6);
+    }
 
     #[test]
     fn parabolic_matches_reference_tc_segment() {

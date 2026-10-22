@@ -154,7 +154,9 @@ impl Reach {
         if self.length > 0.0 { (self.inlet_invert - self.outlet_invert) / self.length } else { 0.0 }
     }
     pub fn is_described(&self) -> bool {
-        self.length > 0.0 && self.slope() > 0.0 && self.n > 0.0 && self.section.full_depth() > 0.0
+        // A rating table supplies discharge directly, so it needs no slope or roughness.
+        let hydraulics = matches!(self.section, Section::Rating { .. }) || (self.slope() > 0.0 && self.n > 0.0);
+        self.length > 0.0 && hydraulics && self.section.full_depth() > 0.0
     }
 }
 

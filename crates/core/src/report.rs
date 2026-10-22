@@ -312,6 +312,7 @@ pub fn section_text(section: &crate::geometry::Section, u: &Units) -> String {
         }
         S::AreaPerimeter { area, perimeter } => format!("Area={:.1} sf Perim={:.1}{} r={:.2}{}", area, u.len(*perimeter), u.len_suffix(), u.len(area / perimeter.max(1e-9)), u.len_suffix()),
         S::Custom { points } => format!("Custom cross-section, {} points {ap}", points.len()),
+        S::Rating { points, bank_full } => format!("Rating table, {} rows, bank-full depth {}", points.len(), l(*bank_full)),
     }
 }
 
