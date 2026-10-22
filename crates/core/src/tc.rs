@@ -236,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn reference_old_orchard_tc() {
+    fn reference_four_segment_tc() {
         // 19.1 + 3.0 + 1.0 + 0.1 = 23.2 min, 831 ft.
         let segs = vec![
             seg(TcKind::Sheet { length: 100.0, slope: 0.025, n: 0.40, p2: 3.40, surface: "Woods: Light underbrush".into() }),

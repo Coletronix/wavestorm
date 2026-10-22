@@ -1,5 +1,5 @@
 [package]
-name = "sluice-core"
+name = "stormwaves-core"
 description = "Stormwater hydrology and hydraulics engine: TR-55/TR-20 runoff, reach and pond routing"
 version.workspace = true
 edition.workspace = true

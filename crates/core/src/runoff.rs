@@ -259,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn golden_old_orchard_runoff() {
+    fn golden_reference_runoff_hydrograph() {
         // Reference sample (11S): 25 ac, CN 60, Tc 23.2 min, Type II 4.30", dt 0.10 h, span 10-40 h:
         // 18.56 cfs @ 12.15 h, 1.903 af.
         let rain = type2(4.30);
