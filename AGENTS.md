@@ -94,7 +94,17 @@ not change them without re-running the golden tests.
 
 `runoff::tests::golden_*`, `tc::tests::reference_*`, `storage::tests::reference_*`,
 `outlets::tests::reference_*`, `routing::tests::reference_*`. The numbers come from the public
-sample reports summarised in `reference_images/research/NOTES.md`.
+sample reports summarised in `reference_images/research/NOTES.md` (a 2003 version).
+
+Current-version oracles from public engineering submittals (texts and parsed `cases.json` in
+gitignored `reference_images/research/ext*/`):
+- `tests/published_subcatchments.rs`: 46 subcatchments (Type II/III, Tc 4.8-90.6 min) and
+  four two-subcatchment link sums.
+- `tests/published_ponds.rs`: four ponds x two storms (stage-area storage with gravel voids,
+  starting elevations, culverts fed by orifices and perimeter-limited grates, broad-crested
+  weirs, conductivity exfiltration). Inflow Tc values were back-fitted to the published inflow
+  peaks (one Tc fits both storms within 0.2 % each).
+- `tr20::tests` uses a public TR-20 training deck; `noaa::tests` a NOAA Atlas 14 CSV.
 
 ## 5. Status and next steps
 
