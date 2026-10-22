@@ -340,7 +340,7 @@ fn rating_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
                     outlets::Routing::Tertiary => fixed_tw(pond.tailwater[2]),
                     _ => None,
                 };
-                let flows: Vec<outlets::OutletFlows> = elevs.iter().map(|e| outlets::evaluate(&pond.devices, *e, &tw, &pond.storage, &vec![true; pond.devices.len()])).collect();
+                let flows: Vec<outlets::OutletFlows> = elevs.iter().map(|e| outlets::evaluate(&pond.devices, *e, &tw, &pond.storage, &vec![outlets::DeviceState { active: true, since: Some(0.0) }; pond.devices.len()], 1.0e6)).collect();
                 let names = ["Primary", "Secondary", "Tertiary", "Discarded"];
                 let mut total = Series { name: "Total".into(), color: COLORS[1], x: flows.iter().map(|f| u.flow(f.total())).collect(), y: elevs.iter().map(|e| u.len(*e)).collect(), peak_label: None };
                 total.x.iter_mut().for_each(|v| *v = v.max(0.0));

@@ -673,16 +673,17 @@ fn route_pond(
         }
     };
     let nd = pond.devices.len();
-    let pump_on = vec![false; nd];
+    let initial = vec![outlets::DeviceState::default(); nd];
     let start = pond.start_elevation.unwrap_or(bottom).max(bottom);
-    let mut pump_states: Vec<Vec<bool>> = Vec::with_capacity(n);
+    let mut pump_states: Vec<Vec<outlets::DeviceState>> = Vec::with_capacity(n);
     let elevation: Vec<f64>;
     let storage: Vec<f64>;
     if pond.storage.is_empty() {
         // Zero-storage pond: outflow equals inflow; find the headwater that passes it.
         let mut el = Vec::with_capacity(n);
         for (i, q) in inflow.q.iter().enumerate() {
-            let flows = |e: f64| outlets::evaluate(&pond.devices, e, &|r| tw_of(r, e, i), &pond.storage, &pump_on).total();
+            let t = inflow.time(i);
+            let flows = |e: f64| outlets::evaluate(&pond.devices, e, &|r| tw_of(r, e, i), &pond.storage, &initial, t).total();
             let (mut lo, mut hi) = (bottom, bottom + 1.0);
             let mut guard = 0;
             while flows(hi) < *q && guard < 40 {
@@ -694,29 +695,20 @@ fn route_pond(
                 if flows(mid) < *q { lo = mid } else { hi = mid }
             }
             el.push(if *q > 0.0 { 0.5 * (lo + hi) } else { bottom });
-            pump_states.push(pump_on.clone());
+            pump_states.push(initial.clone());
         }
         elevation = el;
         storage = vec![0.0; n];
     } else {
         let table = StageTable::build(bottom, top, 3000, |e| pond.storage.storage(e), |_| 0.0);
-        let has_state = pond.devices.iter().any(|d| d.kind.has_state());
-        let mut current = pump_on.clone();
+        let mut current = initial.clone();
         let res = routing::level_pool(&table, inflow, start, &mut |e, step, commit| {
-            if commit && has_state {
-                for (k, d) in pond.devices.iter().enumerate() {
-                    if let outlets::DeviceKind::Pump { on_elevation, off_elevation, .. } = d.kind {
-                        if e >= on_elevation {
-                            current[k] = true;
-                        } else if e <= off_elevation {
-                            current[k] = false;
-                        }
-                    }
-                }
-            }
-            let q = outlets::evaluate(&pond.devices, e, &|r| tw_of(r, e, step), &pond.storage, &current).total();
+            let t = inflow.time(step);
+            let q = outlets::evaluate(&pond.devices, e, &|r| tw_of(r, e, step), &pond.storage, &current, t).total();
             if commit {
+                // The flow for this step used the state at its start; update for the next step.
                 pump_states.push(current.clone());
+                outlets::update_states(&pond.devices, e, t, &mut current);
             }
             q
         });
@@ -730,8 +722,8 @@ fn route_pond(
     let mut routes = [z.clone(), z.clone(), z.clone(), z.clone()];
     let mut analysis: [Option<(usize, f64, OutletFlows)>; 4] = [None, None, None, None];
     for (i, e) in elevation.iter().enumerate() {
-        let st = pump_states.get(i).cloned().unwrap_or_else(|| vec![false; nd]);
-        let f = outlets::evaluate(&pond.devices, *e, &|r| tw_of(r, *e, i), &pond.storage, &st);
+        let st = pump_states.get(i).cloned().unwrap_or_else(|| vec![outlets::DeviceState::default(); nd]);
+        let f = outlets::evaluate(&pond.devices, *e, &|r| tw_of(r, *e, i), &pond.storage, &st, inflow.time(i));
         let vals = [f.primary, f.secondary, f.tertiary, f.discarded];
         for k in 0..4 {
             routes[k].q[i] = vals[k];

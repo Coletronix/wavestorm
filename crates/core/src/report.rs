@@ -385,6 +385,26 @@ pub fn device_text(dev: &crate::outlets::OutletDevice, u: &Units) -> Vec<String>
         DeviceKind::Pump { on_elevation, off_elevation, .. } => {
             vec![format!("{} On= {} Off= {}", name("Pump"), u.fmt_elev(*on_elevation), u.fmt_elev(*off_elevation))]
         }
+        DeviceKind::Siphon { diameter, length, n, ke, outlet_elevation, prime_elevation, break_elevation } => vec![
+            format!("{}{mult}x {} long {}, Ke= {:.3} n= {:.3}", inch(*diameter), ft(*length), name("Tube/Siphon"), ke, n),
+            format!("Outlet= {}  Prime= {}  Break= {}", u.fmt_elev(*outlet_elevation), u.fmt_elev(*prime_elevation), u.fmt_elev(*break_elevation)),
+        ],
+        DeviceKind::DamBreach { start_time, start_elevation, formation, final_bottom, final_width, side_z } => {
+            let start = match (start_time, start_elevation) {
+                (Some(t), _) => format!("starts at {t:.2} hrs"),
+                (None, Some(e)) => format!("starts at WSE {}", u.fmt_elev(*e)),
+                _ => "never starts".into(),
+            };
+            vec![
+                format!("{} {start}, forms in {:.2} hrs", name("Dam Breach"), formation),
+                format!("Final bottom= {}  width= {}  Z= {:.1}", u.fmt_elev(*final_bottom), ft(*final_width), side_z),
+            ]
+        }
+        DeviceKind::DelayedGate { trigger_elevation, delay, opening, width, height, cd } => vec![
+            format!("{} W x {} H{mult}{} C= {cd:.3}", inch(*width), inch(*height), name("Delayed Gate")),
+            format!("Trigger= {}  Delay= {:.2} hrs  Opening time= {:.2} hrs", u.fmt_elev(*trigger_elevation), delay, opening),
+        ],
+        DeviceKind::Channel { section, n, slope } => vec![format!("{} {}, n= {n:.3} S= {slope:.4} '/'", name("Channel Outlet"), section_text(section, u))],
     }
 }
 

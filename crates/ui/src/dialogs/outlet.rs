@@ -60,6 +60,10 @@ pub fn templates() -> Vec<(&'static str, DeviceKind)> {
         ("Special (Rating Table)", DeviceKind::Special { table: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 3.0)], head_based: true, extrapolate: false }),
         ("Constant Flow/Skimmer", DeviceKind::ConstantFlow { flow: 0.5, phase_in: 0.3 }),
         ("Pump", DeviceKind::Pump { rating: vec![(0.0, 2.0), (10.0, 1.5), (20.0, 0.0)], on_elevation: 102.0, off_elevation: 100.5, discharge_elevation: 110.0 }),
+        ("Tube/Siphon", DeviceKind::Siphon { diameter: 1.0, length: 40.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 }),
+        ("Dam Breach", DeviceKind::DamBreach { start_time: None, start_elevation: Some(105.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 }),
+        ("Delayed Gate", DeviceKind::DelayedGate { trigger_elevation: 102.0, delay: 2.0, opening: 1.0, width: 2.0, height: 2.0, cd: 0.6 }),
+        ("Channel Outlet", DeviceKind::Channel { section: Section::Trapezoidal { bottom: 4.0, z_left: 2.0, z_right: 2.0, depth: 3.0 }, n: 0.03, slope: 0.01 }),
     ]
 }
 
@@ -360,6 +364,65 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         let last = rating.last().copied().unwrap_or((0.0, 0.0));
                         rating.push((last.0 + 5.0, last.1));
                     }
+                }
+                DeviceKind::Siphon { diameter, length, n, ke, outlet_elevation, prime_elevation, break_elevation } => {
+                    ui.horizontal(|ui| {
+                        len(ui, "inv", "Intake Elevation:", &mut d.invert);
+                        len(ui, "out", "Outlet Elevation:", outlet_elevation);
+                    });
+                    ui.horizontal(|ui| {
+                        inch(ui, "dia", "Diameter:", diameter);
+                        len(ui, "len", "Length:", length);
+                    });
+                    ui.horizontal(|ui| {
+                        conv_field(ui, "n", "Manning's n:", "", n, |x| x, |x| x, 3, 100.0);
+                        conv_field(ui, "ke", "Ke:", "", ke, |x| x, |x| x.max(0.0), 3, 80.0);
+                    });
+                    ui.horizontal(|ui| {
+                        len(ui, "prime", "Start (Prime) Elevation:", prime_elevation);
+                        len(ui, "break", "Stop (Break) Elevation:", break_elevation);
+                    });
+                }
+                DeviceKind::DamBreach { start_time, start_elevation, formation, final_bottom, final_width, side_z } => {
+                    len(ui, "inv", "Dam Crest Elevation:", &mut d.invert);
+                    ui.horizontal(|ui| {
+                        opt_field(ui, "st", "Start Time:", "hours", start_time, |x| x, |x| x, 2, 120.0);
+                        opt_field(ui, "se", "or Start Elevation:", u.len_label(), start_elevation, |x| u.len(x), |x| u.len_in(x), 2, 150.0);
+                    });
+                    ui.horizontal(|ui| {
+                        conv_field(ui, "form", "Formation Time:", "hours", formation, |x| x, |x| x.max(0.0), 2, 120.0);
+                        len(ui, "fb", "Final Bottom Elev:", final_bottom);
+                    });
+                    ui.horizontal(|ui| {
+                        len(ui, "fw", "Final Bottom Width:", final_width);
+                        conv_field(ui, "z", "Side Slope Z:", "h:v", side_z, |x| x, |x| x.max(0.0), 2, 110.0);
+                    });
+                }
+                DeviceKind::DelayedGate { trigger_elevation, delay, opening, width, height, cd } => {
+                    ui.horizontal(|ui| {
+                        len(ui, "inv", "Gate Invert:", &mut d.invert);
+                        len(ui, "trig", "Trigger Elevation:", trigger_elevation);
+                    });
+                    ui.horizontal(|ui| {
+                        conv_field(ui, "delay", "Time Delay:", "hours", delay, |x| x, |x| x.max(0.0), 2, 110.0);
+                        conv_field(ui, "open", "Opening Time:", "hours", opening, |x| x, |x| x.max(0.0), 2, 110.0);
+                    });
+                    ui.horizontal(|ui| {
+                        inch(ui, "w", "Width:", width);
+                        inch(ui, "h", "Height:", height);
+                        conv_field(ui, "cd", "Coefficient:", "", cd, |x| x, |x| x.clamp(0.0, 1.0), 3, 100.0);
+                    });
+                }
+                DeviceKind::Channel { section, n, slope } => {
+                    len(ui, "inv", "Channel Invert:", &mut d.invert);
+                    ui.horizontal(|ui| {
+                        conv_field(ui, "n", "Manning's n:", "", n, |x| x, |x| x, 3, 100.0);
+                        if let Some(v) = manning_button(ui, "chn") {
+                            *n = v;
+                        }
+                        conv_field(ui, "s", "Slope:", "ft/ft", slope, |x| x, |x| x, 4, 110.0);
+                    });
+                    super::node::section_editor(ui, section, u, false);
                 }
             });
             sketch(ui, &d.kind);

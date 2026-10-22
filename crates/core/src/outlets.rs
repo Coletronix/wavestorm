@@ -140,6 +140,17 @@ pub enum DeviceKind {
     ConstantFlow { flow: f64, phase_in: f64 },
     /// Pump with a rating curve of flow (cfs) against total head (ft) and on/off elevations.
     Pump { rating: Vec<(f64, f64)>, on_elevation: f64, off_elevation: f64, discharge_elevation: f64 },
+    /// Tube, siphon or float valve: full-pipe flow once primed at `prime_elevation`, until the
+    /// water falls to `break_elevation`. The device invert is the intake.
+    Siphon { diameter: f64, length: f64, n: f64, ke: f64, outlet_elevation: f64, prime_elevation: f64, break_elevation: f64 },
+    /// Progressive dam breach: starts at a time or water level, then the breach bottom drops from
+    /// the crest (device invert) to `final_bottom` and widens to `final_width` over `formation`.
+    DamBreach { start_time: Option<f64>, start_elevation: Option<f64>, formation: f64, final_bottom: f64, final_width: f64, side_z: f64 },
+    /// Automated gate (rectangular vertical opening at the invert) that starts opening `delay`
+    /// hours after the water first reaches `trigger_elevation` and is fully open after `opening`.
+    DelayedGate { trigger_elevation: f64, delay: f64, opening: f64, width: f64, height: f64, cd: f64 },
+    /// The pond discharges straight into a channel: normal-depth flow at depth HW − invert.
+    Channel { section: crate::geometry::Section, n: f64, slope: f64 },
 }
 
 impl DeviceKind {
@@ -157,12 +168,16 @@ impl DeviceKind {
             DeviceKind::Special { .. } => "Special & User-Defined",
             DeviceKind::ConstantFlow { .. } => "Constant Flow",
             DeviceKind::Pump { .. } => "Pump",
+            DeviceKind::Siphon { .. } => "Tube/Siphon/Float Valve",
+            DeviceKind::DamBreach { .. } => "Dam Breach",
+            DeviceKind::DelayedGate { .. } => "Delayed Gate/Valve",
+            DeviceKind::Channel { .. } => "Channel Outlet",
         }
     }
 
     /// Whether the device's output depends on its history (pumps cycle on and off).
     pub fn has_state(&self) -> bool {
-        matches!(self, DeviceKind::Pump { .. })
+        matches!(self, DeviceKind::Pump { .. } | DeviceKind::Siphon { .. } | DeviceKind::DamBreach { .. } | DeviceKind::DelayedGate { .. })
     }
 }
 
@@ -229,6 +244,49 @@ impl DeviceFlow {
     const ZERO: DeviceFlow = DeviceFlow { flow: 0.0, control: Control::None, velocity: 0.0 };
 }
 
+/// Per-device state for devices whose flow depends on history.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct DeviceState {
+    /// Pump running / siphon primed.
+    pub active: bool,
+    /// When a breach began, or when a gate's trigger level was first reached (hours).
+    pub since: Option<f64>,
+}
+
+/// Updates device states after a routing step settles at headwater `hw` and time `t`.
+pub fn update_states(devices: &[OutletDevice], hw: f64, t: f64, states: &mut [DeviceState]) {
+    for (d, st) in devices.iter().zip(states.iter_mut()) {
+        match &d.kind {
+            DeviceKind::Pump { on_elevation, off_elevation, .. } => {
+                if hw >= *on_elevation {
+                    st.active = true;
+                } else if hw <= *off_elevation {
+                    st.active = false;
+                }
+            }
+            DeviceKind::Siphon { prime_elevation, break_elevation, .. } => {
+                if hw >= *prime_elevation {
+                    st.active = true;
+                } else if hw <= *break_elevation || hw <= d.invert {
+                    st.active = false;
+                }
+            }
+            DeviceKind::DamBreach { start_time, start_elevation, .. } => {
+                let go = start_time.is_some_and(|s| t >= s) || start_elevation.is_some_and(|e| hw >= e);
+                if go && st.since.is_none() {
+                    st.since = Some(t);
+                }
+            }
+            DeviceKind::DelayedGate { trigger_elevation, .. } => {
+                if hw >= *trigger_elevation && st.since.is_none() {
+                    st.since = Some(t);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Inputs that vary through the routing.
 #[derive(Debug, Clone, Copy)]
 pub struct Conditions<'a> {
@@ -236,8 +294,9 @@ pub struct Conditions<'a> {
     /// Tailwater elevation for the device's outflow, if any.
     pub tw: Option<f64>,
     pub storage: &'a PondStorage,
-    /// Pump on/off state.
-    pub pump_on: bool,
+    pub state: DeviceState,
+    /// Current time (hours).
+    pub time: f64,
 }
 
 /// Head-dependent broad-crested weir coefficients (US units), Brater & King Table 5-3.
@@ -551,8 +610,56 @@ impl OutletDevice {
                 let f = if *phase_in > 0.0 { (head / phase_in).min(1.0) } else { 1.0 };
                 DeviceFlow { flow: flow * f, control: Control::Constant, velocity: 0.0 }
             }
+            DeviceKind::Siphon { diameter, length, n, ke, outlet_elevation, .. } => {
+                if !c.state.active || head <= 0.0 || *diameter <= 0.0 {
+                    return DeviceFlow::ZERO;
+                }
+                let down = outlet_elevation.max(c.tw.unwrap_or(f64::NEG_INFINITY));
+                let dh = c.hw - down;
+                if dh <= 0.0 {
+                    return DeviceFlow::ZERO;
+                }
+                let area = std::f64::consts::PI * diameter * diameter / 4.0;
+                let r = diameter / 4.0;
+                let friction = 2.0 * G * n * n * length.max(0.0) / (MANNING_K * MANNING_K * r.powf(4.0 / 3.0));
+                let v = (2.0 * G * dh / (1.0 + ke.max(0.0) + friction)).sqrt();
+                DeviceFlow { flow: area * v, control: Control::Barrel, velocity: v }
+            }
+            DeviceKind::DamBreach { formation, final_bottom, final_width, side_z, .. } => {
+                let Some(start) = c.state.since else { return DeviceFlow::ZERO };
+                let f = if *formation > 0.0 { ((c.time - start) / formation).clamp(0.0, 1.0) } else { 1.0 };
+                let bottom = self.invert + (final_bottom - self.invert) * f;
+                let width = final_width.max(0.0) * f;
+                let h = c.hw - bottom;
+                if h <= 0.0 {
+                    return DeviceFlow::ZERO;
+                }
+                // Broad-crested trapezoidal breach (USBR): Q = 3.1 b H^1.5 + 2.45 z H^2.5.
+                let q = (3.1 * width * h.powf(1.5) + 2.45 * side_z.max(0.0) * h.powf(2.5) * f) * submergence(h, c.tw.map(|t| t - bottom).unwrap_or(0.0), 1.5);
+                weir_result(q, h, width + side_z * h)
+            }
+            DeviceKind::DelayedGate { delay, opening, width, height, cd, .. } => {
+                let Some(start) = c.state.since else { return DeviceFlow::ZERO };
+                let f = if *opening > 0.0 { ((c.time - start - delay) / opening).clamp(0.0, 1.0) } else if c.time >= start + delay { 1.0 } else { 0.0 };
+                if f <= 0.0 || head <= 0.0 {
+                    return DeviceFlow::ZERO;
+                }
+                let shape = OpeningShape::Rectangular { width: *width, height: height * f };
+                let eff = if tail_head > 0.0 { (head - tail_head).max(0.0) + (height * f) / 2.0 } else { head };
+                let q = vertical_opening(&shape, *cd, eff.min(head));
+                DeviceFlow { flow: q, control: if head >= height * f { Control::Orifice } else { Control::Weir }, velocity: q / (width * height * f).max(1e-9) }
+            }
+            DeviceKind::Channel { section, n, slope } => {
+                if head <= 0.0 {
+                    return DeviceFlow::ZERO;
+                }
+                let depth = if tail_head > head { 0.0 } else { head };
+                let q = section.manning_q(depth, *n, *slope);
+                let a = section.props(depth).area;
+                DeviceFlow { flow: q, control: Control::Barrel, velocity: if a > 0.0 { q / a } else { 0.0 } }
+            }
             DeviceKind::Pump { rating, discharge_elevation, .. } => {
-                if !c.pump_on || head <= 0.0 {
+                if !c.state.active || head <= 0.0 {
                     return DeviceFlow::ZERO;
                 }
                 let lift = (discharge_elevation.max(c.tw.unwrap_or(f64::NEG_INFINITY)) - c.hw).max(0.0);
@@ -731,7 +838,7 @@ pub fn final_routing(devices: &[OutletDevice], mut i: usize) -> Option<Routing> 
 }
 
 /// Evaluates all devices. `tw_for` gives the tailwater for each final outflow.
-pub fn evaluate(devices: &[OutletDevice], hw: f64, tw_for: &dyn Fn(Routing) -> Option<f64>, storage: &PondStorage, pump_on: &[bool]) -> OutletFlows {
+pub fn evaluate(devices: &[OutletDevice], hw: f64, tw_for: &dyn Fn(Routing) -> Option<f64>, storage: &PondStorage, states: &[DeviceState], time: f64) -> OutletFlows {
     let n = devices.len();
     let mut out = OutletFlows {
         devices: vec![0.0; n],
@@ -744,7 +851,7 @@ pub fn evaluate(devices: &[OutletDevice], hw: f64, tw_for: &dyn Fn(Routing) -> O
     // Potentials.
     for (i, d) in devices.iter().enumerate() {
         let route = final_routing(devices, i).unwrap_or(Routing::Discarded);
-        let cond = Conditions { hw, tw: tw_for(route), storage, pump_on: pump_on.get(i).copied().unwrap_or(false) };
+        let cond = Conditions { hw, tw: tw_for(route), storage, state: states.get(i).copied().unwrap_or_default(), time };
         let f = d.potential(&cond);
         out.potential[i] = f.flow;
         out.controls[i] = Some(f.control);
@@ -856,7 +963,7 @@ mod tests {
         let devs = reference_devices();
         let storage = PondStorage::default();
         let tw = |r: Routing| if r == Routing::Primary { Some(49.0) } else { None };
-        let f = evaluate(&devs, 54.486, &tw, &storage, &[]);
+        let f = evaluate(&devs, 54.486, &tw, &storage, &[], 0.0);
         assert!((f.potential[0] - 35.30).abs() < 0.05, "culvert potential {}", f.potential[0]);
         assert!((f.devices[1] - 12.25).abs() < 0.03, "orifice {}", f.devices[1]);
         assert!((f.velocities[1] - 8.8).abs() < 0.05);
@@ -912,7 +1019,7 @@ mod tests {
             Routing::Discarded,
             DeviceKind::Exfiltration { mode: ExfilMode::SurfaceVelocity { velocity: 1.0 / 12.0 / 3600.0 }, phase_in: 0.0, max_elevation: None },
         );
-        let c = Conditions { hw: 101.0, tw: None, storage: &storage, pump_on: false };
+        let c = Conditions { hw: 101.0, tw: None, storage: &storage, state: DeviceState::default(), time: 0.0 };
         // 100 sf at 1 in/hr = 100/12/3600 cfs.
         assert!((d.potential(&c).flow - 100.0 / 12.0 / 3600.0).abs() < 1e-12);
         let k = OutletDevice::new("Skimmer", 100.0, Routing::Primary, DeviceKind::ConstantFlow { flow: 4.2, phase_in: 0.3 });
@@ -925,6 +1032,44 @@ mod tests {
         devs[0].routing = Routing::Device(1);
         devs[1].routing = Routing::Device(0);
         assert_eq!(final_routing(&devs, 0), None);
-        let _ = evaluate(&devs, 54.0, &|_| None, &PondStorage::default(), &[]);
+        let _ = evaluate(&devs, 54.0, &|_| None, &PondStorage::default(), &[], 0.0);
+    }
+
+    #[test]
+    fn stateful_devices() {
+        let storage = PondStorage::default();
+        let siphon = OutletDevice::new("Siphon", 100.0, Routing::Primary, DeviceKind::Siphon { diameter: 1.0, length: 50.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 });
+        let breach = OutletDevice::new("Breach", 110.0, Routing::Secondary, DeviceKind::DamBreach { start_time: None, start_elevation: Some(109.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 });
+        let gate = OutletDevice::new("Gate", 100.0, Routing::Primary, DeviceKind::DelayedGate { trigger_elevation: 103.0, delay: 1.0, opening: 2.0, width: 2.0, height: 2.0, cd: 0.6 });
+        let devs = vec![siphon, breach, gate];
+        let mut st = vec![DeviceState::default(); 3];
+        // Below priming: nothing flows.
+        update_states(&devs, 103.0, 0.0, &mut st);
+        let f = evaluate(&devs, 103.0, &|_| None, &storage, &st, 0.0);
+        assert_eq!(f.devices[0], 0.0);
+        // Primed above 104, keeps running down to the break level (hysteresis).
+        update_states(&devs, 104.5, 1.0, &mut st);
+        update_states(&devs, 102.0, 1.1, &mut st);
+        assert!(evaluate(&devs, 102.0, &|_| None, &storage, &st, 1.1).devices[0] > 0.0);
+        update_states(&devs, 100.4, 1.2, &mut st);
+        assert_eq!(evaluate(&devs, 100.4, &|_| None, &storage, &st, 1.2).devices[0], 0.0);
+        // Gate triggered at t=0 (103 reached on the first update), opens from t=1 to t=3.
+        assert_eq!(evaluate(&devs, 103.0, &|_| None, &storage, &st, 0.5).devices[2], 0.0);
+        let half = evaluate(&devs, 103.0, &|_| None, &storage, &st, 2.0).devices[2];
+        let full = evaluate(&devs, 103.0, &|_| None, &storage, &st, 3.0).devices[2];
+        assert!(half > 0.0 && full > half);
+        // Breach begins when the water reaches 109 and grows over an hour.
+        update_states(&devs, 109.5, 5.0, &mut st);
+        let early = evaluate(&devs, 109.5, &|_| None, &storage, &st, 5.1).devices[1];
+        let later = evaluate(&devs, 109.5, &|_| None, &storage, &st, 6.0).devices[1];
+        assert!(later > early && early > 0.0);
+    }
+
+    #[test]
+    fn channel_outlet_is_normal_depth() {
+        let sec = Section::Rectangular { width: 4.0, depth: 3.0 };
+        let d = OutletDevice::new("Channel", 50.0, Routing::Primary, DeviceKind::Channel { section: sec.clone(), n: 0.03, slope: 0.01 });
+        let c = Conditions { hw: 51.0, tw: None, storage: &PondStorage::default(), state: DeviceState::default(), time: 0.0 };
+        assert!((d.potential(&c).flow - sec.manning_q(1.0, 0.03, 0.01)).abs() < 1e-9);
     }
 }
