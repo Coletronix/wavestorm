@@ -6,10 +6,14 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod base64;
+pub mod calc;
 pub mod cn;
 pub mod geometry;
 pub mod hydrograph;
+pub mod link;
 pub mod outlets;
+pub mod project;
 pub mod rainfall;
 mod rainfall_data;
 pub mod routing;
@@ -17,3 +21,4 @@ pub mod runoff;
 pub mod storage;
 pub mod tc;
 pub mod uh;
+pub mod units;

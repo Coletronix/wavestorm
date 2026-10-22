@@ -23,10 +23,11 @@ impl StageTable {
         let mut last_o = 0.0f64;
         for i in 0..=n {
             let e = bottom + (top - bottom) * i as f64 / n as f64;
-            // Storage and outflow must be non-decreasing for a stable solution.
+            // Storage and outflow must be non-decreasing for a stable solution (a full pipe's
+            // Manning curve peaks just below the crown, for example).
             let s = storage(e).max(last_s);
-            let o = outflow(e).max(0.0);
-            let o = if o.is_finite() { o } else { last_o };
+            let o = outflow(e);
+            let o = if o.is_finite() { o.max(last_o) } else { last_o };
             t.elev.push(e);
             t.storage.push(s);
             t.outflow.push(o);
@@ -86,7 +87,7 @@ impl StageTable {
             // Extrapolate the last segment.
             let (e0, e1) = (self.elev[n - 2], self.elev[n - 1]);
             let (o0, o1) = (self.outflow[n - 2], self.outflow[n - 1]);
-            return if e1 > e0 { (o1 + (o1 - o0) * (e - e1) / (e1 - e0)).max(0.0) } else { o1 };
+            return if e1 > e0 { o1 + (o1 - o0).max(0.0) * (e - e1) / (e1 - e0) } else { o1 };
         }
         interp(&self.elev, &self.outflow, e)
     }
@@ -120,13 +121,15 @@ pub struct LevelPoolResult {
 
 /// Level-pool routing. At each step the continuity equation
 /// S₂ = S₁ + (I₁+I₂)/2·Δt − (O₁+O₂)/2·Δt is solved for the new elevation, where the outflow
-/// is `outflow(elevation, step)`. With a stage-only outflow this is the storage-indication
-/// (modified Puls) method; the step function also allows tailwater and pump states.
+/// is `outflow(elevation, step, commit)`. With a stage-only outflow this is the
+/// storage-indication (modified Puls) method; the step function also allows tailwater and pump
+/// states. `commit` is true for the single call made at each step's final elevation, so stateful
+/// devices update only then.
 pub fn level_pool(
     table: &StageTable,
     inflow: &Hydrograph,
     start_elev: f64,
-    outflow: &mut dyn FnMut(f64, usize) -> f64,
+    outflow: &mut dyn FnMut(f64, usize, bool) -> f64,
 ) -> LevelPoolResult {
     let n = inflow.len();
     let dt_s = inflow.dt * SEC_PER_HR;
@@ -141,7 +144,7 @@ pub fn level_pool(
     }
     let mut e = start_elev.max(table.bottom());
     let mut s = table.storage_at(e);
-    let mut o = outflow(e, 0).max(0.0);
+    let mut o = outflow(e, 0, true).max(0.0);
     r.elevation.push(e);
     r.storage.push(s);
     r.outflow.q[0] = o;
@@ -149,7 +152,7 @@ pub fn level_pool(
         let (i1, i2) = (inflow.q[i - 1].max(0.0), inflow.q[i].max(0.0));
         let base = s + 0.5 * (i1 + i2) * dt_s - 0.5 * o * dt_s;
         // f(e2) = S(e2) + O(e2)·Δt/2 − base is increasing in e2; bracket and bisect.
-        let mut f = |e2: f64, outflow: &mut dyn FnMut(f64, usize) -> f64| table.storage_at(e2) + 0.5 * outflow(e2, i).max(0.0) * dt_s - base;
+        let f = |e2: f64, outflow: &mut dyn FnMut(f64, usize, bool) -> f64| table.storage_at(e2) + 0.5 * outflow(e2, i, false).max(0.0) * dt_s - base;
         let lo0 = table.bottom();
         let (mut lo, mut hi) = (lo0, e.max(lo0));
         let mut guard = 0;
@@ -168,7 +171,7 @@ pub fn level_pool(
             }
         }
         e = 0.5 * (lo + hi);
-        o = outflow(e, i).max(0.0);
+        o = outflow(e, i, true).max(0.0);
         // Never release more than is stored (keeps zero-storage ponds exact).
         let available = (base / (0.5 * dt_s)).max(0.0);
         s = if o > available {
@@ -303,7 +306,7 @@ mod tests {
         for i in 10..20 {
             inflow.q[i] = 10.0;
         }
-        let r = level_pool(&table, &inflow, 0.0, &mut |e, _| table.outflow_at(e));
+        let r = level_pool(&table, &inflow, 0.0, &mut |e, _, _| table.outflow_at(e));
         assert!((r.outflow.volume_cf() - inflow.volume_cf()).abs() / inflow.volume_cf() < 1e-3);
         assert!(r.outflow.peak().value < 10.0);
     }
@@ -312,7 +315,7 @@ mod tests {
     fn zero_storage_pond_passes_inflow() {
         let table = StageTable::build(0.0, 10.0, 1000, |_| 0.0, |e| 5.0 * e);
         let inflow = Hydrograph { t0: 0.0, dt: 0.1, q: vec![0.0, 2.0, 6.0, 3.0, 0.0] };
-        let r = level_pool(&table, &inflow, 0.0, &mut |e, _| table.outflow_at(e));
+        let r = level_pool(&table, &inflow, 0.0, &mut |e, _, _| table.outflow_at(e));
         for (a, b) in r.outflow.q.iter().zip(&inflow.q) {
             assert!((a - b).abs() < 1e-3, "{a} vs {b}");
         }
@@ -338,7 +341,7 @@ mod tests {
         let section = Section::Parabolic { width: 10.0, depth: 2.0 };
         let (n, s, len) = (0.040, 0.0047, 5500.0);
         let table = StageTable::build(48.0, 52.0, 4000, |e| section.props(e - 48.0).area * len, |e| section.manning_q(e - 48.0, n, s));
-        let r = level_pool(&table, &inflow, 48.0, &mut |e, _| table.outflow_at(e));
+        let r = level_pool(&table, &inflow, 48.0, &mut |e, _, _| table.outflow_at(e));
         // Storage indication part: storage 34,880 cf at 16.0 h, 22,368 at 22.0 h.
         let at = |t: f64| ((t - 10.0) / 0.1).round() as usize;
         assert!((r.storage[at(16.0)] - 34_880.0).abs() / 34_880.0 < 0.03, "{}", r.storage[at(16.0)]);

@@ -57,6 +57,11 @@ gitignored.
 | `storage` | Pond storage volumes, voids, multipliers, embedding, surface and wetted area |
 | `outlets` | Culverts, orifices/grates, weirs, exfiltration, special, constant-flow, pump; compound device routing |
 | `routing` | Level-pool solver (ponds and reaches), translation, Muskingum-Cunge, detention times |
+| `link` | Link nodes: manual/CSV hydrographs, thresholds/limits/multipliers/lag/slices, tailwater elevation |
+| `units` | English/metric, large/small display units, formatting |
+| `project` | Project model: nodes, outflows, settings, diagram, background underlay; JSON I/O |
+| `calc` | Calculation engine: topological order, per-node results, calculation messages |
+| `base64` | Embedding background files in project JSON |
 
 Internal units are US customary: ft, sq ft, cu ft, cfs, hours, inches of rain. Conversion to
 display units (English/metric, large/small units) happens only at the UI/report edge.
@@ -92,13 +97,17 @@ sample reports summarised in `reference_images/research/NOTES.md`.
 Keep this section updated at the end of every session.
 
 - Done: core hydrology (runoff, Tc, CN, rainfall, UH), hydraulics (sections, storage, outlets),
-  routing (level pool, translation, Muskingum-Cunge, detention times).
-- Next: links (manual/CSV hydrographs, adjustments), project model (serde JSON) and calculation
-  engine (topological order, events, messages), text reports; then `crates/ui` (classic
+  routing (level pool, translation, Muskingum-Cunge, detention times), links, units, project
+  model (JSON `*.waves`), calculation engine with messages, end-to-end reference network test.
+- Next: text reports; then `crates/ui` (classic
   grey-dialog look of the reference application, drawn in code; photocraft-style `theme`
   tokens, `widgets`, serde `state`), the desktop and web apps, and the background-underlay
   feature (pure-Rust `hayro` PDF rendering, two-point scale calibration, polygon → subcatchment
   area).
+- Open investigation: in `tests/reference_network.rs`, summed subcatchment hydrographs peak
+  ~4.5 % above the published sums although each subcatchment is within 1 %; the downstream
+  pond still matches (peak elevation within 0.03 ft). Likely a hydrograph-shape/timing detail
+  for long Tc; needs a published multi-subcatchment hydrograph table to resolve.
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. Commands
