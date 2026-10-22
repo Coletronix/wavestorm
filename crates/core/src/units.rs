@@ -27,11 +27,25 @@ pub struct Units {
     /// Extra decimal places for flows and volumes on small sites.
     #[serde(default)]
     pub low_flow: bool,
+    /// Custom decimal places for reported values (automatic when not set).
+    #[serde(default)]
+    pub decimals: Decimals,
+}
+
+/// Decimal places chosen by the user for each kind of reported value; `None` = automatic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Decimals {
+    pub area: Option<u8>,
+    pub volume: Option<u8>,
+    pub flow: Option<u8>,
+    pub rain: Option<u8>,
+    pub elevation: Option<u8>,
+    pub length: Option<u8>,
 }
 
 impl Default for Units {
     fn default() -> Self {
-        Units { system: UnitSystem::English, large: true, low_flow: false }
+        Units { system: UnitSystem::English, large: true, low_flow: false, decimals: Decimals::default() }
     }
 }
 
@@ -151,20 +165,30 @@ impl Units {
         if self.metric() { v / 100.0 * FT_PER_M } else { v / 12.0 }
     }
 
-    // ---- decimals
+    // ---- decimals (custom values from `decimals` override the automatic ones)
     pub fn area_dp(&self) -> usize {
-        if self.large { 3 } else { 0 }
+        self.decimals.area.map_or(if self.large { 3 } else { 0 }, usize::from)
     }
     pub fn volume_dp(&self) -> usize {
-        match (self.large, self.low_flow) {
+        let auto = match (self.large, self.low_flow) {
             (true, false) => 3,
             (true, true) => 4,
             (false, false) => 0,
             (false, true) => 1,
-        }
+        };
+        self.decimals.volume.map_or(auto, usize::from)
     }
     pub fn flow_dp(&self) -> usize {
-        if self.low_flow { 3 } else { 2 }
+        self.decimals.flow.map_or(if self.low_flow { 3 } else { 2 }, usize::from)
+    }
+    pub fn rain_dp(&self) -> usize {
+        self.decimals.rain.map_or(if self.metric() { 0 } else { 2 }, usize::from)
+    }
+    pub fn elev_dp(&self) -> usize {
+        self.decimals.elevation.map_or(2, usize::from)
+    }
+    pub fn len_dp(&self) -> usize {
+        self.decimals.length.map_or(0, usize::from)
     }
 
     // ---- formatted values with units, report style
@@ -178,13 +202,14 @@ impl Units {
         format!("{} {}", group(self.flow(cfs), self.flow_dp()), self.flow_label())
     }
     pub fn fmt_rain(&self, inches: f64) -> String {
-        if self.metric() { format!("{:.0} mm", self.rain(inches)) } else { format!("{:.2}\"", inches) }
+        let dp = self.rain_dp();
+        if self.metric() { format!("{:.dp$} mm", self.rain(inches)) } else { format!("{inches:.dp$}\"") }
     }
     pub fn fmt_elev(&self, ft: f64) -> String {
-        format!("{:.2}{}", self.len(ft), self.len_suffix())
+        format!("{:.dp$}{}", self.len(ft), self.len_suffix(), dp = self.elev_dp())
     }
     pub fn fmt_len(&self, ft: f64) -> String {
-        format!("{}{}", group(self.len(ft), 0), self.len_suffix())
+        format!("{}{}", group(self.len(ft), self.len_dp()), self.len_suffix())
     }
 }
 
@@ -229,7 +254,7 @@ mod tests {
     fn round_trips() {
         for system in [UnitSystem::English, UnitSystem::Metric] {
             for large in [true, false] {
-                let u = Units { system, large, low_flow: false };
+                let u = Units { system, large, ..Units::default() };
                 assert!((u.area_in(u.area(1000.0)) - 1000.0).abs() < 1e-9);
                 assert!((u.volume_in(u.volume(1000.0)) - 1000.0).abs() < 1e-9);
                 assert!((u.len_in(u.len(3.0)) - 3.0).abs() < 1e-12);
@@ -239,5 +264,19 @@ mod tests {
         let u = Units::default();
         assert_eq!(u.fmt_area(25.0 * SQFT_PER_ACRE), "25.000 ac");
         assert_eq!(u.fmt_volume(1.903 * SQFT_PER_ACRE), "1.903 af");
+    }
+
+    #[test]
+    fn custom_decimals_override_automatic_ones() {
+        let mut u = Units::default();
+        assert_eq!((u.fmt_flow(12.3456), u.fmt_elev(100.0), u.fmt_rain(4.3)), ("12.35 cfs".into(), "100.00'".into(), "4.30\"".into()));
+        u.decimals = Decimals { flow: Some(1), elevation: Some(3), rain: Some(1), volume: Some(0), ..Decimals::default() };
+        assert_eq!(u.fmt_flow(12.3456), "12.3 cfs");
+        assert_eq!(u.fmt_elev(100.0), "100.000'");
+        assert_eq!(u.fmt_rain(4.3), "4.3\"");
+        assert_eq!(u.fmt_volume(1.903 * SQFT_PER_ACRE), "2 af");
+        // Older project files without the field read as automatic.
+        let old: Units = serde_json::from_str(r#"{"system":"English","large":true}"#).unwrap();
+        assert_eq!(old.decimals, Decimals::default());
     }
 }

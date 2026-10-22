@@ -160,7 +160,7 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
                         for (e, a) in elevations.iter().zip(values) {
                             let cum = pond.storage.storage(*e);
                             let shown = if is_area { group(u.area(*a), u.area_dp()) } else { group(u.volume(*a), u.volume_dp()) };
-                            out.push(format!("{:>12} {:>14} {:>14}", format!("{:.2}", u.len(*e)), shown, group(u.volume(cum), u.volume_dp())));
+                            out.push(format!("{:>12} {:>14} {:>14}", format!("{:.dp$}", u.len(*e), dp = u.elev_dp()), shown, group(u.volume(cum), u.volume_dp())));
                         }
                         out.push(String::new());
                     }
@@ -364,7 +364,7 @@ pub fn device_text(dev: &crate::outlets::OutletDevice, u: &Units) -> Vec<String>
             let t = broad_crested_table(*breadth);
             vec![
                 format!("{} long x {} breadth{mult}{}", ft(*length), ft(*breadth), name("Broad-Crested Rectangular Weir")),
-                format!("Head ({}) {}", if u.metric() { "meters" } else { "feet" }, t.iter().map(|p| format!("{:.2}", u.len(p.0))).collect::<Vec<_>>().join(" ")),
+                format!("Head ({}) {}", if u.metric() { "meters" } else { "feet" }, t.iter().map(|p| format!("{:.dp$}", u.len(p.0), dp = u.elev_dp())).collect::<Vec<_>>().join(" ")),
                 format!("Coef. (English) {}", t.iter().map(|p| format!("{:.2}", p.1)).collect::<Vec<_>>().join(" ")),
             ]
         }
@@ -644,8 +644,8 @@ pub fn events_table(project: &Project, all: &[Results], id: NodeId) -> Vec<[Stri
     for r in all {
         let Some(n) = r.node(id) else { continue };
         let (elev, stor) = match &n.detail {
-            Detail::Pond(d) => (format!("{:.2}", u.len(d.peak_elevation)), group(u.volume(d.peak_storage), u.volume_dp())),
-            Detail::Reach(d) => (format!("{:.2}", u.len(d.elevation.iter().copied().fold(f64::NEG_INFINITY, f64::max))), group(u.volume(d.storage.iter().copied().fold(0.0, f64::max)), u.volume_dp())),
+            Detail::Pond(d) => (format!("{:.dp$}", u.len(d.peak_elevation), dp = u.elev_dp()), group(u.volume(d.peak_storage), u.volume_dp())),
+            Detail::Reach(d) => (format!("{:.dp$}", u.len(d.elevation.iter().copied().fold(f64::NEG_INFINITY, f64::max)), dp = u.elev_dp()), group(u.volume(d.storage.iter().copied().fold(0.0, f64::max)), u.volume_dp())),
             _ => (String::new(), String::new()),
         };
         let f = |h: &Hydrograph| group(u.flow(h.peak().value), u.flow_dp());

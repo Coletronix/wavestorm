@@ -33,6 +33,19 @@ pub fn units(ctx: &egui::Context, doc: &mut Doc, st: &mut UnitsState) -> bool {
         });
         widgets::check(ui, &mut st.draft.large, "Large units (acres & acre-feet / hectares & megalitres)");
         widgets::check(ui, &mut st.draft.low_flow, "Low-flow precision (extra decimal places)");
+        widgets::group(ui, "Custom Decimal Places", |ui| {
+            let opts: Vec<(Option<u8>, String)> = std::iter::once((None, "Auto".to_string())).chain((0..=5u8).map(|d| (Some(d), d.to_string()))).collect();
+            let d = &mut st.draft.decimals;
+            egui::Grid::new("units-dp").num_columns(4).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
+                for (i, (label, v)) in [("Area", &mut d.area), ("Volume", &mut d.volume), ("Flow", &mut d.flow), ("Rainfall", &mut d.rain), ("Elevation", &mut d.elevation), ("Length", &mut d.length)].into_iter().enumerate() {
+                    ui.label(label);
+                    widgets::combo(ui, &format!("dp-{label}"), v, &opts, 70.0);
+                    if i % 2 == 1 {
+                        ui.end_row();
+                    }
+                }
+            });
+        });
         let draft = st.draft;
         ui.label(RichText::new(format!("Areas in {}, volumes in {}, flows in {}", draft.area_heading(), draft.volume_heading(), draft.flow_label())).color(Tokens::get(ui.ctx()).text_dim));
         match ok_cancel_apply(ui, false) {
