@@ -115,7 +115,7 @@ Keep this section updated at the end of every session.
     summed inflow in `tests/reference_network.rs`. BUT the older-version golden hydrograph
     (`runoff::tests::golden_reference_runoff_hydrograph`, Tc 23.2, dt 0.1, from a 2003 sample)
     matches with zero delay, so the mechanism is unconfirmed. Do not change `uh_kernel`
-    until one model fits both; candidates tried (scratch Python, not kept): kernel offset,
+    until one model fits both; candidates tried (Python scripts in gitignored `reference_images/research/ext/tools/`; they take the folder holding `t2tab.txt` as first argument): kernel offset,
     interval-averaged UH, Tp = ΔD + L (peaks -6 %), fixed fractional delay (best, 0.06 Tc with
     fine convolution or 0.09 Tc with the current substep scheme).
   - Short Tc (4.8 min) peaks are ~12 % low and ~0.04 h early: the reference uses its own
