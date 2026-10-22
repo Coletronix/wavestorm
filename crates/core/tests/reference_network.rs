@@ -115,11 +115,9 @@ fn reference_pipe_reach() {
     let r = calc::calculate(&p);
     let n = r.node(reach).unwrap();
     // Published: inflow 38.32 cfs 7.429 af; outflow 37.15 cfs; peak depth 1.55'; max vel 11.8 fps.
-    // Summed subcatchment peaks run ~4.5% above the published values although each subcatchment
-    // matches within 1% (open investigation, see AGENTS.md).
-    close("1R inflow", n.inflow.peak().value, 38.32, 0.06);
+    close("1R inflow", n.inflow.peak().value, 38.32, 0.01);
     close("1R inflow volume", n.inflow.volume_cf() / AC, 7.429, 0.005);
-    close("1R outflow", n.outflow.peak().value, 37.15, 0.06);
+    close("1R outflow", n.outflow.peak().value, 37.15, 0.01);
     let Detail::Reach(d) = &n.detail else { panic!("reach detail") };
     close("1R peak depth", d.peak_depth, 1.55, 0.04);
     close("1R max velocity", d.max_velocity, 11.8, 0.03);
@@ -133,7 +131,7 @@ fn reference_detention_pond() {
     let n = r.node(pond).unwrap();
     // Published: inflow 60.54 cfs @ 12.30 h, 11.236 af; outflow 23.17 @ 13.51 (primary 12.25,
     // secondary 10.92); peak elevation 54.49', storage 3.156 af.
-    close("1P inflow", n.inflow.peak().value, 60.54, 0.06);
+    close("1P inflow", n.inflow.peak().value, 60.54, 0.025);
     close("1P inflow volume", n.inflow.volume_cf() / AC, 11.236, 0.005);
     close("1P outflow", n.outflow.peak().value, 23.17, 0.03);
     close("1P primary", n.routes[0].peak().value, 12.25, 0.02);

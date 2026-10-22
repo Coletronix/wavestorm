@@ -72,14 +72,45 @@ fn published_subcatchment_runoff() {
     for (i, c) in CASES.iter().enumerate() {
         let (q, t, v) = run(c);
         println!("case {i:2}: peak {q:7.2} ({:7.2}) @ {t:5.2} ({:5.2})  vol {v:6.3} ({:6.3})", c.peak, c.time, c.volume);
-        // Published values are rounded to 0.01 cfs and 0.001 af. Known gaps (see AGENTS.md):
-        // peaks for Tc under ~6 min run ~12% low (storm peak resolution), and peak times run
-        // early by roughly 0.06-0.09 Tc at dt 0.05 h, so times are not asserted yet.
-        let peak_ok = c.tc < 6.0 || (q - c.peak).abs() <= 0.03 * c.peak + 0.01;
-        if !peak_ok || (v - c.volume).abs() > 0.01 * c.volume + 0.001 || t < c.time - 0.12 || t > c.time + 0.02 {
+        // Published values are rounded to 0.01 cfs, 0.01 h and 0.001 af. Known gap (AGENTS.md):
+        // for Tc under ~6 min peaks run ~12% low and ~0.03 h early (storm peak resolution).
+        let short = c.tc < 6.0;
+        let peak_ok = short || (q - c.peak).abs() <= 0.03 * c.peak + 0.01;
+        let time_ok = (t - c.time).abs() <= if short { 0.05 } else { 0.025 };
+        if !peak_ok || !time_ok || (v - c.volume).abs() > 0.01 * c.volume + 0.001 {
             failures.push(i);
         }
     }
     assert!(failures.is_empty(), "cases off: {failures:?}");
 }
 
+/// Two published subcatchments (cases 6/7, 8/9, 10/11, 12/13) joined at a link: the combined
+/// peak depends on their relative timing. Published (cfs, h) per event.
+#[test]
+fn published_link_sums() {
+    for (pair, peak, time) in [((6, 7), 3.69, 12.93), ((8, 9), 14.93, 12.80), ((10, 11), 30.07, 12.78), ((12, 13), 40.54, 12.77)] {
+        let (a, b) = (&CASES[pair.0], &CASES[pair.1]);
+        let mut p = Project::default();
+        p.settings.events = vec![RainEvent::new("Event", "Type II 24-hr", a.p)];
+        p.settings.current_event = 0;
+        p.settings.span_end = a.span;
+        p.settings.dt = a.dt;
+        let link = p.add_node(NodeType::Link, [0.0, 0.0]);
+        for c in [a, b] {
+            let id = p.add_node(NodeType::Subcat, [0.0, 0.0]);
+            if let Some(n) = p.node_mut(id) {
+                n.outflows[0] = Some(link);
+                n.data = NodeData::Subcat(Subcatchment {
+                    areas: c.areas.iter().map(|&(x, cn)| SubArea::new(x * AC, cn, "area")).collect(),
+                    tc: vec![TcSegment { kind: TcKind::Direct { minutes: c.tc, length: 0.0, velocity: 0.0 }, description: String::new() }],
+                    uh: None,
+                    large_units: true,
+                });
+            }
+        }
+        let r = calc::calculate(&p);
+        let pk = r.node(link).expect("link result").outflow.peak();
+        assert!((pk.value - peak).abs() <= 0.01 * peak + 0.01, "link {pair:?}: {:.2} vs {peak}", pk.value);
+        assert!((pk.time - time).abs() <= 0.025, "link {pair:?}: {:.2} h vs {time}", pk.time);
+    }
+}

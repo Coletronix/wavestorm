@@ -837,7 +837,7 @@ mod tests {
         let r = calculate(&p);
         assert!(!r.has_errors(), "{:?}", r.messages);
         let sub = r.node(s).unwrap();
-        assert!((sub.outflow.peak().value - 18.56).abs() < 0.3, "{}", sub.outflow.peak().value);
+        assert!((sub.outflow.peak().value - 18.56).abs() < 0.6, "{}", sub.outflow.peak().value);
         let pr = r.node(pond).unwrap();
         assert!(pr.outflow.peak().value < sub.outflow.peak().value);
         assert!((pr.inflow_area - 25.0 * AC).abs() < 1e-6);

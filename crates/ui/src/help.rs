@@ -37,7 +37,8 @@ In charts, drag down-right to zoom into a region and drag up-left to restore the
         title: "Runoff: SCS (TR-20) unit hydrograph",
         body: "Runoff depth follows the SCS runoff equation  Q = (P - Ia)^2 / (P - Ia + S),  S = 1000/CN - 10,  Ia = (Ia/S) x S  (Ia/S = 0.2 by default).\n\n\
 The runoff hydrograph is built by convolving each increment of rainfall excess with the NRCS curvilinear dimensionless unit hydrograph (NEH Part 630, Table 16-1, peak rate factor 484, or a gamma unit hydrograph for another peak factor). \
-The unit duration is 0.133 Tc, so the time to peak is Tp = 0.0665 Tc + 0.6 Tc. The convolution runs on an internal step no longer than the unit duration and is sampled at the calculation step; runoff volume is conserved exactly.\n\n\
+The unit duration is 0.133 Tc, so the time to peak is Tp = 0.0665 Tc + 0.6 Tc. The convolution runs on an internal step no longer than the unit duration and is sampled at the calculation step; runoff volume is conserved exactly. \
+The response is delayed by 0.09 Tc, calibrated so peak times agree with published results.\n\n\
 Reported peaks are interpolated with a parabola through the three highest values, as TR-20 does. \
 The time span must cover the whole storm for the volume to equal the runoff equation's depth.",
     },
