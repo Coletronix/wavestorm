@@ -43,7 +43,7 @@ fn drag(h: &mut egui_kittest::Harness<'static, StormwavesApp>, a: Pos2, b: Pos2,
 
 #[test]
 fn random_input_never_panics() {
-    let windows = ["", "report:1P", "report:1S", "report:1R", "report:1L", "edit:1S", "edit:1P", "edit:1R", "edit:1L", "settings", "units", "messages", "project-report", "storms", "uhs", "compare"];
+    let windows = ["", "report:1P", "report:1S", "report:1R", "report:1L", "edit:1S", "edit:1P", "edit:1R", "edit:1L", "settings", "units", "messages", "project-report", "storms", "uhs", "compare", "general"];
     for (round, w) in windows.iter().enumerate() {
         let mut h = harness();
         h.run_steps(3);

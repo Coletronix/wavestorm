@@ -2,7 +2,8 @@
 
 use super::{Buttons, conv_field, ok_cancel_apply};
 use crate::doc::Doc;
-use crate::theme::Tokens;
+use crate::prefs::Prefs;
+use crate::theme::{ThemeKind, Tokens};
 use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{Pos2, RichText, vec2};
@@ -81,6 +82,39 @@ pub fn diagram(ctx: &egui::Context, doc: &mut Doc, st: &mut DiagramState) -> boo
                 });
                 keep = false;
             }
+            Buttons::Cancel => keep = false,
+            Buttons::None => {}
+        }
+    });
+    keep
+}
+
+pub struct GeneralState {
+    pub draft: Prefs,
+}
+
+/// Settings > General: per-user preferences, saved for later sessions.
+pub fn general(ctx: &egui::Context, st: &mut GeneralState, actions: &mut Vec<WindowAction>) -> bool {
+    let mut keep = true;
+    crate::frame::Win::new("General Settings").collapsible(false).resizable(false).show(ctx, |ui| {
+        widgets::group(ui, "Appearance", |ui| {
+            for k in ThemeKind::ALL {
+                if widgets::radio(ui, st.draft.theme == k, k.label()).clicked() {
+                    st.draft.theme = k;
+                }
+            }
+        });
+        widgets::group(ui, "Automatic Backup", |ui| {
+            conv_field(ui, "backup", "Backup Interval", "minutes", &mut st.draft.backup_minutes, |x| x, |x| x.clamp(0.0, 1440.0), 0, 200.0);
+            ui.label(RichText::new("Changed projects are copied to <project>.bak (desktop only); 0 turns backups off.").color(Tokens::get(ui.ctx()).text_dim));
+        });
+        widgets::check(ui, &mut st.draft.multiple_project_reports, "Allow multiple Project Reports windows");
+        match ok_cancel_apply(ui, true) {
+            Buttons::Ok => {
+                actions.push(WindowAction::SetPrefs(st.draft.clone()));
+                keep = false;
+            }
+            Buttons::Apply => actions.push(WindowAction::SetPrefs(st.draft.clone())),
             Buttons::Cancel => keep = false,
             Buttons::None => {}
         }

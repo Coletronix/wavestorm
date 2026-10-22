@@ -108,7 +108,11 @@ Keep this section updated at the end of every session.
   calibration and subcatchment tracing, desktop and web (trunk) apps.
 - Remaining parity gaps: TR-55 graphical peak/storage worksheet, node profile report, rainfall
   event lookup tables, TR-20 import, custom units, rock-fill/asymmetrical weirs, pump priority
-  groups, report "Inflows" columns, status-bar hints, theme persistence.
+  groups, status-bar hints, pop-up tips on edit screens (General setting).
+- Recently done: tabular-hydrograph "Inflows" columns (right-click the table), Settings >
+  General (theme, backup interval, multiple Project Reports; saved via `platform::store`),
+  headless app (`StormwavesApp::headless()`) for tests and snapshots — never open native
+  dialogs there.
 - Runoff timing (resolved empirically, 2026-10-22): the current reference version's peaks lag
   the textbook convolution by ≈0.09 Tc. `UH_DELAY_PER_TC = 0.09` fits all current-version data
   (`tests/published_subcatchments.rs`) and brings the 2003 network sums within 0.3 %

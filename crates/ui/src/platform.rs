@@ -151,15 +151,49 @@ fn download(name: &str, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Recently opened project paths (desktop only), most recent first.
-#[cfg(not(target_arch = "wasm32"))]
-pub mod recent {
-    fn file() -> Option<std::path::PathBuf> {
+/// Small named text values that persist between sessions: files in the user's configuration
+/// folder on the desktop, `localStorage` in the browser. Failures are ignored (best effort).
+pub mod store {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn config_file(name: &str) -> Option<std::path::PathBuf> {
         let base = std::env::var_os("XDG_CONFIG_HOME")
             .map(std::path::PathBuf::from)
             .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
             .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
-        Some(base.join("stormwaves").join("recent.json"))
+        Some(base.join("stormwaves").join(name))
+    }
+
+    pub fn read(key: &str) -> Option<String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::fs::read_to_string(config_file(&format!("{key}.json"))?).ok()
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            web_sys::window()?.local_storage().ok()??.get_item(&format!("stormwaves.{key}")).ok()?
+        }
+    }
+
+    pub fn write(key: &str, text: &str) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(f) = config_file(&format!("{key}.json")) {
+            if let Some(dir) = f.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(f, text);
+        }
+        #[cfg(target_arch = "wasm32")]
+        if let Some(Ok(Some(s))) = web_sys::window().map(|w| w.local_storage()) {
+            let _ = s.set_item(&format!("stormwaves.{key}"), text);
+        }
+    }
+}
+
+/// Recently opened project paths (desktop only), most recent first.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod recent {
+    fn file() -> Option<std::path::PathBuf> {
+        super::store::config_file("recent.json")
     }
 
     pub fn list() -> Vec<String> {

@@ -26,6 +26,7 @@ pub enum Window {
     Idf(dialogs::storm::IdfEditor),
     LandUse(dialogs::misc::LandUseState),
     Help(crate::help::HelpState),
+    General(dialogs::misc::GeneralState),
 }
 
 impl Window {
@@ -52,6 +53,7 @@ pub enum WindowAction {
     Status(String),
     Help(&'static str),
     PrintPdf(stormwaves_core::printing::PrintOptions),
+    SetPrefs(crate::prefs::Prefs),
 }
 
 /// Shows every window of the document; returns follow-up actions.
@@ -79,6 +81,7 @@ pub fn show_all(ctx: &egui::Context, doc: &mut Doc) -> Vec<WindowAction> {
             Window::Idf(s) => dialogs::storm::idf(ctx, doc, s),
             Window::LandUse(s) => dialogs::misc::land_use(ctx, doc, s),
             Window::Help(s) => crate::help::show(ctx, s),
+            Window::General(s) => dialogs::misc::general(ctx, s, &mut actions),
             Window::Print(s) => {
                 let (keep, go) = dialogs::misc::print(ctx, s);
                 if let Some(o) = go {

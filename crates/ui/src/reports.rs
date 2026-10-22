@@ -511,11 +511,13 @@ fn events_tab(ui: &mut Ui, project: &Project, node: &Node, all: &[stormwaves_cor
 #[derive(Default)]
 pub struct ProjectReportState {
     pub tab: usize,
+    /// Distinguishes windows when several Project Reports are open at once.
+    pub serial: u64,
 }
 
 pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectReportState) -> bool {
     let mut open = true;
-    crate::frame::Win::new(format!("Project Reports - {}", doc.project.title)).open(&mut open).default_size(vec2(760.0, 460.0)).resizable(true).show(ctx, |ui| {
+    crate::frame::Win::new(format!("Project Reports - {}", doc.project.title)).id(egui::Id::new(("project-report", st.serial))).open(&mut open).default_size(vec2(760.0, 460.0)).resizable(true).show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             for (i, name) in ["Node Listing", "Area Listing", "Soil Listing", "Events", "Notes", "Pollutant Loading"].iter().enumerate() {

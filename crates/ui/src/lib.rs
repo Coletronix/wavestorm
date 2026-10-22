@@ -10,6 +10,7 @@ pub mod frame;
 pub mod help;
 pub mod icons;
 pub mod platform;
+pub mod prefs;
 pub mod reports;
 pub mod samples;
 pub mod theme;
@@ -22,6 +23,7 @@ use doc::Doc;
 use egui::{Align2, Color32, FontId, Key, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use icons::Glyph;
 use platform::{Incoming, Platform, Purpose};
+use prefs::Prefs;
 use stormwaves_core::project::{Node, NodeData, NodeId, NodeType, Project};
 use theme::{ThemeKind, Tokens};
 use windows::{Window, WindowAction};
@@ -31,6 +33,9 @@ pub struct StormwavesApp {
     pub docs: Vec<Doc>,
     pub active: usize,
     pub theme: ThemeKind,
+    pub prefs: Prefs,
+    /// Save preference changes (off for headless runs).
+    persist_prefs: bool,
     pub platform: Platform,
     pub tool: Tool,
     pub interaction: Interaction,
@@ -52,19 +57,26 @@ impl Default for StormwavesApp {
 }
 
 impl StormwavesApp {
-    /// The app for automated runs (tests, snapshots): it never opens native file dialogs.
+    /// The app for automated runs (tests, snapshots): it never opens native file dialogs and
+    /// neither reads nor writes the user's preferences.
     pub fn headless() -> Self {
-        StormwavesApp { platform: Platform::headless(), ..Self::new() }
+        Self::with(Platform::headless(), Prefs::default(), false)
     }
 
     pub fn new() -> Self {
+        Self::with(Platform::default(), Prefs::load(), true)
+    }
+
+    fn with(platform: Platform, prefs: Prefs, persist_prefs: bool) -> Self {
         let mut doc = Doc::new(samples::sample_project(), None);
         doc.dirty = false;
         StormwavesApp {
             docs: vec![doc],
             active: 0,
-            theme: ThemeKind::Classic,
-            platform: Platform::default(),
+            theme: prefs.theme,
+            prefs,
+            persist_prefs,
+            platform,
             tool: Tool::Select,
             interaction: Interaction::default(),
             palette_drag: None,
@@ -226,10 +238,24 @@ impl StormwavesApp {
         }
     }
 
-    /// Writes a timed backup (`<project>.bak`) of changed projects every five minutes (desktop).
+    /// Applies new preferences and saves them for later sessions.
+    fn set_prefs(&mut self, prefs: Prefs) {
+        if prefs.theme != self.theme {
+            self.theme = prefs.theme;
+            self.styled = false;
+        }
+        if self.persist_prefs && prefs != self.prefs {
+            prefs.save();
+        }
+        self.prefs = prefs;
+    }
+
+    /// Writes a timed backup (`<project>.bak`) of changed projects at the interval set in the
+    /// General settings (desktop).
     fn autosave(&mut self, ctx: &egui::Context) {
         let now = ctx.input(|i| i.time);
-        if now - self.last_backup < 300.0 {
+        let Some(interval) = self.prefs.backup_interval() else { return };
+        if now - self.last_backup < interval {
             return;
         }
         self.last_backup = now;
@@ -244,6 +270,20 @@ impl StormwavesApp {
     }
 
     fn open_window(&mut self, w: Window) {
+        if let Window::ProjectReport(mut st) = w {
+            if self.prefs.multiple_project_reports {
+                let doc = self.doc();
+                st.serial = doc.windows.iter().filter_map(|o| if let Window::ProjectReport(s) = o { Some(s.serial + 1) } else { None }).max().unwrap_or(0);
+                doc.windows.push(Window::ProjectReport(st));
+                return;
+            }
+            return self.open_window_replacing(Window::ProjectReport(st));
+        }
+        self.open_window_replacing(w);
+    }
+
+    /// Opens `w`, replacing an open window of the same kind (node reports keep their state).
+    fn open_window_replacing(&mut self, w: Window) {
         let doc = self.doc();
         // One window per node report/edit, and one of each settings window.
         let existing = doc.windows.iter().position(|o| o.same_kind(&w) && o.node() == w.node());
@@ -582,8 +622,7 @@ impl StormwavesApp {
                 ui.menu_button("Theme", |ui| {
                     for k in ThemeKind::ALL {
                         if ui.radio(self.theme == k, k.label()).clicked() {
-                            self.theme = k;
-                            self.styled = false;
+                            self.set_prefs(Prefs { theme: k, ..self.prefs.clone() });
                             ui.close();
                         }
                     }
@@ -628,6 +667,11 @@ impl StormwavesApp {
                 if ui.button("IDF Curve...").clicked() {
                     let st = dialogs::storm::IdfEditor::new(self.doc());
                     self.open_window(Window::Idf(st));
+                }
+                ui.separator();
+                if ui.button("General...").clicked() {
+                    let st = dialogs::misc::GeneralState { draft: self.prefs.clone() };
+                    self.open_window(Window::General(st));
                 }
             });
             ui.menu_button("Help", |ui| {
@@ -1139,6 +1183,7 @@ impl StormwavesApp {
                 WindowAction::Status(s) => self.status = s,
                 WindowAction::Help(topic) => self.open_window(Window::Help(help::HelpState::topic(topic))),
                 WindowAction::PrintPdf(o) => self.print_pdf(&o),
+                WindowAction::SetPrefs(p) => self.set_prefs(p),
             }
         }
     }
@@ -1241,7 +1286,8 @@ impl eframe::App for StormwavesApp {
 
 /// Drives the app from a short command (used by the offscreen snapshot tool and tests):
 /// `report:1P`, `edit:1S`, `tab:<n>`, `select:1R`, `settings`, `settings-tab:<n>`, `messages`,
-/// `project-report`, `storms`, `uhs`, `units`, `theme:<classic|modern|dark>`, `compare`, `new`.
+/// `project-report`, `storms`, `uhs`, `units`, `theme:<classic|modern|dark>`, `compare`, `new`,
+/// `table`, `inflows` (tabular hydrograph with inflow columns), `general`.
 pub fn script(app: &mut StormwavesApp, cmd: &str) {
     let (verb, arg) = cmd.split_once(':').unwrap_or((cmd, ""));
     let find = |app: &mut StormwavesApp, label: &str| app.doc().project.by_label(label).map(|n| n.id);
@@ -1296,6 +1342,10 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         }
         "messages" => app.open_window(Window::Messages),
         "project-report" => app.open_window(Window::ProjectReport(reports::ProjectReportState::default())),
+        "general" => {
+            let st = dialogs::misc::GeneralState { draft: app.prefs.clone() };
+            app.open_window(Window::General(st));
+        }
         "storms" => app.open_window(Window::Storms(reports::CurveState::storms())),
         "uhs" => app.open_window(Window::Storms(reports::CurveState::uhs())),
         "compare" => {
