@@ -12,6 +12,7 @@ pub mod hydrograph;
 pub mod outlets;
 pub mod rainfall;
 mod rainfall_data;
+pub mod routing;
 pub mod runoff;
 pub mod storage;
 pub mod tc;
