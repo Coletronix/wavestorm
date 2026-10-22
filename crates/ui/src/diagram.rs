@@ -1,0 +1,728 @@
+//! The routing diagram: nodes, routing arrows, the background underlay and drawing tools.
+
+use crate::doc::{Doc, View};
+use crate::icons;
+use crate::theme::Tokens;
+use egui::{Align2, Color32, FontId, Key, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
+use stormwaves_core::project::{NodeData, NodeId, NodeType, Project};
+
+/// The active diagram tool.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Tool {
+    #[default]
+    Select,
+    /// Pick two points on the background, then enter the real distance between them.
+    Calibrate { points: Vec<Pos2> },
+    /// Click the corners of a subcatchment outline; close to create the subcatchment.
+    Trace { points: Vec<Pos2> },
+    /// Measure a polyline length (e.g. a Tc flow path).
+    Measure { points: Vec<Pos2> },
+    /// Drag the background image.
+    MoveUnderlay,
+}
+
+impl Tool {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Tool::Select => "Select",
+            Tool::Calibrate { .. } => "Calibrate",
+            Tool::Trace { .. } => "Trace Subcatchment",
+            Tool::Measure { .. } => "Measure",
+            Tool::MoveUnderlay => "Move Background",
+        }
+    }
+}
+
+/// Transient interaction state (not saved).
+#[derive(Default)]
+pub struct Interaction {
+    pub drag: Option<Drag>,
+    pub rubber: Option<(Pos2, Pos2)>,
+    pub hover_world: Option<Pos2>,
+    pub hover_node: Option<NodeId>,
+}
+
+pub enum Drag {
+    /// Moving the selection; `before` restores for undo.
+    Nodes { before: Project, last: Pos2, cloned: bool },
+    /// Dragging the head of node `from`'s outflow `k`.
+    Reroute { from: NodeId, k: usize, at: Pos2 },
+    Pan,
+    Underlay { last: Pos2, before: Project },
+}
+
+/// Requests from the canvas to the app.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CanvasAction {
+    OpenReport(NodeId),
+    OpenEdit(NodeId),
+    Delete,
+    ContextNode(NodeId),
+    /// Finished calibration: two world points.
+    Calibrated(Pos2, Pos2),
+    /// Finished trace: outline in world coordinates.
+    Traced(Vec<Pos2>),
+    Measured(Vec<Pos2>),
+    Convert(NodeId, NodeType),
+    ClearOutflows(NodeId),
+}
+
+pub fn to_screen(view: &View, canvas: Rect, w: Pos2) -> Pos2 {
+    canvas.min + view.offset + w.to_vec2() * view.zoom
+}
+
+pub fn to_world(view: &View, canvas: Rect, s: Pos2) -> Pos2 {
+    ((s - canvas.min - view.offset) / view.zoom).to_pos2()
+}
+
+fn wp(p: [f64; 2]) -> Pos2 {
+    pos2(p[0] as f32, p[1] as f32)
+}
+
+/// Point where the segment from the symbol centre `c` towards `toward` leaves the symbol.
+fn boundary_point(t: NodeType, c: Pos2, d: f32, toward: Pos2) -> Pos2 {
+    let pts = icons::node_outline(t, c, d);
+    let dir = toward - c;
+    if dir.length_sq() < 1e-6 {
+        return c;
+    }
+    let mut best = c;
+    let mut best_t = f32::INFINITY;
+    for i in 0..pts.len() {
+        let a = pts[i];
+        let b = pts[(i + 1) % pts.len()];
+        let e = b - a;
+        let den = dir.x * e.y - dir.y * e.x;
+        if den.abs() < 1e-9 {
+            continue;
+        }
+        let w = a - c;
+        let t = (w.x * e.y - w.y * e.x) / den;
+        let u = (w.x * dir.y - w.y * dir.x) / den;
+        if t > 0.0 && (0.0..=1.0).contains(&u) && t < best_t {
+            best_t = t;
+            best = c + dir * t;
+        }
+    }
+    best
+}
+
+/// The node under a world position, topmost first.
+pub fn node_at(project: &Project, w: Pos2, d: f32) -> Option<NodeId> {
+    project.nodes.iter().rev().find(|n| (wp(n.pos) - w).length() <= d * 0.5).map(|n| n.id)
+}
+
+/// Polygon area by the shoelace formula (world units²).
+pub fn polygon_area(pts: &[Pos2]) -> f32 {
+    let mut a = 0.0;
+    for i in 0..pts.len() {
+        let (p, q) = (pts[i], pts[(i + 1) % pts.len()]);
+        a += p.x * q.y - q.x * p.y;
+    }
+    (a * 0.5).abs()
+}
+
+pub fn polygon_centroid(pts: &[Pos2]) -> Pos2 {
+    let (mut cx, mut cy, mut a) = (0.0f64, 0.0f64, 0.0f64);
+    for i in 0..pts.len() {
+        let (p, q) = (pts[i], pts[(i + 1) % pts.len()]);
+        let cross = (p.x * q.y - q.x * p.y) as f64;
+        a += cross;
+        cx += (p.x + q.x) as f64 * cross;
+        cy += (p.y + q.y) as f64 * cross;
+    }
+    if a.abs() < 1e-9 {
+        let n = pts.len().max(1) as f32;
+        return pos2(pts.iter().map(|p| p.x).sum::<f32>() / n, pts.iter().map(|p| p.y).sum::<f32>() / n);
+    }
+    pos2((cx / (3.0 * a)) as f32, (cy / (3.0 * a)) as f32)
+}
+
+pub fn polyline_length(pts: &[Pos2]) -> f32 {
+    pts.windows(2).map(|w| (w[1] - w[0]).length()).sum()
+}
+
+/// Draws and handles the diagram. `palette_drop` is a node type being dragged from the palette.
+pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, palette_drop: &mut Option<NodeType>) -> Vec<CanvasAction> {
+    let t = Tokens::get(ui.ctx());
+    let mut actions = Vec::new();
+    let (canvas, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+    let painter = ui.painter_at(canvas);
+    painter.rect_filled(canvas, 0.0, t.canvas);
+    let d = doc.project.diagram.symbol_size as f32;
+    if doc.fit_pending && canvas.width() > 50.0 {
+        fit_view(doc, canvas, None);
+        doc.fit_pending = false;
+    }
+    let view = doc.view;
+    let pointer = ui.input(|i| i.pointer.hover_pos());
+    it.hover_world = pointer.filter(|p| canvas.contains(*p)).map(|p| to_world(&view, canvas, p));
+
+    // Zoom with the wheel (about the pointer), pinch, or ctrl+wheel; shift+wheel pans.
+    if resp.hovered() {
+        let (scroll, zoom, shift) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta(), i.modifiers.shift));
+        let mut factor = zoom;
+        if (zoom - 1.0).abs() < 1e-4 && scroll.y != 0.0 && !shift {
+            factor = (scroll.y * 0.0025).exp();
+        }
+        if shift && scroll != Vec2::ZERO {
+            doc.view.offset += vec2(scroll.y + scroll.x, 0.0);
+        }
+        if (factor - 1.0).abs() > 1e-4 {
+            if let Some(p) = pointer {
+                zoom_about(doc, canvas, p, factor);
+            }
+        }
+    }
+
+    draw_grid(&painter, doc, canvas, &t);
+    draw_underlay(&painter, doc, canvas);
+    draw_outlines(&painter, doc, canvas, &t);
+    draw_arrows(&painter, doc, canvas, it, &t);
+    draw_nodes(&painter, doc, canvas, it, &t);
+
+    let view = doc.view;
+    let world_ptr = pointer.map(|p| to_world(&view, canvas, p));
+    it.hover_node = world_ptr.filter(|_| resp.hovered()).and_then(|w| node_at(&doc.project, w, d));
+
+    // Palette drop.
+    if palette_drop.is_some() && ui.input(|i| i.pointer.any_released()) {
+        if let (Some(kind), Some(p)) = (palette_drop.take(), pointer) {
+            if canvas.contains(p) {
+                let w = to_world(&doc.view, canvas, p);
+                let w = snap(doc, w);
+                let mut new_id = 0;
+                doc.edit("Node Create", |pr| new_id = pr.add_node(kind, [w.x as f64, w.y as f64]));
+                doc.selection = vec![new_id];
+            }
+        }
+    }
+
+    match tool {
+        Tool::Select => select_tool(ui, doc, canvas, &resp, it, &mut actions),
+        Tool::MoveUnderlay => move_underlay(ui, doc, canvas, &resp, it),
+        Tool::Calibrate { .. } | Tool::Measure { .. } => {
+            let calibrate = matches!(tool, Tool::Calibrate { .. });
+            let mut finished = None;
+            if let Tool::Calibrate { points } | Tool::Measure { points } = tool {
+                let need = if calibrate { 2 } else { usize::MAX };
+                if resp.clicked() {
+                    if let Some(w) = world_ptr {
+                        points.push(w);
+                    }
+                }
+                let finish = (calibrate && points.len() >= need) || (!calibrate && (resp.double_clicked() || ui.input(|i| i.key_pressed(Key::Enter))) && points.len() >= 2);
+                draw_polyline(&painter, doc, canvas, points, world_ptr, false, Color32::from_rgb(220, 30, 30));
+                if finish {
+                    finished = Some(if calibrate { CanvasAction::Calibrated(points[0], points[1]) } else { CanvasAction::Measured(points.clone()) });
+                }
+            }
+            if let Some(a) = finished {
+                actions.push(a);
+                *tool = Tool::Select;
+            }
+        }
+        Tool::Trace { points } => {
+            let mut close = false;
+            if let Some(w) = world_ptr {
+                let near_first = points.len() >= 3 && (to_screen(&doc.view, canvas, points[0]) - to_screen(&doc.view, canvas, w)).length() < 8.0;
+                if resp.double_clicked() && points.len() >= 3 {
+                    close = true;
+                } else if resp.clicked() {
+                    if near_first { close = true } else { points.push(w) }
+                }
+            }
+            if ui.input(|i| i.key_pressed(Key::Enter)) && points.len() >= 3 {
+                close = true;
+            }
+            if ui.input(|i| i.key_pressed(Key::Backspace)) {
+                points.pop();
+            }
+            draw_polyline(&painter, doc, canvas, points, if close { None } else { world_ptr }, true, t.subcat.1);
+            if close {
+                actions.push(CanvasAction::Traced(points.clone()));
+                *tool = Tool::Select;
+            }
+        }
+    }
+    if ui.input(|i| i.key_pressed(Key::Escape)) && *tool != Tool::Select {
+        *tool = Tool::Select;
+    }
+    actions
+}
+
+fn snap(doc: &Doc, w: Pos2) -> Pos2 {
+    let g = doc.project.diagram.grid as f32;
+    if doc.project.diagram.snap_to_grid && g > 0.0 { pos2((w.x / g).round() * g, (w.y / g).round() * g) } else { w }
+}
+
+pub fn zoom_about(doc: &mut Doc, canvas: Rect, screen: Pos2, factor: f32) {
+    let before = to_world(&doc.view, canvas, screen);
+    doc.view.zoom = (doc.view.zoom * factor).clamp(0.02, 40.0);
+    let after = to_screen(&doc.view, canvas, before);
+    doc.view.offset += screen - after;
+}
+
+/// Fits all nodes (or the given ids) and the underlay in view.
+pub fn fit_view(doc: &mut Doc, canvas: Rect, only: Option<&[NodeId]>) {
+    let d = doc.project.diagram.symbol_size as f32;
+    let mut bb = Rect::NOTHING;
+    for n in &doc.project.nodes {
+        if only.is_some_and(|o| !o.contains(&n.id)) {
+            continue;
+        }
+        let c = wp(n.pos);
+        bb = bb.union(Rect::from_center_size(c, vec2(d * 2.5, d * 1.8)).translate(vec2(0.0, d * 0.3)));
+        if let Some(o) = &n.outline {
+            for p in o {
+                bb.extend_with(wp(*p));
+            }
+        }
+    }
+    if only.is_none() {
+        if let (Some(u), Some(tex)) = (&doc.project.diagram.underlay, &doc.underlay_tex) {
+            if u.visible {
+                let s = tex.size_vec2() * u.scale as f32;
+                bb = bb.union(Rect::from_min_size(wp(u.origin), s));
+            }
+        }
+    }
+    if !bb.is_finite() || bb.width() <= 0.0 {
+        doc.view = View::default();
+        return;
+    }
+    let zoom = (canvas.width() / bb.width()).min(canvas.height() / bb.height()).clamp(0.05, 4.0) * 0.95;
+    doc.view.zoom = zoom;
+    doc.view.offset = canvas.size() / 2.0 - bb.center().to_vec2() * zoom;
+}
+
+fn draw_grid(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
+    if !doc.project.diagram.show_grid {
+        return;
+    }
+    let g = doc.project.diagram.grid as f32 * doc.view.zoom;
+    if g < 6.0 {
+        return;
+    }
+    let origin = canvas.min + doc.view.offset;
+    let mut x = origin.x - ((origin.x - canvas.min.x) / g).floor() * g;
+    while x < canvas.max.x {
+        let mut y = origin.y - ((origin.y - canvas.min.y) / g).floor() * g;
+        while y < canvas.max.y {
+            p.rect_filled(Rect::from_center_size(pos2(x, y), vec2(1.5, 1.5)), 0.0, t.shadow);
+            y += g;
+        }
+        x += g;
+    }
+}
+
+fn draw_underlay(p: &egui::Painter, doc: &Doc, canvas: Rect) {
+    let (Some(u), Some(tex)) = (&doc.project.diagram.underlay, &doc.underlay_tex) else { return };
+    if !u.visible {
+        return;
+    }
+    let size = tex.size_vec2() * u.scale as f32;
+    let min = to_screen(&doc.view, canvas, wp(u.origin));
+    let rect = Rect::from_min_size(min, size * doc.view.zoom);
+    let tint = Color32::from_white_alpha((u.opacity.clamp(0.05, 1.0) * 255.0) as u8);
+    p.image(tex.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
+}
+
+fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
+    for n in &doc.project.nodes {
+        let Some(o) = &n.outline else { continue };
+        if o.len() < 3 {
+            continue;
+        }
+        let pts: Vec<Pos2> = o.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
+        let sel = doc.is_selected(n.id);
+        let fill = Color32::from_rgba_unmultiplied(t.subcat.1.r(), t.subcat.1.g(), t.subcat.1.b(), if sel { 60 } else { 34 });
+        // Fill via triangle fan (outlines may be concave; fan from centroid is a fair approximation).
+        let c = to_screen(&doc.view, canvas, polygon_centroid(&o.iter().map(|q| wp(*q)).collect::<Vec<_>>()));
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(c, fill);
+        for q in &pts {
+            mesh.colored_vertex(*q, fill);
+        }
+        for i in 0..pts.len() as u32 {
+            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % pts.len() as u32);
+        }
+        p.add(Shape::mesh(mesh));
+        p.add(Shape::closed_line(pts, Stroke::new(if sel { 2.5 } else { 1.5 }, t.subcat.1)));
+    }
+}
+
+fn arrow_head(p: &egui::Painter, tip: Pos2, dir: Vec2, size: f32, stroke: Stroke) {
+    let dir = dir.normalized();
+    let side = vec2(-dir.y, dir.x);
+    let back = tip - dir * size;
+    p.add(Shape::convex_polygon(vec![tip, back + side * size * 0.45, back - side * size * 0.45], Color32::WHITE, stroke));
+}
+
+/// Screen geometry of node `n`'s outflow `k`: (start, end) with `end` at the arrowhead.
+fn arrow_geom(doc: &Doc, canvas: Rect, from: NodeId, k: usize) -> Option<(Pos2, Pos2)> {
+    let d = doc.project.diagram.symbol_size as f32;
+    let n = doc.project.node(from)?;
+    let target = doc.project.node(n.outflows.get(k).copied().flatten()?)?;
+    let (a, b) = (wp(n.pos), wp(target.pos));
+    let start = boundary_point(n.node_type(), a, d, b);
+    let end = boundary_point(target.node_type(), b, d, a);
+    let (s, e) = (to_screen(&doc.view, canvas, start), to_screen(&doc.view, canvas, end));
+    // Several outflows to the same node are drawn side by side.
+    let same: Vec<usize> = (0..3).filter(|j| n.outflows[*j] == Some(target.id)).collect();
+    if same.len() > 1 {
+        let pos = same.iter().position(|j| *j == k).unwrap_or(0) as f32 - (same.len() - 1) as f32 / 2.0;
+        let dir = (e - s).normalized();
+        let off = egui::vec2(-dir.y, dir.x) * pos * 7.0;
+        return Some((s + off, e + off));
+    }
+    Some((s, e))
+}
+
+fn route_stroke(k: usize, t: &Tokens, zoom: f32) -> (Stroke, bool) {
+    let w = (1.3 * zoom.sqrt()).clamp(1.0, 2.5);
+    match k {
+        0 => (Stroke::new(w, t.arrow), false),
+        1 => (Stroke::new(w, t.arrow_secondary), true),
+        _ => (Stroke::new(w, t.arrow_tertiary), true),
+    }
+}
+
+fn draw_arrows(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &Tokens) {
+    let head = (doc.project.diagram.symbol_size as f32 * 0.22 * doc.view.zoom).clamp(6.0, 18.0);
+    for n in &doc.project.nodes {
+        for k in 0..n.node_type().outflow_count() {
+            if let Some(Drag::Reroute { from, k: dk, at }) = &it.drag {
+                if *from == n.id && *dk == k {
+                    let a = to_screen(&doc.view, canvas, wp(n.pos));
+                    let (s, dashed) = route_stroke(k, t, doc.view.zoom);
+                    line(p, a, *at, s, dashed);
+                    arrow_head(p, *at, *at - a, head, s);
+                    continue;
+                }
+            }
+            if let Some((a, b)) = arrow_geom(doc, canvas, n.id, k) {
+                let (s, dashed) = route_stroke(k, t, doc.view.zoom);
+                line(p, a, b, s, dashed);
+                arrow_head(p, b, b - a, head, s);
+            }
+        }
+    }
+}
+
+fn line(p: &egui::Painter, a: Pos2, b: Pos2, s: Stroke, dashed: bool) {
+    if dashed {
+        p.extend(Shape::dashed_line(&[a, b], s, 7.0, 4.0));
+    } else {
+        p.line_segment([a, b], s);
+    }
+}
+
+/// Where the outflow handle of an unconnected outflow `k` sits (screen).
+fn handle_pos(doc: &Doc, canvas: Rect, from: NodeId, k: usize) -> Option<Pos2> {
+    let d = doc.project.diagram.symbol_size as f32 * doc.view.zoom;
+    let n = doc.project.node(from)?;
+    if let Some((_, b)) = arrow_geom(doc, canvas, from, k) {
+        return Some(b);
+    }
+    let c = to_screen(&doc.view, canvas, wp(n.pos));
+    let off = [vec2(0.75, -0.15), vec2(0.6, 0.55), vec2(0.0, 0.85)];
+    Some(c + off.get(k).copied().unwrap_or(Vec2::ZERO) * d)
+}
+
+fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &Tokens) {
+    let d = doc.project.diagram.symbol_size as f32 * doc.view.zoom;
+    let font = (d * 0.27).clamp(6.0, 22.0);
+    for n in &doc.project.nodes {
+        let c = to_screen(&doc.view, canvas, wp(n.pos));
+        if !canvas.expand(d * 3.0).contains(c) {
+            continue;
+        }
+        let sel = doc.is_selected(n.id);
+        match &n.data {
+            NodeData::Text(tx) => {
+                let size = tx.size * doc.view.zoom;
+                let galley = p.layout(tx.text.clone(), FontId::proportional(size.max(4.0)), t.label_text, f32::INFINITY);
+                let r = Rect::from_center_size(c, galley.size() + vec2(8.0, 6.0));
+                if tx.border || sel {
+                    p.rect_stroke(r, 0.0, Stroke::new(if sel { 2.0 } else { 1.0 }, if sel { t.select } else { t.shadow }), egui::StrokeKind::Inside);
+                }
+                p.galley(r.min + vec2(4.0, 3.0), galley, t.label_text);
+            }
+            data => {
+                let external = matches!(data, NodeData::Link(l) if !matches!(l.source, stormwaves_core::link::LinkSource::Inflows));
+                icons::draw_node(p, n.node_type(), c, d, &n.label(), sel, external, t);
+                if !n.name.is_empty() {
+                    let galley = p.layout(n.name.clone(), FontId::proportional(font * 0.85), t.label_text, d * 3.2);
+                    let top = c.y + d * 0.5 + 3.0;
+                    p.galley(pos2(c.x - galley.size().x / 2.0, top), galley, t.label_text);
+                }
+            }
+        }
+        // Outflow handles for unconnected outflows of selected or hovered nodes.
+        if sel || it.hover_node == Some(n.id) {
+            for k in 0..n.node_type().outflow_count() {
+                if n.outflows[k].is_none() {
+                    if let Some(h) = handle_pos(doc, canvas, n.id, k) {
+                        let (s, dashed) = route_stroke(k, t, doc.view.zoom);
+                        let from = boundary_point(n.node_type(), c, d, h);
+                        line(p, from, h, s, dashed);
+                        arrow_head(p, h, h - c, (d * 0.2).clamp(6.0, 14.0), s);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn draw_polyline(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor: Option<Pos2>, closed_preview: bool, color: Color32) {
+    let mut s: Vec<Pos2> = pts.iter().map(|q| to_screen(&doc.view, canvas, *q)).collect();
+    if let Some(c) = cursor {
+        s.push(to_screen(&doc.view, canvas, c));
+    }
+    if closed_preview && s.len() >= 3 {
+        let fill = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 40);
+        let c = polygon_centroid(&s);
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(c, fill);
+        for q in &s {
+            mesh.colored_vertex(*q, fill);
+        }
+        for i in 0..s.len() as u32 {
+            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % s.len() as u32);
+        }
+        p.add(Shape::mesh(mesh));
+        p.add(Shape::closed_line(s.clone(), Stroke::new(2.0, color)));
+    } else if s.len() >= 2 {
+        p.add(Shape::line(s.clone(), Stroke::new(2.0, color)));
+    }
+    for q in s.iter().take(pts.len()) {
+        p.rect_filled(Rect::from_center_size(*q, vec2(6.0, 6.0)), 0.0, color);
+    }
+}
+
+fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &mut Interaction, actions: &mut Vec<CanvasAction>) {
+    let d = doc.project.diagram.symbol_size as f32;
+    let (pointer, mods) = ui.input(|i| (i.pointer.interact_pos(), i.modifiers));
+    let world = pointer.map(|p| to_world(&doc.view, canvas, p));
+
+    // Drag start.
+    if resp.drag_started_by(egui::PointerButton::Middle) || (resp.drag_started_by(egui::PointerButton::Primary) && ui.input(|i| i.key_down(Key::Space))) {
+        it.drag = Some(Drag::Pan);
+    } else if resp.drag_started_by(egui::PointerButton::Primary) {
+        if let (Some(p), Some(_w)) = (resp.interact_pointer_pos(), world) {
+            // Arrow handles first (only when not over a symbol's body).
+            let mut handle = None;
+            for n in &doc.project.nodes {
+                if !(doc.is_selected(n.id) || n.outflows.iter().any(|o| o.is_some())) {
+                    continue;
+                }
+                for k in 0..n.node_type().outflow_count() {
+                    if n.outflows[k].is_none() && !doc.is_selected(n.id) {
+                        continue;
+                    }
+                    if let Some(h) = handle_pos(doc, canvas, n.id, k) {
+                        if (h - p).length() < 9.0 {
+                            handle = Some((n.id, k));
+                        }
+                    }
+                }
+            }
+            let start = resp.interact_pointer_pos().map(|q| q - resp.drag_delta()).unwrap_or(p);
+            let start_world = to_world(&doc.view, canvas, start);
+            if let Some((from, k)) = handle {
+                it.drag = Some(Drag::Reroute { from, k, at: p });
+            } else if let Some(id) = node_at(&doc.project, start_world, d) {
+                if !doc.is_selected(id) {
+                    if mods.ctrl || mods.command || mods.shift {
+                        doc.selection.push(id);
+                    } else {
+                        doc.selection = vec![id];
+                    }
+                }
+                let before = doc.project.clone();
+                let mut cloned = false;
+                if mods.ctrl || mods.command {
+                    // Ctrl-drag clones the selection.
+                    let ids = doc.selection.clone();
+                    let mut new_ids = Vec::new();
+                    for id in ids {
+                        if let Some(n) = doc.project.node(id).cloned() {
+                            let nid = doc.project.add_node(n.node_type(), n.pos);
+                            if let Some(m) = doc.project.node_mut(nid) {
+                                m.data = n.data.clone();
+                                m.name = n.name.clone();
+                                m.notes = n.notes.clone();
+                            }
+                            new_ids.push(nid);
+                        }
+                    }
+                    doc.selection = new_ids;
+                    cloned = true;
+                }
+                it.drag = Some(Drag::Nodes { before, last: start_world, cloned });
+            } else {
+                if !(mods.ctrl || mods.shift) {
+                    doc.selection.clear();
+                }
+                it.rubber = Some((start, p));
+            }
+        }
+    }
+
+    // Drag progress.
+    if let (Some(drag), Some(p)) = (&mut it.drag, pointer) {
+        match drag {
+            Drag::Pan => doc.view.offset += resp.drag_delta(),
+            Drag::Nodes { last, .. } => {
+                let w = to_world(&doc.view, canvas, p);
+                let delta = w - *last;
+                *last = w;
+                let sel = doc.selection.clone();
+                for id in sel {
+                    if let Some(n) = doc.project.node_mut(id) {
+                        n.pos[0] += delta.x as f64;
+                        n.pos[1] += delta.y as f64;
+                        if let Some(o) = &mut n.outline {
+                            for q in o.iter_mut() {
+                                q[0] += delta.x as f64;
+                                q[1] += delta.y as f64;
+                            }
+                        }
+                    }
+                }
+            }
+            Drag::Reroute { at, .. } => *at = p,
+            Drag::Underlay { .. } => {}
+        }
+    }
+    if let (Some((_, b)), Some(p)) = (&mut it.rubber, pointer) {
+        *b = p;
+        let (a, b2) = (it.rubber.map(|r| r.0).unwrap_or(p), p);
+        let r = Rect::from_two_pos(a, b2);
+        ui.painter().rect(r, 0.0, Color32::from_rgba_unmultiplied(10, 36, 106, 20), Stroke::new(1.0, Color32::from_rgb(10, 36, 106)), egui::StrokeKind::Inside);
+    }
+
+    // Drag end.
+    if resp.drag_stopped() || (it.drag.is_some() && !ui.input(|i| i.pointer.any_down())) {
+        match it.drag.take() {
+            Some(Drag::Nodes { before, cloned, .. }) => {
+                if doc.project.diagram.snap_to_grid {
+                    let sel = doc.selection.clone();
+                    for id in sel {
+                        if let Some(n) = doc.project.node(id).map(|n| wp(n.pos)) {
+                            let s = snap(doc, n);
+                            if let Some(m) = doc.project.node_mut(id) {
+                                m.pos = [s.x as f64, s.y as f64];
+                            }
+                        }
+                    }
+                }
+                doc.commit_from(if cloned { "Node Clone" } else { "Node Move" }, before);
+            }
+            Some(Drag::Reroute { from, k, at }) => {
+                let w = to_world(&doc.view, canvas, at);
+                let target = node_at(&doc.project, w, d).filter(|t| *t != from);
+                let ok = target.and_then(|t| doc.project.node(t)).is_some_and(|n| n.node_type().accepts_inflow());
+                doc.edit("Node Reroute", |pr| {
+                    if let Some(n) = pr.node_mut(from) {
+                        if let Some(slot) = n.outflows.get_mut(k) {
+                            *slot = if ok { target } else { None };
+                        }
+                    }
+                });
+            }
+            _ => {}
+        }
+        if let Some((a, b)) = it.rubber.take() {
+            let r = Rect::from_two_pos(a, b);
+            for n in &doc.project.nodes {
+                if r.contains(to_screen(&doc.view, canvas, wp(n.pos))) && !doc.selection.contains(&n.id) {
+                    doc.selection.push(n.id);
+                }
+            }
+        }
+    }
+
+    // Clicks.
+    if resp.clicked() {
+        if let Some(w) = world {
+            match node_at(&doc.project, w, d) {
+                Some(id) if mods.ctrl || mods.shift => {
+                    if let Some(i) = doc.selection.iter().position(|s| *s == id) {
+                        doc.selection.remove(i);
+                    } else {
+                        doc.selection.push(id);
+                    }
+                }
+                Some(id) => doc.selection = vec![id],
+                None => doc.selection.clear(),
+            }
+        }
+    }
+    if resp.double_clicked() {
+        if let Some(id) = world.and_then(|w| node_at(&doc.project, w, d)) {
+            actions.push(CanvasAction::OpenReport(id));
+        }
+    }
+    if resp.secondary_clicked() {
+        if let Some(id) = world.and_then(|w| node_at(&doc.project, w, d)) {
+            if !doc.is_selected(id) {
+                doc.selection = vec![id];
+            }
+            actions.push(CanvasAction::ContextNode(id));
+        }
+    }
+    if resp.hovered() && ui.input(|i| i.key_pressed(Key::Delete)) && !doc.selection.is_empty() && !ui.ctx().egui_wants_keyboard_input() {
+        actions.push(CanvasAction::Delete);
+    }
+    if let Some(id) = it.hover_node {
+        if let Some(n) = doc.project.node(id) {
+            resp.clone().on_hover_text_at_pointer(n.title());
+        }
+    }
+}
+
+fn move_underlay(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &mut Interaction) {
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    if resp.drag_started_by(egui::PointerButton::Primary) {
+        if let Some(p) = pointer {
+            it.drag = Some(Drag::Underlay { last: to_world(&doc.view, canvas, p), before: doc.project.clone() });
+        }
+    }
+    if let (Some(Drag::Underlay { last, .. }), Some(p)) = (&mut it.drag, pointer) {
+        let w = to_world(&doc.view, canvas, p);
+        let delta = w - *last;
+        *last = w;
+        if let Some(u) = &mut doc.project.diagram.underlay {
+            u.origin[0] += delta.x as f64;
+            u.origin[1] += delta.y as f64;
+        }
+    }
+    if resp.drag_stopped() {
+        if let Some(Drag::Underlay { before, .. }) = it.drag.take() {
+            doc.commit_from("Move Background", before);
+        }
+    }
+    let _ = vec2(0.0, 0.0);
+    let _ = Align2::CENTER_CENTER;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn geometry_helpers() {
+        let sq = [pos2(0.0, 0.0), pos2(10.0, 0.0), pos2(10.0, 10.0), pos2(0.0, 10.0)];
+        assert!((polygon_area(&sq) - 100.0).abs() < 1e-4);
+        assert!((polygon_centroid(&sq) - pos2(5.0, 5.0)).length() < 1e-4);
+        assert!((polyline_length(&sq) - 30.0).abs() < 1e-4);
+        let b = boundary_point(NodeType::Reach, pos2(0.0, 0.0), 100.0, pos2(100.0, 0.0));
+        assert!((b.x - 36.0).abs() < 1e-3);
+        let view = View { offset: vec2(5.0, 7.0), zoom: 2.0 };
+        let canvas = Rect::from_min_size(pos2(10.0, 20.0), vec2(500.0, 400.0));
+        let w = pos2(3.0, 4.0);
+        assert!((to_world(&view, canvas, to_screen(&view, canvas, w)) - w).length() < 1e-5);
+    }
+}
