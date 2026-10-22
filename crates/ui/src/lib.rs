@@ -1137,7 +1137,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             if let Some(w) = app.doc().windows.last_mut() {
                 match w {
                     Window::Report(r) => {
-                        r.tab = [reports::Tab::Summary, reports::Tab::Hydrograph, reports::Tab::Discharge, reports::Tab::Storage, reports::Tab::Events][n.min(4)];
+                        r.tab = [reports::Tab::Summary, reports::Tab::Hydrograph, reports::Tab::Discharge, reports::Tab::Storage, reports::Tab::Events, reports::Tab::Sizing][n.min(5)];
                     }
                     Window::Edit(e) => e.tab = n,
                     Window::Settings(s) => s.tab = n,

@@ -19,6 +19,7 @@ pub enum Tab {
     Discharge,
     Storage,
     Events,
+    Sizing,
 }
 
 impl Tab {
@@ -29,6 +30,7 @@ impl Tab {
             Tab::Discharge => "Discharge",
             Tab::Storage => "Storage",
             Tab::Events => "Events",
+            Tab::Sizing => "Sizing",
         }
     }
 }
@@ -51,7 +53,7 @@ impl ReportState {
 
 fn tabs_for(t: NodeType) -> Vec<Tab> {
     match t {
-        NodeType::Pond => vec![Tab::Summary, Tab::Hydrograph, Tab::Discharge, Tab::Storage, Tab::Events],
+        NodeType::Pond => vec![Tab::Summary, Tab::Hydrograph, Tab::Discharge, Tab::Storage, Tab::Events, Tab::Sizing],
         NodeType::Reach => vec![Tab::Summary, Tab::Hydrograph, Tab::Discharge, Tab::Events],
         _ => vec![Tab::Summary, Tab::Hydrograph, Tab::Events],
     }
@@ -257,7 +259,7 @@ pub fn show_node_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ReportState
             });
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
-                let charty = matches!(st.tab, Tab::Hydrograph | Tab::Discharge | Tab::Storage);
+                let charty = matches!(st.tab, Tab::Hydrograph | Tab::Discharge | Tab::Storage | Tab::Sizing);
                 if widgets::button_enabled(ui, if st.table { "Graph" } else { "Table" }, 62.0, charty).clicked() {
                     st.table = !st.table;
                 }
@@ -310,6 +312,7 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
             let all = doc.all_results.as_deref().unwrap_or(&[]);
             events_tab(ui, project, node, all, size);
         }
+        Tab::Sizing => sizing_tab(ui, project, node, r, st, size),
     }
 }
 
@@ -394,6 +397,30 @@ fn rating_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
         };
         let y_label = format!("Elevation ({})", if u.metric() { "meters" } else { "feet" });
         let spec = ChartSpec { title, subtitle: &node.title(), x_label: &x_label, y_label: &y_label, series: &series, summary: &[], three_d: false, marks: &marks };
+        chart::chart(ui, &spec, &mut st.view, size);
+    }
+}
+
+fn sizing_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &mut ReportState, size: egui::Vec2) {
+    let u = &project.units;
+    let curve = stormwaves_core::routing::pond_sizing(&r.inflow);
+    if curve.is_empty() {
+        ui.label("No inflow: the sizing estimate needs an inflow hydrograph.");
+        return;
+    }
+    let q: Vec<f64> = curve.iter().map(|c| u.flow(c.0)).collect();
+    let v: Vec<f64> = curve.iter().map(|c| u.volume(c.1)).collect();
+    if st.table {
+        let heads = vec![format!("Discharge ({})", u.flow_label()), format!("Storage ({})", u.volume_label())];
+        let step = (curve.len() / 40).max(1);
+        let cols = vec![q.iter().step_by(step).copied().collect(), v.iter().step_by(step).copied().collect()];
+        data_table(ui, &heads, &cols, size.y, false);
+    } else {
+        let series = vec![Series { name: "Storage".into(), color: COLORS[2], x: v, y: q, peak_label: None }];
+        let summary = vec![format!("Peak Inflow={}", u.fmt_flow(r.inflow.peak().value)), format!("Inflow Volume={}", u.fmt_volume(r.inflow.volume_cf()))];
+        let xl = format!("Storage ({})", u.volume_label());
+        let yl = format!("Discharge ({})", u.flow_label());
+        let spec = ChartSpec { title: "Pond Sizing Estimate", subtitle: &node.title(), x_label: &xl, y_label: &yl, series: &series, summary: &summary, three_d: false, marks: &[] };
         chart::chart(ui, &spec, &mut st.view, size);
     }
 }

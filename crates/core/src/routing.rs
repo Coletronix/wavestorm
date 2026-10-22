@@ -292,6 +292,34 @@ pub fn detention_time(inflow: &Hydrograph, outflow: &Hydrograph, initial_storage
     DetentionTime { center_of_mass, com_in: com_in.map(|t| t * 60.0), com_out: com_out.map(|t| t * 60.0), plug_flow, plug_volume }
 }
 
+/// Pond sizing estimate: (peak outflow, storage needed) pairs from routing `inflow` through
+/// hypothetical ponds whose discharge is proportional to storage (S = K·O) for a wide range of K.
+pub fn pond_sizing(inflow: &Hydrograph) -> Vec<(f64, f64)> {
+    let dt = inflow.dt * SEC_PER_HR;
+    let peak_in = inflow.peak().value;
+    if !(dt > 0.0) || !(peak_in > 0.0) {
+        return Vec::new();
+    }
+    let mut out = vec![(peak_in, 0.0)];
+    // K from a fraction of the step to many days, log-spaced.
+    for i in 0..=120 {
+        let k = dt * 0.05 * 10f64.powf(i as f64 / 20.0);
+        let (mut s, mut o, mut smax, mut omax) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+        for w in inflow.q.windows(2) {
+            // Exact step for a linear reservoir with trapezoidal inflow.
+            let s2 = (s + 0.5 * (w[0] + w[1]) * dt - 0.5 * o * dt) / (1.0 + 0.5 * dt / k);
+            s = s2.max(0.0);
+            o = s / k;
+            smax = smax.max(s);
+            omax = omax.max(o);
+        }
+        out.push((omax, smax));
+    }
+    out.sort_by(|a, b| b.0.total_cmp(&a.0));
+    out.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-9);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,5 +406,21 @@ mod tests {
         assert!(out.peak().value < inflow.peak().value);
         assert!(out.peak().time > inflow.peak().time);
         assert!((out.volume_cf() - inflow.volume_cf()).abs() / inflow.volume_cf() < 0.01);
+    }
+
+    #[test]
+    fn sizing_curve_is_monotone() {
+        let mut inflow = Hydrograph::zeros(0.0, 0.1, 300);
+        for i in 0..60 {
+            inflow.q[20 + i] = 30.0 * (std::f64::consts::PI * i as f64 / 60.0).sin();
+        }
+        let curve = pond_sizing(&inflow);
+        assert!(curve.len() > 50);
+        // Lower allowed outflow needs more storage, and never more than the inflow volume.
+        for w in curve.windows(2) {
+            assert!(w[1].0 <= w[0].0 && w[1].1 + 1e-6 >= w[0].1);
+        }
+        assert!(curve.last().unwrap().1 <= inflow.volume_cf() * 1.001);
+        assert!(pond_sizing(&Hydrograph::zeros(0.0, 0.1, 10)).is_empty());
     }
 }

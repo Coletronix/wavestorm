@@ -102,7 +102,8 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     }
     let (x0, x1) = view.x.unwrap_or(xr);
     let ystep_auto = nice_step(yr.1 - yr.0, 8);
-    let (y0, y1) = view.y.unwrap_or(((yr.0 / ystep_auto).floor() * ystep_auto, (yr.1 * 1.08 / ystep_auto).ceil() * ystep_auto));
+    let pad = (yr.1 - yr.0) * 0.06;
+    let (y0, y1) = view.y.unwrap_or(((yr.0 / ystep_auto).floor() * ystep_auto, ((yr.1 + pad) / ystep_auto).ceil() * ystep_auto));
 
     let summary_w = if spec.summary.is_empty() { 0.0 } else { (rect.width() * 0.34).min(260.0) };
     let legend_w: f32 = if spec.series.len() > 1 || !spec.summary.is_empty() { 96.0 } else { 0.0 };
@@ -153,11 +154,17 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     p.add(egui::epaint::TextShape::new(gpos, galley, t.text).with_angle(-std::f32::consts::FRAC_PI_2));
 
     // Horizontal marks (flood elevation etc.).
+    let mut stacked: Vec<(f32, f32)> = Vec::new();
     for (v, label) in spec.marks {
         if *v >= y0 && *v <= y1 {
             let py = sy(*v);
-            p.line_segment([pos2(plot.min.x, py), pos2(plot.max.x, py)], Stroke::new(1.5, Color32::from_rgb(200, 60, 60)));
-            p.text(pos2(plot.min.x + 4.0, py - 2.0), Align2::LEFT_BOTTOM, label, font.clone(), Color32::from_rgb(160, 30, 30));
+            p.line_segment([pos2(plot.min.x, py), pos2(plot.max.x, py)], Stroke::new(1.0, Color32::from_rgba_unmultiplied(200, 60, 60, 160)));
+            // Labels at the same height are spread to the right.
+            let x = stacked.iter().filter(|(y, _)| (*y - py).abs() < 12.0).map(|(_, x)| *x).fold(plot.min.x + 4.0, f32::max);
+            let g = p.layout_no_wrap(label.clone(), font.clone(), Color32::from_rgb(160, 30, 30));
+            let w = g.size().x;
+            p.galley(pos2(x, py - 2.0 - g.size().y), g, Color32::from_rgb(160, 30, 30));
+            stacked.push((py, x + w + 12.0));
         }
     }
 

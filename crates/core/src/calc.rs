@@ -238,6 +238,54 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
     r.messages.push(Message::new(19, Severity::Note, None, event.heading()));
     r.messages.push(Message::new(22, Severity::Note, None, format!("Reach routing by {} method - Pond routing by {} method", s.reach_method.label(), s.pond_method.label())));
 
+    let base_messages = r.messages.clone();
+    if s.pond_method == PondMethod::DynStorInd {
+        // Dynamic storage-indication: repeat the network pass, taking each pond's tailwater from
+        // the downstream node's previous-step elevation in the last pass, until it settles.
+        let mut prev: Option<Results> = None;
+        for pass in 0..12 {
+            let mut cur = Results { messages: base_messages.clone(), ..r.clone() };
+            run_nodes(project, event, &order, rain.as_ref(), n, prev.as_ref(), &mut cur);
+            let change = prev.as_ref().map(|p| max_elevation_change(p, &cur)).unwrap_or(f64::INFINITY);
+            prev = Some(cur);
+            if change < 1e-4 {
+                break;
+            }
+            if pass == 11 {
+                if let Some(p) = &mut prev {
+                    p.messages.push(Message::new(85, Severity::Warning, None, "Dynamic tailwater did not converge; Oscillations may require smaller dt"));
+                }
+            }
+        }
+        if let Some(p) = prev {
+            r = p;
+        }
+    } else {
+        run_nodes(project, event, &order, rain.as_ref(), n, None, &mut r);
+    }
+    r.order = order;
+    r.messages.push(Message::new(31, Severity::Note, None, "Calculations complete"));
+    r
+}
+
+/// Largest change in any pond elevation between two passes.
+fn max_elevation_change(a: &Results, b: &Results) -> f64 {
+    let mut worst: f64 = 0.0;
+    for (id, rb) in &b.nodes {
+        if let (Some(Detail::Pond(pa)), Detail::Pond(pb)) = (a.node(*id).map(|r| &r.detail), &rb.detail) {
+            for (x, y) in pa.elevation.iter().zip(&pb.elevation) {
+                worst = worst.max((x - y).abs());
+            }
+        }
+    }
+    worst
+}
+
+/// Runs every node once in flow order. `prev` supplies downstream elevations for dynamic
+/// tailwater (the previous pass); otherwise results computed so far are used.
+#[allow(clippy::too_many_arguments)]
+fn run_nodes(project: &Project, event: &RainEvent, order: &[NodeId], rain: Option<&Rainfall>, n: usize, prev: Option<&Results>, r: &mut Results) {
+    let s = &project.settings;
     for id in order.iter().copied() {
         let Some(node) = project.node(id) else { continue };
         // Gather inflows from upstream nodes.
@@ -258,7 +306,7 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
                 if has_upstream {
                     r.messages.push(Message::new(67, Severity::Warning, Some(id), format!("{} Inflow not allowed - Ignored", node.label())));
                 }
-                subcat(project, node, sc, event, rain.as_ref(), n, &mut r.messages)
+                subcat(project, node, sc, event, rain, n, &mut r.messages)
             }
             NodeData::Reach(reach) => {
                 let mut res = route_reach(project, node, reach, &inflow, &mut r.messages);
@@ -268,7 +316,7 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
             }
             NodeData::Pond(pond) => {
                 let mut msgs = Vec::new();
-                let mut res = route_pond(project, node, pond, &inflow, &r, &mut msgs);
+                let mut res = route_pond(project, node, pond, &inflow, prev.unwrap_or(r), &mut msgs);
                 r.messages.extend(msgs);
                 res.inflow_area = area;
                 res.impervious_area = imp;
@@ -304,9 +352,6 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
         };
         r.nodes.insert(id, result);
     }
-    r.order = order;
-    r.messages.push(Message::new(31, Severity::Note, None, "Calculations complete"));
-    r
 }
 
 pub fn runoff_note(project: &Project) -> String {
@@ -836,5 +881,51 @@ mod tests {
         assert!(!r.has_errors(), "{:?}", r.messages);
         p.settings.dt = 0.0;
         assert!(calculate(&p).has_errors());
+    }
+
+    #[test]
+    fn dynamic_tailwater_couples_ponds() {
+        use crate::geometry::PipeShape;
+        let (mut p, _s, upper) = project_with_pond();
+        // Upper pond drains by a culvert into a small lower pond with a restrictive orifice.
+        let lower = p.add_node(NodeType::Pond, [200.0, 0.0]);
+        if let Some(n) = p.node_mut(upper) {
+            n.outflows[0] = Some(lower);
+            if let NodeData::Pond(pd) = &mut n.data {
+                pd.devices = vec![OutletDevice::new(
+                    "Culvert",
+                    50.0,
+                    Routing::Primary,
+                    DeviceKind::Culvert { shape: PipeShape::Round, width: 1.5, height: 1.5, length: 40.0, outlet_invert: 49.8, n: 0.013, ke: 0.5, cc: 0.9, fill: 0.0, entrance: String::new() },
+                )];
+            }
+        }
+        if let Some(n) = p.node_mut(lower) {
+            n.data = NodeData::Pond(Pond {
+                storage: crate::storage::PondStorage {
+                    volumes: vec![StorageVolume::new("Lower", 49.5, VolumeShape::Prismatoid { width: 60.0, length: 60.0, height: 8.0, z: 0.0 })],
+                },
+                devices: vec![OutletDevice::new(
+                    "Orifice",
+                    49.5,
+                    Routing::Primary,
+                    DeviceKind::Orifice { shape: OpeningShape::Circular { diameter: 0.75 }, plane: Plane::Vertical, cd: 0.6, columns: 1, rows: 1, row_spacing: 0.0, weir_at_low_head: true, grate: None },
+                )],
+                ..Default::default()
+            });
+        }
+        let peak = |p: &Project, id: NodeId| -> (f64, f64, f64) {
+            let r = calculate(p);
+            assert!(!r.has_errors(), "{:?}", r.messages);
+            let res = r.node(id).unwrap();
+            let Detail::Pond(d) = &res.detail else { panic!() };
+            let stored = d.storage.last().unwrap() - d.storage.first().unwrap();
+            (d.peak_elevation, res.inflow.volume_cf(), res.outflow.volume_cf() + stored)
+        };
+        let (si, in1, out1) = peak(&p, upper);
+        p.settings.pond_method = PondMethod::DynStorInd;
+        let (dsi, in2, out2) = peak(&p, upper);
+        assert!(dsi > si + 0.05, "tailwater should raise the upper pond: SI {si:.3} DSI {dsi:.3}");
+        assert!((in1 - out1).abs() / in1 < 0.01 && (in2 - out2).abs() / in2 < 0.01, "mass balance");
     }
 }
