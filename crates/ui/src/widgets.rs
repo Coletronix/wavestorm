@@ -74,7 +74,38 @@ pub fn tool_button(ui: &mut Ui, tip: &str, selected: bool, draw: impl FnOnce(&eg
         }
         draw(p, rect.shrink(4.0), &t);
     }
+    if resp.hovered() {
+        set_status_hint(ui.ctx(), tip);
+    }
     resp.on_hover_text(tip)
+}
+
+fn status_hint_id() -> egui::Id {
+    egui::Id::new("status-hint")
+}
+
+/// Describes the control under the pointer in the status bar (for this frame). Panels drawn
+/// after the status bar show their hint one frame later, so a changed hint asks for a repaint.
+pub fn set_status_hint(ctx: &egui::Context, text: &str) {
+    let last_id = egui::Id::new("status-hint-last");
+    let changed = ctx.data_mut(|d| {
+        d.insert_temp(status_hint_id(), text.to_string());
+        let changed = d.get_temp::<String>(last_id).as_deref() != Some(text);
+        d.insert_temp(last_id, text.to_string());
+        changed
+    });
+    if changed {
+        ctx.request_repaint();
+    }
+}
+
+/// The hint set this frame, if any; clears it.
+pub fn take_status_hint(ctx: &egui::Context) -> Option<String> {
+    ctx.data_mut(|d| {
+        let hint = d.get_temp::<String>(status_hint_id());
+        d.remove::<String>(status_hint_id());
+        hint
+    })
 }
 
 /// The caption row above a field: "Inlet Invert:" left and "(feet)" right.
@@ -599,4 +630,18 @@ pub fn lerp_color(a: Color32, b: Color32, f: f32) -> Color32 {
 /// A point helper.
 pub fn p2(x: f32, y: f32) -> Pos2 {
     pos2(x, y)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_hint_is_taken_once() {
+        let ctx = egui::Context::default();
+        assert_eq!(take_status_hint(&ctx), None);
+        set_status_hint(&ctx, "Zoom in");
+        assert_eq!(take_status_hint(&ctx).as_deref(), Some("Zoom in"));
+        assert_eq!(take_status_hint(&ctx), None, "cleared until something is hovered again");
+    }
 }

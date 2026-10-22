@@ -1016,8 +1016,11 @@ impl StormwavesApp {
                 if resp.clicked() {
                     self.create_node(nt);
                 }
-                let resp = resp.on_hover_text(format!("Drag onto the diagram to create a {}", nt.label().to_lowercase()));
-                let _ = resp;
+                let hint = format!("Drag onto the diagram to create a {}", nt.label().to_lowercase());
+                if resp.hovered() {
+                    widgets::set_status_hint(ui.ctx(), &hint);
+                }
+                resp.on_hover_text(hint);
             }
         });
         if let (Some(nt), Some(pos)) = (self.palette_drag, ui.ctx().pointer_hover_pos()) {
@@ -1049,7 +1052,9 @@ impl StormwavesApp {
                 ui.painter().with_clip_rect(r.shrink(2.0)).text(r.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, text, FontId::proportional(12.0), t.text);
             };
             let w = ui.available_width() - 2.0 * 96.0 - 150.0 - 120.0 - 16.0;
-            cell(ui, &self.status, w.max(100.0));
+            // A hovered toolbar or palette button describes itself here.
+            let hint = widgets::take_status_hint(ui.ctx());
+            cell(ui, hint.as_deref().unwrap_or(&self.status), w.max(100.0));
             cell(ui, tool, 120.0);
             cell(ui, &format!("{count} nodes, {errors} warnings"), 150.0);
             cell(ui, &x, 96.0);
