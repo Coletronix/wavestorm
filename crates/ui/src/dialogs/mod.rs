@@ -5,6 +5,7 @@ pub mod misc;
 pub mod node;
 pub mod outlet;
 pub mod settings;
+pub mod storm;
 
 use crate::widgets;
 use egui::Ui;

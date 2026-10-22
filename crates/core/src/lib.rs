@@ -11,6 +11,7 @@ pub mod calc;
 pub mod cn;
 pub mod geometry;
 pub mod hydrograph;
+pub mod landuse;
 pub mod link;
 pub mod outlets;
 pub mod pdf;

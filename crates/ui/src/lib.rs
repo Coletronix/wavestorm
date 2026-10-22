@@ -540,6 +540,14 @@ impl StormwavesApp {
                     let st = dialogs::misc::DiagramState::new(&self.doc().project);
                     self.open_window(Window::Diagram(st));
                 }
+                if ui.button("Land-Use...").clicked() {
+                    let st = dialogs::misc::LandUseState::new(&self.doc().project);
+                    self.open_window(Window::LandUse(st));
+                }
+                if ui.button("IDF Curve...").clicked() {
+                    let st = dialogs::storm::IdfEditor::new(self.doc());
+                    self.open_window(Window::Idf(st));
+                }
             });
             ui.menu_button("Help", |ui| {
                 if ui.button("About Stormwaves").clicked() {

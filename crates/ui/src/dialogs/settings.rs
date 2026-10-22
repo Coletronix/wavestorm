@@ -107,11 +107,19 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
         widgets::combo_field(ui, "storm", "Storm Type:", &mut e.storm, &opts, 210.0);
         ui.vertical(|ui| {
             ui.add_space(14.0);
-            if widgets::button(ui, "View Storm", 96.0).clicked() {
-                let mut cs = CurveState::storms();
-                cs.checked = vec![e.storm.clone()];
-                actions.push(WindowAction::OpenWindow(Window::Storms(cs)));
-            }
+            ui.horizontal(|ui| {
+                if widgets::button(ui, "View Storm", 90.0).clicked() {
+                    let mut cs = CurveState::storms();
+                    cs.checked = vec![e.storm.clone()];
+                    actions.push(WindowAction::OpenWindow(Window::Storms(cs)));
+                }
+                if widgets::button(ui, "More Storms...", 100.0).on_hover_text("Create a custom rainfall distribution").clicked() {
+                    actions.push(WindowAction::OpenWindow(Window::StormEdit(crate::dialogs::storm::StormEditor::default())));
+                }
+                if widgets::button(ui, "IDF...", 50.0).on_hover_text("IDF curve for the Rational method").clicked() {
+                    actions.push(WindowAction::OpenWindow(Window::Idf(crate::dialogs::storm::IdfEditor::new(doc))));
+                }
+            });
         });
     });
     let comment = doc.project.storm(&e.storm).map(|s| s.comment).unwrap_or_else(|| "(storm not found)".into());

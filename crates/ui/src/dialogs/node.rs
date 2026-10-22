@@ -210,12 +210,13 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
         let parsed: Vec<(f64, f64, String)> = st.area_rows.iter().filter(|r| r.iter().any(|c| !c.trim().is_empty())).map(|r| (widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0), widgets::cell_num(&r[1]).unwrap_or(0.0), r[2].clone())).collect();
         let same = parsed.len() == sc.areas.len() && parsed.iter().zip(&sc.areas).all(|(p, a)| (p.0 - a.area).abs() < 1e-6 * a.area.abs().max(1.0) && (p.1 - a.cn).abs() < 1e-9 && p.2 == a.description);
         if !same {
-            st.area_rows = sc.areas.iter().map(|a| vec![widgets::cell_fmt(to_area(a.area), if large { 3 } else { 0 }), format!("{}", a.cn), a.description.clone()]).collect();
+            st.area_rows = sc.areas.iter().map(|a| vec![widgets::cell_fmt(to_area(a.area), if large { 3 } else { 0 }), format!("{}", a.cn), a.description.clone(), a.land_use.clone().unwrap_or_default()]).collect();
         }
         let cols = [
             widgets::Column { title: &format!("Area ({area_unit})"), width: 100.0, numeric: true },
             widgets::Column { title: "CN", width: 56.0, numeric: true },
-            widgets::Column { title: "Description", width: 300.0, numeric: false },
+            widgets::Column { title: "Description", width: 260.0, numeric: false },
+            widgets::Column { title: "Land Use", width: 100.0, numeric: false },
         ];
         let ev = widgets::grid(ui, "areas", &cols, &mut st.area_rows, &mut st.sel_row, 210.0, true);
         if ev.changed {
@@ -225,7 +226,7 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
                 .filter(|r| r.iter().any(|c| !c.trim().is_empty()))
                 .map(|r| {
                     let mut a = SubArea::new(widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0).max(0.0), widgets::cell_num(&r[1]).unwrap_or(0.0).clamp(0.0, 100.0), r[2].trim());
-                    a.c = None;
+                    a.land_use = r.get(3).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
                     a
                 })
                 .collect();

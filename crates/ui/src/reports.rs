@@ -496,7 +496,7 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
     crate::frame::Win::new(format!("Project Reports - {}", doc.project.title)).open(&mut open).default_size(vec2(760.0, 460.0)).resizable(true).show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
-            for (i, name) in ["Node Listing", "Area Listing", "Soil Listing", "Events", "Notes"].iter().enumerate() {
+            for (i, name) in ["Node Listing", "Area Listing", "Soil Listing", "Events", "Notes", "Pollutant Loading"].iter().enumerate() {
                 if tab_button(ui, name, st.tab == i) {
                     st.tab = i;
                 }
@@ -530,6 +530,7 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
                 }
                 l
             }
+            5 => stormwaves_core::landuse::loading_report(&doc.project, &doc.results),
             _ => {
                 let mut l: Vec<String> = doc.project.notes.lines().map(String::from).collect();
                 for n in &doc.project.nodes {
@@ -685,6 +686,16 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState) -> b
         };
         ui.horizontal(|ui| {
             if st.storms {
+                if widgets::button(ui, "New...", 60.0).clicked() {
+                    doc.windows.push(crate::windows::Window::StormEdit(crate::dialogs::storm::StormEditor::default()));
+                }
+                if widgets::button(ui, "Copy & Edit", 90.0).on_hover_text("Edit a copy of the first checked storm").clicked() {
+                    if let Some(s) = st.checked.first().and_then(|n| doc.project.storm(n)) {
+                        let mut ed = crate::dialogs::storm::StormEditor::from_storm(&s);
+                        ed.name = format!("{} (custom)", s.name);
+                        doc.windows.push(crate::windows::Window::StormEdit(ed));
+                    }
+                }
                 if widgets::radio(ui, !st.intensity, "Depth").clicked() {
                     st.intensity = false;
                 }

@@ -446,6 +446,8 @@ pub struct Project {
     pub storms: Vec<Storm>,
     #[serde(default)]
     pub uhs: Vec<UnitHydrograph>,
+    #[serde(default)]
+    pub land_use: crate::landuse::LandUseSettings,
     pub next_id: NodeId,
 }
 
@@ -464,6 +466,7 @@ impl Default for Project {
             nodes: Vec::new(),
             storms: Vec::new(),
             uhs: Vec::new(),
+            land_use: crate::landuse::LandUseSettings::default(),
             next_id: 1,
         }
     }

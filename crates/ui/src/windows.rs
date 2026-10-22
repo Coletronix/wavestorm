@@ -22,6 +22,9 @@ pub enum Window {
     Undo(dialogs::misc::UndoState),
     Storms(reports::CurveState),
     Print(dialogs::misc::PrintState),
+    StormEdit(dialogs::storm::StormEditor),
+    Idf(dialogs::storm::IdfEditor),
+    LandUse(dialogs::misc::LandUseState),
 }
 
 impl Window {
@@ -70,6 +73,9 @@ pub fn show_all(ctx: &egui::Context, doc: &mut Doc) -> Vec<WindowAction> {
             Window::Underlay(s) => dialogs::misc::underlay(ctx, doc, s, &mut actions),
             Window::Undo(s) => dialogs::misc::undo_history(ctx, doc, s),
             Window::Storms(s) => reports::show_curves(ctx, doc, s),
+            Window::StormEdit(s) => dialogs::storm::show(ctx, doc, s),
+            Window::Idf(s) => dialogs::storm::idf(ctx, doc, s),
+            Window::LandUse(s) => dialogs::misc::land_use(ctx, doc, s),
             Window::Print(s) => {
                 let (keep, go) = dialogs::misc::print(ctx, s);
                 if let Some(o) = go {

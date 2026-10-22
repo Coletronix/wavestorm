@@ -359,3 +359,88 @@ pub fn print(ctx: &egui::Context, st: &mut PrintState) -> (bool, Option<stormwav
     });
     (keep, go)
 }
+
+pub struct LandUseState {
+    pub draft: stormwaves_core::landuse::LandUseSettings,
+    pub tab: usize,
+    pub new_pollutant: String,
+}
+
+impl LandUseState {
+    pub fn new(p: &Project) -> Self {
+        LandUseState { draft: p.land_use.clone(), tab: 1, new_pollutant: String::new() }
+    }
+}
+
+pub fn land_use(ctx: &egui::Context, doc: &mut Doc, st: &mut LandUseState) -> bool {
+    let mut keep = true;
+    crate::frame::Win::new("Land-Use Settings").resizable(true).default_size(vec2(560.0, 420.0)).show(ctx, |ui| {
+        widgets::tabs(ui, &["General", "Land-Uses"], &mut st.tab);
+        widgets::tab_body(ui, |ui| {
+            ui.set_min_size(vec2(520.0, 260.0));
+            let d = &mut st.draft;
+            if st.tab == 0 {
+                let annual = d.annual_rainfall.is_some();
+                if widgets::radio(ui, annual, "Annual loading by the Simple Method").clicked() && !annual {
+                    d.annual_rainfall = Some(42.0);
+                }
+                if widgets::radio(ui, !annual, "Single-event loading from calculated runoff").clicked() {
+                    d.annual_rainfall = None;
+                }
+                if let Some(p) = &mut d.annual_rainfall {
+                    ui.horizontal(|ui| {
+                        conv_field(ui, "p", "Annual Rainfall Depth:", "inches", p, |x| x, |x| x.max(0.0), 2, 160.0);
+                        conv_field(ui, "pj", "Correction Factor Pj:", "", &mut d.correction, |x| x, |x| x.clamp(0.0, 1.0), 3, 160.0);
+                    });
+                }
+                ui.label(RichText::new("Assign a land use to each sub-area on the subcatchment Area tab.").color(Tokens::get(ui.ctx()).text_dim));
+            } else {
+                egui::ScrollArea::both().max_height(230.0).show(ui, |ui| {
+                    egui::Grid::new("lu").spacing(vec2(8.0, 3.0)).show(ui, |ui| {
+                        ui.label(RichText::new("Land Use").strong());
+                        for p in &d.pollutants {
+                            ui.label(RichText::new(format!("{p} (mg/l)")).strong());
+                        }
+                        ui.end_row();
+                        let mut del = None;
+                        let n = d.pollutants.len();
+                        for (i, (name, conc)) in d.uses.iter_mut().enumerate() {
+                            widgets::text_box(ui, name, 140.0);
+                            conc.resize(n, 0.0);
+                            for (k, c) in conc.iter_mut().enumerate() {
+                                widgets::num_box(ui, ui.id().with(("c", i, k)), c, 2, 70.0, None);
+                            }
+                            if widgets::button(ui, "X", 22.0).clicked() {
+                                del = Some(i);
+                            }
+                            ui.end_row();
+                        }
+                        if let Some(i) = del {
+                            d.uses.remove(i);
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    if widgets::button(ui, "Add Land Use", 100.0).clicked() {
+                        d.uses.push((format!("Land use {}", d.uses.len() + 1), vec![0.0; d.pollutants.len()]));
+                    }
+                    widgets::text_box(ui, &mut st.new_pollutant, 70.0);
+                    if widgets::button(ui, "Add Pollutant", 100.0).clicked() && !st.new_pollutant.trim().is_empty() {
+                        d.pollutants.push(st.new_pollutant.trim().to_string());
+                        st.new_pollutant.clear();
+                    }
+                });
+            }
+        });
+        match ok_cancel_apply(ui, true) {
+            Buttons::Ok | Buttons::Apply => {
+                let d = st.draft.clone();
+                doc.edit("Land-Use Settings", |p| p.land_use = d.clone());
+                keep = false;
+            }
+            Buttons::Cancel => keep = false,
+            Buttons::None => {}
+        }
+    });
+    keep
+}
