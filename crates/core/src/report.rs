@@ -561,7 +561,9 @@ pub fn table_step(dt: f64, n: usize, requested: f64, rows: usize) -> usize {
 
 /// Tabular hydrograph for a node: time plus inflow/outflow (and elevation/storage for ponds and
 /// reaches, precipitation/excess for subcatchments).
-pub fn hydrograph_table(project: &Project, results: &Results, node: &Node, shrink: bool) -> (Vec<String>, Vec<Vec<f64>>) {
+/// Tabular hydrograph columns for a node. With `inflows`, each upstream hydrograph that makes up
+/// the node's inflow gets its own column after the Inflow column (e.g. "2S", "1P Secondary").
+pub fn hydrograph_table(project: &Project, results: &Results, node: &Node, shrink: bool, inflows: bool) -> (Vec<String>, Vec<Vec<f64>>) {
     let u = &project.units;
     let Some(r) = results.node(node.id) else { return (Vec::new(), Vec::new()) };
     let n = r.outflow.len();
@@ -614,6 +616,19 @@ pub fn hydrograph_table(project: &Project, results: &Results, node: &Node, shrin
                 heads.push(format!("Secondary ({})", u.flow_label()));
                 cols.push(pick(&r.routes[1].q, &flow));
             }
+        }
+    }
+    if inflows && !matches!(r.detail, Detail::Subcat(_)) {
+        let at = heads.iter().position(|h| h.starts_with("Inflow")).map_or(heads.len(), |i| i + 1);
+        let mut extra = Vec::new();
+        for (up, k) in project.inflows(node.id) {
+            let (Some(un), Some(ur)) = (project.node(up), results.node(up)) else { continue };
+            let name = if k == 0 { un.label() } else { format!("{} {}", un.label(), OUT_NAMES.get(k).copied().unwrap_or("")) };
+            extra.push((format!("{name} ({})", u.flow_label()), pick(&ur.routes[k].q, &flow)));
+        }
+        for (j, (h, c)) in extra.into_iter().enumerate() {
+            heads.insert(at + j, h);
+            cols.insert(at + j, c);
         }
     }
     (heads, cols)
@@ -680,9 +695,36 @@ mod tests {
         assert!(s.iter().any(|l| l.contains("Sheet Flow")));
         let listing = node_listing(&p, &r);
         assert!(listing.iter().any(|l| l.contains("Total Runoff Area")));
-        let (heads, cols) = hydrograph_table(&p, &r, node, true);
+        let (heads, cols) = hydrograph_table(&p, &r, node, true, true);
         assert_eq!(heads.len(), cols.len());
         assert!(!area_listing(&p).is_empty());
         assert!(soil_listing(&p).iter().any(|l| l.contains("HSG C")));
+    }
+
+    #[test]
+    fn inflow_columns_add_up_to_inflow() {
+        let mut p = Project::default();
+        let link = p.add_node(NodeType::Link, [0.0, 0.0]);
+        for (area, cn) in [(10.0, 70.0), (4.0, 98.0)] {
+            let id = p.add_node(NodeType::Subcat, [0.0, 0.0]);
+            if let Some(n) = p.node_mut(id) {
+                n.outflows[0] = Some(link);
+                n.data = NodeData::Subcat(Subcatchment {
+                    areas: vec![SubArea::new(area * 43_560.0, cn, "area")],
+                    tc: vec![crate::tc::TcSegment { kind: TcKind::Direct { minutes: 10.0, length: 0.0, velocity: 0.0 }, description: String::new() }],
+                    uh: None,
+                    large_units: true,
+                });
+            }
+        }
+        let r = calculate(&p);
+        let node = p.node(link).unwrap();
+        let (plain, _) = hydrograph_table(&p, &r, node, false, false);
+        let (heads, cols) = hydrograph_table(&p, &r, node, false, true);
+        assert_eq!(heads.len(), plain.len() + 2);
+        assert!(heads[1].starts_with("Inflow") && heads[2].starts_with("1S") && heads[3].starts_with("2S"), "{heads:?}");
+        for i in 0..cols[0].len() {
+            assert!((cols[2][i] + cols[3][i] - cols[1][i]).abs() < 1e-9);
+        }
     }
 }

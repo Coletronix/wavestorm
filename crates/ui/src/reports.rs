@@ -41,13 +41,15 @@ pub struct ReportState {
     pub table: bool,
     pub three_d: bool,
     pub shrink: bool,
+    /// Tabular hydrograph shows each inflow hydrograph as its own column.
+    pub inflows: bool,
     pub view: ChartView,
     pub open: bool,
 }
 
 impl ReportState {
     pub fn new(node: NodeId) -> Self {
-        ReportState { node, tab: Tab::Hydrograph, table: false, three_d: true, shrink: true, view: ChartView::default(), open: true }
+        ReportState { node, tab: Tab::Hydrograph, table: false, three_d: true, shrink: true, inflows: false, view: ChartView::default(), open: true }
     }
 }
 
@@ -188,11 +190,14 @@ fn text_area(ui: &mut Ui, lines: &[String], height: f32) {
     });
 }
 
-fn data_table(ui: &mut Ui, heads: &[String], cols: &[Vec<f64>], height: f32, bold_max: bool) {
+/// A sunken, scrolling table of numbers. The returned response takes right-clicks for menus.
+fn data_table(ui: &mut Ui, heads: &[String], cols: &[Vec<f64>], height: f32, bold_max: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     widgets::sunken(ui.painter(), rect, t.field, &t);
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(4.0)));
+    // Plain labels, so a right-click anywhere on the table reaches its context menu.
+    child.style_mut().interaction.selectable_labels = false;
     let rows = cols.first().map(|c| c.len()).unwrap_or(0);
     let maxima: Vec<Option<usize>> = cols.iter().map(|c| c.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i)).collect();
     egui::ScrollArea::both().auto_shrink([false, false]).show(&mut child, |ui| {
@@ -221,6 +226,7 @@ fn data_table(ui: &mut Ui, heads: &[String], cols: &[Vec<f64>], height: f32, bol
             }
         });
     });
+    response
 }
 
 /// The node report window. Returns false when closed.
@@ -305,8 +311,16 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
         }
         Tab::Hydrograph => {
             if st.table {
-                let (heads, cols) = report::hydrograph_table(project, &doc.results, node, st.shrink);
-                data_table(ui, &heads, &cols, size.y, true);
+                let (heads, cols) = report::hydrograph_table(project, &doc.results, node, st.shrink, st.inflows);
+                let has_inflows = node.node_type() != NodeType::Subcat;
+                data_table(ui, &heads, &cols, size.y, true).context_menu(|ui| {
+                    if has_inflows && ui.checkbox(&mut st.inflows, "Inflows").on_hover_text("Show each inflow hydrograph").changed() {
+                        ui.close();
+                    }
+                    if ui.checkbox(&mut st.shrink, "Shrink").on_hover_text("Show every n-th time step").changed() {
+                        ui.close();
+                    }
+                });
             } else {
                 let series = hydro_series(project, node, r);
                 let summary = summary_lines(project, node, r, &doc.results.event_heading);
@@ -396,7 +410,7 @@ fn rating_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
         _ => {}
     }
     if st.table {
-        data_table(ui, &heads, &cols, size.y, false);
+        let _ = data_table(ui, &heads, &cols, size.y, false);
     } else {
         let (title, x_label) = if st.tab == Tab::Discharge {
             ("Stage-Discharge", format!("Discharge ({})", u.flow_label()))
@@ -422,7 +436,7 @@ fn sizing_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
         let heads = vec![format!("Discharge ({})", u.flow_label()), format!("Storage ({})", u.volume_label())];
         let step = (curve.len() / 40).max(1);
         let cols = vec![q.iter().step_by(step).copied().collect(), v.iter().step_by(step).copied().collect()];
-        data_table(ui, &heads, &cols, size.y, false);
+        let _ = data_table(ui, &heads, &cols, size.y, false);
     } else {
         let series = vec![Series { name: "Storage".into(), color: COLORS[2], x: v, y: q, peak_label: None }];
         let summary = vec![format!("Peak Inflow={}", u.fmt_flow(r.inflow.peak().value)), format!("Inflow Volume={}", u.fmt_volume(r.inflow.volume_cf()))];

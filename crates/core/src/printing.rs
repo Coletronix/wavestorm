@@ -340,7 +340,7 @@ fn node_pages(c: &mut Ctx, node: &Node) {
     }
     c.doc.add(page);
     if c.opts.tables {
-        let (heads, cols) = report::hydrograph_table(c.project, c.results, node, true);
+        let (heads, cols) = report::hydrograph_table(c.project, c.results, node, true, false);
         let mut lines = vec![heads.iter().map(|h| format!("{:>14}", h.split(" (").next().unwrap_or(h))).collect::<String>()];
         let rows = cols.first().map(|c| c.len()).unwrap_or(0);
         for i in 0..rows {
