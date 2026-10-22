@@ -59,7 +59,7 @@ pub fn templates() -> Vec<(&'static str, DeviceKind)> {
         ("Exfiltration", DeviceKind::Exfiltration { mode: ExfilMode::SurfaceVelocity { velocity: 1.0 / 12.0 / 3600.0 }, phase_in: 0.01, max_elevation: None }),
         ("Special (Rating Table)", DeviceKind::Special { table: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 3.0)], head_based: true, extrapolate: false }),
         ("Constant Flow/Skimmer", DeviceKind::ConstantFlow { flow: 0.5, phase_in: 0.3 }),
-        ("Pump", DeviceKind::Pump { rating: vec![(0.0, 2.0), (10.0, 1.5), (20.0, 0.0)], on_elevation: 102.0, off_elevation: 100.5, discharge_elevation: 110.0 }),
+        ("Pump", DeviceKind::Pump { rating: vec![(0.0, 2.0), (10.0, 1.5), (20.0, 0.0)], on_elevation: 102.0, off_elevation: 100.5, discharge_elevation: 110.0, max_elevation: None, priority_group: 0 }),
         ("Tube/Siphon", DeviceKind::Siphon { diameter: 1.0, length: 40.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 }),
         ("Dam Breach", DeviceKind::DamBreach { start_time: None, start_elevation: Some(105.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 }),
         ("Delayed Gate", DeviceKind::DelayedGate { trigger_elevation: 102.0, delay: 2.0, opening: 1.0, width: 2.0, height: 2.0, cd: 0.6 }),
@@ -339,13 +339,20 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         len(ui, "pi", "Phase-In Depth:", phase_in);
                     });
                 }
-                DeviceKind::Pump { rating, on_elevation, off_elevation, discharge_elevation } => {
+                DeviceKind::Pump { rating, on_elevation, off_elevation, discharge_elevation, max_elevation, priority_group } => {
                     ui.horizontal(|ui| {
                         len(ui, "inv", "Intake Elevation:", &mut d.invert);
                         len(ui, "on", "On Elevation:", on_elevation);
                         len(ui, "off", "Off Elevation:", off_elevation);
                     });
-                    len(ui, "de", "Discharge Elevation:", discharge_elevation);
+                    ui.horizontal(|ui| {
+                        len(ui, "de", "Discharge Elevation:", discharge_elevation);
+                        super::opt_field(ui, "max", "Maximum Elevation:", u.len_label(), max_elevation, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
+                        let mut g = *priority_group as f64;
+                        if conv_field(ui, "grp", "Priority Group:", "0 = none", &mut g, |x| x, |x| x.clamp(0.0, 99.0).round(), 0, 110.0) {
+                            *priority_group = if g.is_finite() { g as u32 } else { 0 };
+                        }
+                    });
                     ui.label(RichText::new(format!("{:>12} {:>12}", "Lift (ft)", "Q (cfs)")).monospace());
                     let mut del = None;
                     for (i, p) in rating.iter_mut().enumerate() {

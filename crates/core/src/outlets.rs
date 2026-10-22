@@ -139,7 +139,18 @@ pub enum DeviceKind {
     /// A float-controlled skimmer or flow regulator: constant flow once fully submerged.
     ConstantFlow { flow: f64, phase_in: f64 },
     /// Pump with a rating curve of flow (cfs) against total head (ft) and on/off elevations.
-    Pump { rating: Vec<(f64, f64)>, on_elevation: f64, off_elevation: f64, discharge_elevation: f64 },
+    /// It also stops above `max_elevation`. Pumps sharing a non-zero `priority_group` run one
+    /// at a time: the one with the highest satisfied "on" elevation.
+    Pump {
+        rating: Vec<(f64, f64)>,
+        on_elevation: f64,
+        off_elevation: f64,
+        discharge_elevation: f64,
+        #[serde(default)]
+        max_elevation: Option<f64>,
+        #[serde(default)]
+        priority_group: u32,
+    },
     /// Tube, siphon or float valve: full-pipe flow once primed at `prime_elevation`, until the
     /// water falls to `break_elevation`. The device invert is the intake.
     Siphon { diameter: f64, length: f64, n: f64, ke: f64, outlet_elevation: f64, prime_elevation: f64, break_elevation: f64 },
@@ -257,8 +268,10 @@ pub struct DeviceState {
 pub fn update_states(devices: &[OutletDevice], hw: f64, t: f64, states: &mut [DeviceState]) {
     for (d, st) in devices.iter().zip(states.iter_mut()) {
         match &d.kind {
-            DeviceKind::Pump { on_elevation, off_elevation, .. } => {
-                if hw >= *on_elevation {
+            DeviceKind::Pump { on_elevation, off_elevation, max_elevation, .. } => {
+                if max_elevation.is_some_and(|m| hw > m) {
+                    st.active = false;
+                } else if hw >= *on_elevation {
                     st.active = true;
                 } else if hw <= *off_elevation {
                     st.active = false;
@@ -283,6 +296,29 @@ pub fn update_states(devices: &[OutletDevice], hw: f64, t: f64, states: &mut [De
                 }
             }
             _ => {}
+        }
+    }
+    // Priority groups: of the running pumps in a group, keep only the one with the highest
+    // "on" elevation.
+    let pump = |d: &OutletDevice| match &d.kind {
+        DeviceKind::Pump { on_elevation, priority_group, .. } if *priority_group > 0 => Some((*priority_group, *on_elevation)),
+        _ => None,
+    };
+    let mut leader: Vec<(u32, usize, f64)> = Vec::new();
+    for (i, (d, st)) in devices.iter().zip(states.iter()).enumerate() {
+        if let (Some((g, on)), true) = (pump(d), st.active) {
+            match leader.iter_mut().find(|l| l.0 == g) {
+                Some(l) if on > l.2 => *l = (g, i, on),
+                Some(_) => {}
+                None => leader.push((g, i, on)),
+            }
+        }
+    }
+    for (i, (d, st)) in devices.iter().zip(states.iter_mut()).enumerate() {
+        if let Some((g, _)) = pump(d) {
+            if leader.iter().any(|l| l.0 == g && l.1 != i) {
+                st.active = false;
+            }
         }
     }
 }
@@ -912,6 +948,32 @@ pub fn evaluate(devices: &[OutletDevice], hw: f64, tw_for: &dyn Fn(Routing) -> O
 mod tests {
     use super::*;
     use crate::storage::PondStorage;
+
+    fn pump(on: f64, off: f64, max: Option<f64>, group: u32) -> OutletDevice {
+        let kind = DeviceKind::Pump { rating: vec![(0.0, 1.0), (20.0, 0.5)], on_elevation: on, off_elevation: off, discharge_elevation: 110.0, max_elevation: max, priority_group: group };
+        OutletDevice::new("Pump", 99.0, Routing::Primary, kind)
+    }
+
+    #[test]
+    fn pump_max_elevation_and_priority_group() {
+        let devices = [pump(101.0, 100.0, None, 1), pump(102.0, 100.5, Some(104.0), 1), pump(101.5, 100.0, None, 0)];
+        let mut st = [DeviceState::default(); 3];
+        let active = |st: &[DeviceState; 3]| st.map(|s| s.active);
+        update_states(&devices, 101.2, 0.0, &mut st);
+        assert_eq!(active(&st), [true, false, false]);
+        // Both group-1 pumps are "on"; only the one with the higher on-elevation runs. The
+        // ungrouped pump runs on its own.
+        update_states(&devices, 102.5, 0.1, &mut st);
+        assert_eq!(active(&st), [false, true, true]);
+        // Above the second pump's maximum elevation it stops and the first takes over.
+        update_states(&devices, 104.5, 0.2, &mut st);
+        assert_eq!(active(&st), [true, false, true]);
+        // Falling back below the maximum, the leader runs again (hysteresis keeps it on).
+        update_states(&devices, 103.0, 0.3, &mut st);
+        assert_eq!(active(&st), [false, true, true]);
+        update_states(&devices, 99.5, 0.4, &mut st);
+        assert_eq!(active(&st), [false, false, false]);
+    }
 
     fn reference_devices() -> Vec<OutletDevice> {
         vec![

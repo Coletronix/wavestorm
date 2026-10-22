@@ -383,8 +383,10 @@ pub fn device_text(dev: &crate::outlets::OutletDevice, u: &Units) -> Vec<String>
         }
         DeviceKind::Special { table, .. } => vec![format!("{} ({} points)", name("Special & User-Defined"), table.len())],
         DeviceKind::ConstantFlow { flow, .. } => vec![format!("{}{mult}{}", u.fmt_flow(*flow), name("Constant Flow"))],
-        DeviceKind::Pump { on_elevation, off_elevation, .. } => {
-            vec![format!("{} On= {} Off= {}", name("Pump"), u.fmt_elev(*on_elevation), u.fmt_elev(*off_elevation))]
+        DeviceKind::Pump { on_elevation, off_elevation, max_elevation, priority_group, .. } => {
+            let max = max_elevation.map(|m| format!(" Max= {}", u.fmt_elev(m))).unwrap_or_default();
+            let group = if *priority_group > 0 { format!(" Priority Group {priority_group}") } else { String::new() };
+            vec![format!("{} On= {} Off= {}{max}{group}", name("Pump"), u.fmt_elev(*on_elevation), u.fmt_elev(*off_elevation))]
         }
         DeviceKind::Siphon { diameter, length, n, ke, outlet_elevation, prime_elevation, break_elevation } => vec![
             format!("{}{mult}x {} long {}, Ke= {:.3} n= {:.3}", inch(*diameter), ft(*length), name("Tube/Siphon"), ke, n),
