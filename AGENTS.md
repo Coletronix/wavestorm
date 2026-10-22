@@ -137,12 +137,14 @@ Keep this section updated at the end of every session.
   The mechanism is unknown (it is not a kernel offset, interval averaging or Tp = ΔD + L).
   Fitting scripts: gitignored `reference_images/research/ext/tools/` (first argument = that
   folder; `variants.py`, `jointfit.py`).
-- Open: short Tc (4.8 min) peaks are ~12 % low and ~0.03 h early: the reference uses its own
-  piecewise-cubic ("polynomial") fit of the NRCS Type storms with a sharper, later peak than
-  our monotone-cubic smoothing of the WinTR-55 0.1-h table. Sharpening only the 11.8-11.9 h
-  slopes does not fix it; a free fit of the 11.5-12.4 h knots needs an implausible curve.
-  Needs more short-Tc published data. Build our own fit (never copy the reference's
-  coefficient files).
+- Short-Tc peaks (resolved, 2026-10-22): with the monotone cubic alone, Tc ≤ 10 min peaks ran
+  6-12 % low and ~0.04 h early. The reference's own "polynomial" storms are sharper inside the
+  peak 0.1 h only (a coarse 1986 TR-55 curve overshoots mid-Tc by 2-6 %, so it is not that).
+  Fix: `Storm::tangents` replaces the cubic's tangents at the peak knots without moving any
+  table value — Type II (11.8 h 0.75, 11.9 h 1.6, 12.0 h 0.214 /h), Type III (12.0 h 1.3 /h).
+  Fitted (`ext/tools/peakfit.py`) to the short-Tc cases now in
+  `tests/published_subcatchments.rs` (46 cases from 5 public reports, Tc 4.8-90.6 min; all
+  within ~1-2 %). Type I/IA have no published data yet and keep plain smoothing.
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. Commands

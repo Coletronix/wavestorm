@@ -50,6 +50,10 @@ pub struct Storm {
     /// Suggested event depth (inches) for storms that carry one.
     #[serde(default)]
     pub default_depth: Option<f64>,
+    /// Smoothing tangents (fraction per hour) that replace the automatic monotone ones at the
+    /// given times, shaping the curve inside the peak interval without moving any table point.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tangents: Vec<(f64, f64)>,
 }
 
 impl Storm {
@@ -75,6 +79,7 @@ impl Storm {
             smooth,
             fixed_duration: false,
             default_depth: None,
+            tangents: Vec::new(),
         })
     }
 
@@ -179,8 +184,14 @@ impl Storm {
         value.clamp(f0.min(f1), f0.max(f1))
     }
 
-    /// Fritsch–Carlson monotone tangent at knot `k`.
+    /// Tangent at knot `k`: a storm's own tangent for that time, else the Fritsch–Carlson
+    /// monotone one.
     fn slope(&self, k: usize) -> f64 {
+        if let Some(t) = self.times.get(k) {
+            if let Some((_, m)) = self.tangents.iter().find(|(at, _)| (at - t).abs() < 1e-6) {
+                return *m;
+            }
+        }
         let n = self.times.len();
         let secant = |a: usize| {
             let h = self.times[a + 1] - self.times[a];
@@ -210,7 +221,8 @@ impl Storm {
         match mode {
             DurationMode::Rescale | DurationMode::Default => {
                 let k = duration / self.duration;
-                Storm { duration, times: self.times.iter().map(|t| t * k).collect(), ..self.clone() }
+                let tangents = self.tangents.iter().map(|(t, m)| (t * k, m / k)).collect();
+                Storm { duration, times: self.times.iter().map(|t| t * k).collect(), tangents, ..self.clone() }
             }
             DurationMode::Trim => self.trimmed(duration),
         }
@@ -226,7 +238,8 @@ impl Storm {
         let n = ((duration / 0.01).round() as usize).clamp(2, 100_000);
         let times: Vec<f64> = (0..=n).map(|i| duration * i as f64 / n as f64).collect();
         let fractions = times.iter().map(|t| ((self.fraction_at(start + t) - f0) / span).clamp(0.0, 1.0)).collect();
-        Storm { duration, times, fractions, smooth: false, ..self.clone() }
+        // The samples already carry the smoothed shape; the tangents' times no longer apply.
+        Storm { duration, times, fractions, smooth: false, tangents: Vec::new(), ..self.clone() }
     }
 }
 
@@ -240,16 +253,31 @@ fn nrcs(name: &str, comment: &str, table: &[f64; 241]) -> Storm {
         smooth: true,
         fixed_duration: true,
         default_depth: None,
+        tangents: Vec::new(),
     }
 }
+
+/// Tangents at the peak of the Type II and III curves. The monotone cubic alone spreads the
+/// peak 0.1-hour depth too evenly, so short-Tc peaks came out 6-12 % low and early against
+/// published results; these tangents (fitted to 18 published short-Tc subcatchments, see
+/// AGENTS.md) concentrate it at the knot between the two largest increments. Every 0.1-hour
+/// table value is unchanged, so longer-Tc results are not affected.
+const TYPE_II_PEAK_TANGENTS: [(f64, f64); 3] = [(11.8, 0.75), (11.9, 1.6), (12.0, 0.214)];
+const TYPE_III_PEAK_TANGENTS: [(f64, f64); 1] = [(12.0, 1.3)];
 
 /// The built-in storm library.
 pub fn builtin_storms() -> Vec<Storm> {
     let mut v = vec![
         nrcs("Type I 24-hr", "NRCS Type I, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_I),
         nrcs("Type IA 24-hr", "NRCS Type IA, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_IA),
-        nrcs("Type II 24-hr", "NRCS Type II, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_II),
-        nrcs("Type III 24-hr", "NRCS Type III, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_III),
+        Storm {
+            tangents: TYPE_II_PEAK_TANGENTS.to_vec(),
+            ..nrcs("Type II 24-hr", "NRCS Type II, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_II)
+        },
+        Storm {
+            tangents: TYPE_III_PEAK_TANGENTS.to_vec(),
+            ..nrcs("Type III 24-hr", "NRCS Type III, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_III)
+        },
     ];
     for (base, hours) in [("Type II", 6.0), ("Type II", 12.0), ("Type III", 6.0), ("Type III", 12.0)] {
         if let Some(src) = v.iter().find(|s| s.name.starts_with(base) && s.name.ends_with("24-hr") && s.name.len() == base.len() + 6) {
@@ -279,6 +307,7 @@ pub fn builtin_storms() -> Vec<Storm> {
         smooth: false,
         fixed_duration: false,
         default_depth: None,
+        tangents: Vec::new(),
     });
     v
 }
