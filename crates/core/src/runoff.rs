@@ -122,6 +122,78 @@ pub fn scs_uh_runoff(
     out
 }
 
+/// Santa Barbara Urban Hydrograph: the instantaneous excess hydrograph routed through a linear
+/// reservoir with K = Tc, Q₂ = Q₁ + w(I₁ + I₂ - 2Q₁), w = Δt / (2Tc + Δt).
+#[allow(clippy::too_many_arguments)]
+pub fn sbuh_runoff(rain: &Rainfall, parts: &[CnArea], ia_ratio: f64, tc_hr: f64, t0: f64, dt: f64, n: usize) -> RunoffSeries {
+    let area_sf: f64 = parts.iter().map(|p| p.area_sf).sum();
+    let mut out = RunoffSeries { hydrograph: Hydrograph::zeros(t0, dt, n), precip: Vec::with_capacity(n), excess: Vec::with_capacity(n) };
+    if n == 0 || !(dt > 0.0) {
+        return out;
+    }
+    for i in 0..n {
+        let t = t0 + i as f64 * dt;
+        out.precip.push(rain.depth_at(t));
+        out.excess.push(excess_at(rain, parts, ia_ratio, t));
+    }
+    if area_sf <= 0.0 {
+        return out;
+    }
+    // Instantaneous hydrograph: excess rate over the preceding step times the area.
+    let to_cfs = area_sf / 12.0 / (dt * SEC_PER_HR);
+    let start = excess_at(rain, parts, ia_ratio, t0);
+    let inst: Vec<f64> = (0..n)
+        .map(|i| if i == 0 { start * to_cfs } else { (out.excess[i] - out.excess[i - 1]).max(0.0) * to_cfs })
+        .collect();
+    let tc = if tc_hr.is_finite() { tc_hr.max(0.0) } else { 0.0 };
+    let w = dt / (2.0 * tc + dt);
+    let q = &mut out.hydrograph.q;
+    q[0] = w * inst[0];
+    for i in 1..n {
+        q[i] = (q[i - 1] + w * (inst[i - 1] + inst[i] - 2.0 * q[i - 1])).max(0.0);
+    }
+    out
+}
+
+/// Units factor for Q = C·i·A with i in in/hr and A in acres (43,560 / 43,200 ≈ 1.008 cfs).
+pub const RATIONAL_FACTOR: f64 = SQFT_PER_ACRE / 12.0 / SEC_PER_HR;
+
+/// Rational-method trapezoidal hydrograph: rises over Tc·rise, holds the peak C·i·A until the
+/// storm duration ends, then falls over Tc·fall.
+#[allow(clippy::too_many_arguments)]
+pub fn rational_runoff(
+    c: f64,
+    area_sf: f64,
+    intensity_in_hr: f64,
+    duration_hr: f64,
+    tc_hr: f64,
+    rise: f64,
+    fall: f64,
+    t0: f64,
+    dt: f64,
+    n: usize,
+) -> Hydrograph {
+    let mut h = Hydrograph::zeros(t0, dt, n);
+    let peak = c.max(0.0) * intensity_in_hr.max(0.0) * area_sf.max(0.0) / SQFT_PER_ACRE * RATIONAL_FACTOR;
+    if !(peak > 0.0) || !(duration_hr > 0.0) {
+        return h;
+    }
+    let tr = (tc_hr.max(0.0) * rise.max(0.0)).max(1e-9);
+    let tf = (tc_hr.max(0.0) * fall.max(0.0)).max(1e-9);
+    for (i, q) in h.q.iter_mut().enumerate() {
+        let t = t0 + i as f64 * dt;
+        let rising = (t / tr).clamp(0.0, 1.0);
+        // After the rain stops, the hydrograph recedes from wherever the rise had reached.
+        *q = if t <= duration_hr {
+            peak * rising
+        } else {
+            let at_end = (duration_hr / tr).clamp(0.0, 1.0);
+            peak * at_end * (1.0 - (t - duration_hr) / tf).clamp(0.0, 1.0)
+        };
+    }
+    h
+}
+
 /// NRCS unit duration as a fraction of Tc (NEH 630, eq. 16-13: ΔD = 0.133 Tc).
 pub const UNIT_DURATION_PER_TC: f64 = 0.133;
 /// NRCS lag as a fraction of Tc (L = 0.6 Tc).
@@ -254,5 +326,24 @@ mod tests {
         let _ = scs_uh_runoff(&rain, &[CnArea { area_sf: 1.0, cn: 0.0 }], 0.2, 0.5, &uh, 0.0, 0.1, 10);
         let _ = scs_uh_runoff(&rain, &[CnArea { area_sf: 1.0, cn: 80.0 }], 0.2, 0.5, &uh, 0.0, 0.0, 10);
         let _ = scs_uh_runoff(&rain, &[CnArea { area_sf: 1.0, cn: 80.0 }], 0.2, f64::NAN, &uh, 0.0, 0.1, 10);
+    }
+
+    #[test]
+    fn sbuh_conserves_volume() {
+        let rain = type2(3.0);
+        let parts = [CnArea { area_sf: 10.0 * SQFT_PER_ACRE, cn: 85.0 }];
+        let r = sbuh_runoff(&rain, &parts, 0.2, 0.25, 0.0, 0.05, 1201);
+        let depth = r.hydrograph.volume_cf() / (10.0 * SQFT_PER_ACRE) * 12.0;
+        assert!((depth - scs_runoff_depth(3.0, 85.0, 0.2)).abs() < 0.01, "{depth}");
+    }
+
+    #[test]
+    fn rational_peak_is_cia() {
+        let h = rational_runoff(0.9, 2.0 * SQFT_PER_ACRE, 4.0, 0.5, 0.25, 1.0, 1.0, 0.0, 0.01, 101);
+        assert!((h.max().value - 0.9 * 4.0 * 2.0 * RATIONAL_FACTOR).abs() < 1e-9);
+        assert_eq!(h.value_at(1.0), 0.0);
+        // Duration shorter than Tc: triangular with a reduced peak.
+        let short = rational_runoff(0.9, 2.0 * SQFT_PER_ACRE, 4.0, 0.1, 0.25, 1.0, 1.0, 0.0, 0.01, 101);
+        assert!(short.max().value < h.max().value * 0.5);
     }
 }

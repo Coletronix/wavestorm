@@ -6,8 +6,13 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod cn;
+pub mod geometry;
 pub mod hydrograph;
+pub mod outlets;
 pub mod rainfall;
 mod rainfall_data;
 pub mod runoff;
+pub mod storage;
+pub mod tc;
 pub mod uh;
