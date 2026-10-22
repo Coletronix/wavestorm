@@ -1280,6 +1280,12 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
                 r.table = true;
             }
         }
+        "inflows" => {
+            if let Some(Window::Report(r)) = app.doc().windows.last_mut() {
+                r.table = true;
+                r.inflows = true;
+            }
+        }
         "settings" => {
             let st = dialogs::settings::SettingsState::new(&app.doc().project);
             app.open_window(Window::Settings(st));
