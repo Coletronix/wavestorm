@@ -96,18 +96,33 @@ sample reports summarised in `reference_images/research/NOTES.md`.
 
 Keep this section updated at the end of every session.
 
-- Done: core hydrology (runoff, Tc, CN, rainfall, UH), hydraulics (sections, storage, outlets),
-  routing (level pool, translation, Muskingum-Cunge, detention times), links, units, project
-  model (JSON `*.waves`), calculation engine with messages, end-to-end reference network test.
-- Next: text reports; then `crates/ui` (classic
-  grey-dialog look of the reference application, drawn in code; photocraft-style `theme`
-  tokens, `widgets`, serde `state`), the desktop and web apps, and the background-underlay
-  feature (pure-Rust `hayro` PDF rendering, two-point scale calibration, polygon → subcatchment
-  area).
-- Open investigation: in `tests/reference_network.rs`, summed subcatchment hydrographs peak
-  ~4.5 % above the published sums although each subcatchment is within 1 %; the downstream
-  pond still matches (peak elevation within 0.03 ft). Likely a hydrograph-shape/timing detail
-  for long Tc; needs a published multi-subcatchment hydrograph table to resolve.
+- Done: core hydrology (runoff, Tc, CN, rainfall, UH), hydraulics (sections, storage, all
+  outlet devices), routing (level pool, Stor-Ind+Trans, Muskingum-Cunge, Dyn-Stor-Ind, detention
+  times, pond sizing), links, units, project model (JSON `*.waves`), calculation engine with
+  messages, reports, PDF printing, land-use loading, CSV import/export/merge, full egui UI
+  (menus, palette, diagram, dialogs, charts, help), background image/PDF underlay with scale
+  calibration and subcatchment tracing, desktop and web (trunk) apps.
+- Remaining parity gaps: TR-55 graphical peak/storage worksheet, node profile report, rainfall
+  event lookup tables, TR-20 import, custom units, rock-fill/asymmetrical weirs, pump priority
+  groups, report "Inflows" columns, status-bar hints, theme persistence.
+- Open investigation (runoff timing), data in `tests/published_subcatchments.rs` (18 cases
+  from public engineering reports made with the current reference version; raw text and
+  `cases.json` in gitignored `reference_images/research/ext/`):
+  - Volumes match exactly in every case; peaks within ~1.5 % for Tc >= 10 min.
+  - Peak *times* run early by about 0.06-0.09 Tc at dt 0.05 h (e.g. Tc 72.5 min: 12.87 vs
+    12.98 h) and ~0.01 h at dt 0.01. Delaying the UH by ~0.08 Tc also fixes the summed link
+    peaks (published 2-subcat link sums match within 0.3 %, vs +1.5 % now) and the ~4.5 % high
+    summed inflow in `tests/reference_network.rs`. BUT the older-version golden hydrograph
+    (`runoff::tests::golden_reference_runoff_hydrograph`, Tc 23.2, dt 0.1, from a 2003 sample)
+    matches with zero delay, so the mechanism is unconfirmed. Do not change `uh_kernel`
+    until one model fits both; candidates tried (scratch Python, not kept): kernel offset,
+    interval-averaged UH, Tp = ΔD + L (peaks -6 %), fixed fractional delay (best, 0.06 Tc with
+    fine convolution or 0.09 Tc with the current substep scheme).
+  - Short Tc (4.8 min) peaks are ~12 % low and ~0.04 h early: the reference uses its own
+    piecewise-cubic ("polynomial") fit of the NRCS Type storms with a sharper, later peak than
+    our monotone-cubic smoothing of the WinTR-55 0.1-h table. Sharpening only the 11.8-11.9 h
+    slopes does not fix it; a free fit of the 11.6-12.2 h knots trades it against long-Tc
+    timing. Build our own fit (never copy the reference's coefficient files).
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. Commands
