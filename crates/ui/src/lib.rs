@@ -570,6 +570,12 @@ impl StormwavesApp {
         };
     }
 
+    /// Screen position of a diagram point (for tests and automation).
+    pub fn world_to_screen(&mut self, w: Pos2) -> Pos2 {
+        let canvas = self.canvas_rect;
+        diagram::to_screen(&self.doc().view, canvas, w)
+    }
+
     fn zoom(&mut self, f: f32) {
         let canvas = self.canvas_rect;
         if canvas.is_finite() {
@@ -1170,6 +1176,9 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             app.styled = false;
         }
         "new" => app.new_project(),
+        "trace" => app.start_trace(),
+        "calibrate" => app.tool = Tool::Calibrate { points: Vec::new() },
+        "measure" => app.tool = Tool::Measure { points: Vec::new() },
         _ => {}
     }
 }
