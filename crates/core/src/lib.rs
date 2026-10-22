@@ -14,6 +14,7 @@ pub mod hydrograph;
 pub mod link;
 pub mod outlets;
 pub mod project;
+pub mod report;
 pub mod rainfall;
 mod rainfall_data;
 pub mod routing;
