@@ -29,6 +29,7 @@ struct Case {
 
 const II: &str = "Type II 24-hr";
 const III: &str = "Type III 24-hr";
+const IA: &str = "Type IA 24-hr";
 
 #[rustfmt::skip]
 const CASES: &[Case] = &[
@@ -83,6 +84,35 @@ const CASES: &[Case] = &[
     Case { storm: II, p: 3.1, dt: 0.01, span: 360.0, tc: 13.3, weighting: CnWeighting::WeightedQ, areas: &[(1.413, 30.0), (1.456, 78.0)], peak: 2.37, time: 12.06, volume: 0.146 },
     Case { storm: II, p: 2.1, dt: 0.01, span: 360.0, tc: 5.0, weighting: CnWeighting::WeightedQ, areas: &[(0.188, 98.0), (0.546, 80.0), (0.723, 98.0), (0.963, 98.0), (0.152, 98.0), (0.298, 39.0)], peak: 6.74, time: 11.96, volume: 0.345 },
     Case { storm: II, p: 3.1, dt: 0.01, span: 360.0, tc: 5.0, weighting: CnWeighting::WeightedQ, areas: &[(0.188, 98.0), (0.546, 80.0), (0.723, 98.0), (0.963, 98.0), (0.152, 98.0), (0.298, 39.0)], peak: 10.49, time: 11.96, volume: 0.544 },
+    // California vineyard project, Type IA, dt 0.01, existing and proposed conditions.
+    Case { storm: IA, p: 4.44, dt: 0.01, span: 28.0, tc: 4.9, weighting: CnWeighting::WeightedCn, areas: &[(0.08, 82.0), (0.012, 74.0), (0.083, 79.0), (2.105, 70.0), (0.203, 72.0)], peak: 0.9, time: 8.0, volume: 0.352 },
+    Case { storm: IA, p: 4.44, dt: 0.01, span: 28.0, tc: 7.1, weighting: CnWeighting::WeightedCn, areas: &[(0.056, 82.0), (1.743, 70.0)], peak: 0.61, time: 8.02, volume: 0.245 },
+    Case { storm: IA, p: 4.44, dt: 0.01, span: 28.0, tc: 9.1, weighting: CnWeighting::WeightedCn, areas: &[(0.693, 82.0), (0.038, 96.0), (0.001, 74.0), (0.202, 98.0), (0.714, 79.0), (4.897, 70.0)], peak: 2.64, time: 8.02, volume: 1.009 },
+    Case { storm: IA, p: 4.44, dt: 0.01, span: 28.0, tc: 9.5, weighting: CnWeighting::WeightedCn, areas: &[(0.01, 87.0), (0.005, 82.0), (0.015, 89.0), (0.009, 98.0), (4.594, 70.0)], peak: 1.54, time: 8.03, volume: 0.63 },
+    Case { storm: IA, p: 4.44, dt: 0.01, span: 28.0, tc: 10.9, weighting: CnWeighting::WeightedCn, areas: &[(0.283, 91.0), (0.334, 74.0), (0.118, 79.0), (13.346, 70.0)], peak: 4.95, time: 8.05, volume: 1.998 },
+    Case { storm: IA, p: 6.5, dt: 0.01, span: 28.0, tc: 4.9, weighting: CnWeighting::WeightedCn, areas: &[(0.08, 82.0), (0.012, 74.0), (0.083, 79.0), (2.105, 70.0), (0.203, 72.0)], peak: 1.96, time: 7.96, volume: 0.684 },
+    Case { storm: IA, p: 6.5, dt: 0.01, span: 28.0, tc: 7.1, weighting: CnWeighting::WeightedCn, areas: &[(0.056, 82.0), (1.743, 70.0)], peak: 1.36, time: 7.99, volume: 0.481 },
+    Case { storm: IA, p: 6.5, dt: 0.01, span: 28.0, tc: 9.1, weighting: CnWeighting::WeightedCn, areas: &[(0.693, 82.0), (0.038, 96.0), (0.001, 74.0), (0.202, 98.0), (0.714, 79.0), (4.897, 70.0)], peak: 5.54, time: 8.0, volume: 1.913 },
+    Case { storm: IA, p: 6.5, dt: 0.01, span: 28.0, tc: 9.5, weighting: CnWeighting::WeightedCn, areas: &[(0.01, 87.0), (0.005, 82.0), (0.015, 89.0), (0.009, 98.0), (4.594, 70.0)], peak: 3.47, time: 8.03, volume: 1.238 },
+    Case { storm: IA, p: 6.5, dt: 0.01, span: 28.0, tc: 10.9, weighting: CnWeighting::WeightedCn, areas: &[(0.283, 91.0), (0.334, 74.0), (0.118, 79.0), (13.346, 70.0)], peak: 10.94, time: 8.03, volume: 3.88 },
+    Case { storm: IA, p: 8.52, dt: 0.01, span: 28.0, tc: 4.9, weighting: CnWeighting::WeightedCn, areas: &[(0.08, 82.0), (0.012, 74.0), (0.083, 79.0), (2.105, 70.0), (0.203, 72.0)], peak: 3.13, time: 7.93, volume: 1.042 },
+    Case { storm: IA, p: 8.52, dt: 0.01, span: 28.0, tc: 7.1, weighting: CnWeighting::WeightedCn, areas: &[(0.056, 82.0), (1.743, 70.0)], peak: 2.19, time: 7.96, volume: 0.737 },
+    Case { storm: IA, p: 8.52, dt: 0.01, span: 28.0, tc: 9.1, weighting: CnWeighting::WeightedCn, areas: &[(0.693, 82.0), (0.038, 96.0), (0.001, 74.0), (0.202, 98.0), (0.714, 79.0), (4.897, 70.0)], peak: 8.67, time: 8.0, volume: 2.876 },
+    Case { storm: IA, p: 8.52, dt: 0.01, span: 28.0, tc: 9.5, weighting: CnWeighting::WeightedCn, areas: &[(0.01, 87.0), (0.005, 82.0), (0.015, 89.0), (0.009, 98.0), (4.594, 70.0)], peak: 5.6, time: 8.01, volume: 1.897 },
+    Case { storm: IA, p: 8.52, dt: 0.01, span: 28.0, tc: 10.9, weighting: CnWeighting::WeightedCn, areas: &[(0.283, 91.0), (0.334, 74.0), (0.118, 79.0), (13.346, 70.0)], peak: 17.47, time: 8.01, volume: 5.907 },
+    Case { storm: IA, p: 9.36, dt: 0.01, span: 28.0, tc: 4.9, weighting: CnWeighting::WeightedCn, areas: &[(0.08, 82.0), (0.012, 74.0), (0.083, 79.0), (2.105, 70.0), (0.203, 72.0)], peak: 3.63, time: 7.93, volume: 1.196 },
+    Case { storm: IA, p: 9.36, dt: 0.01, span: 28.0, tc: 7.1, weighting: CnWeighting::WeightedCn, areas: &[(0.056, 82.0), (1.743, 70.0)], peak: 2.55, time: 7.96, volume: 0.848 },
+    Case { storm: IA, p: 9.36, dt: 0.01, span: 28.0, tc: 9.1, weighting: CnWeighting::WeightedCn, areas: &[(0.693, 82.0), (0.038, 96.0), (0.001, 74.0), (0.202, 98.0), (0.714, 79.0), (4.897, 70.0)], peak: 10.01, time: 7.98, volume: 3.29 },
+    Case { storm: IA, p: 9.36, dt: 0.01, span: 28.0, tc: 9.5, weighting: CnWeighting::WeightedCn, areas: &[(0.01, 87.0), (0.005, 82.0), (0.015, 89.0), (0.009, 98.0), (4.594, 70.0)], peak: 6.53, time: 7.99, volume: 2.183 },
+    Case { storm: IA, p: 9.36, dt: 0.01, span: 28.0, tc: 10.9, weighting: CnWeighting::WeightedCn, areas: &[(0.283, 91.0), (0.334, 74.0), (0.118, 79.0), (13.346, 70.0)], peak: 20.31, time: 8.01, volume: 6.782 },
+    Case { storm: IA, p: 4.44, dt: 0.01, span: 28.0, tc: 8.9, weighting: CnWeighting::WeightedCn, areas: &[(1.086, 75.0), (1.01, 70.0)], peak: 0.85, time: 8.02, volume: 0.323 },
+    Case { storm: IA, p: 4.44, dt: 0.01, span: 28.0, tc: 12.3, weighting: CnWeighting::WeightedCn, areas: &[(0.283, 91.0), (0.334, 74.0), (0.118, 79.0), (2.254, 75.0), (11.093, 70.0)], peak: 4.9, time: 8.05, volume: 1.998 },
+    Case { storm: IA, p: 6.5, dt: 0.01, span: 28.0, tc: 8.9, weighting: CnWeighting::WeightedCn, areas: &[(1.086, 75.0), (1.01, 70.0)], peak: 1.78, time: 8.0, volume: 0.613 },
+    Case { storm: IA, p: 6.5, dt: 0.01, span: 28.0, tc: 12.3, weighting: CnWeighting::WeightedCn, areas: &[(0.283, 91.0), (0.334, 74.0), (0.118, 79.0), (2.254, 75.0), (11.093, 70.0)], peak: 10.85, time: 8.05, volume: 3.88 },
+    Case { storm: IA, p: 8.52, dt: 0.01, span: 28.0, tc: 8.9, weighting: CnWeighting::WeightedCn, areas: &[(1.086, 75.0), (1.01, 70.0)], peak: 2.78, time: 7.98, volume: 0.921 },
+    Case { storm: IA, p: 8.52, dt: 0.01, span: 28.0, tc: 12.3, weighting: CnWeighting::WeightedCn, areas: &[(0.283, 91.0), (0.334, 74.0), (0.118, 79.0), (2.254, 75.0), (11.093, 70.0)], peak: 17.36, time: 8.03, volume: 5.907 },
+    Case { storm: IA, p: 9.36, dt: 0.01, span: 28.0, tc: 8.9, weighting: CnWeighting::WeightedCn, areas: &[(1.086, 75.0), (1.01, 70.0)], peak: 3.21, time: 7.98, volume: 1.054 },
+    Case { storm: IA, p: 9.36, dt: 0.01, span: 28.0, tc: 12.3, weighting: CnWeighting::WeightedCn, areas: &[(0.283, 91.0), (0.334, 74.0), (0.118, 79.0), (2.254, 75.0), (11.093, 70.0)], peak: 20.19, time: 8.02, volume: 6.782 },
 ];
 
 fn subcat_project(storm: &str, p_in: f64, dt: f64, span: f64, weighting: CnWeighting) -> Project {
@@ -126,7 +156,8 @@ fn published_subcatchment_runoff() {
         println!("case {i:2}: {} Tc {:4.1}  peak {q:7.2} ({:7.2}) @ {t:5.2} ({:5.2})  vol {v:7.4} ({:7.4})", c.storm, c.tc, c.peak, c.time, c.volume);
         // Published values are rounded to 0.01 cfs, 0.01 h and 0.001 af (or whole cubic feet).
         let peak_ok = (q - c.peak).abs() <= 0.03 * c.peak + 0.01;
-        let time_ok = (t - c.time).abs() <= 0.025;
+        // Type IA's peak is a flat plateau, so its time is less sharply defined.
+        let time_ok = (t - c.time).abs() <= if c.storm == IA { 0.04 } else { 0.025 };
         let volume_ok = (v - c.volume).abs() <= 0.01 * c.volume + 0.001;
         if !(peak_ok && time_ok && volume_ok) {
             failures.push(i);

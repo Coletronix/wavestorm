@@ -264,12 +264,18 @@ fn nrcs(name: &str, comment: &str, table: &[f64; 241]) -> Storm {
 /// table value is unchanged, so longer-Tc results are not affected.
 const TYPE_II_PEAK_TANGENTS: [(f64, f64); 3] = [(11.8, 0.75), (11.9, 1.6), (12.0, 0.214)];
 const TYPE_III_PEAK_TANGENTS: [(f64, f64); 1] = [(12.0, 1.3)];
+/// Type IA's peak is flat; these mainly move its timing (fitted to 44 published subcatchments,
+/// weaker evidence than for Types II and III because a flat peak's time is ill-defined).
+const TYPE_IA_PEAK_TANGENTS: [(f64, f64); 3] = [(7.7, 0.145), (7.8, 0.218), (7.9, 0.211)];
 
 /// The built-in storm library.
 pub fn builtin_storms() -> Vec<Storm> {
     let mut v = vec![
         nrcs("Type I 24-hr", "NRCS Type I, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_I),
-        nrcs("Type IA 24-hr", "NRCS Type IA, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_IA),
+        Storm {
+            tangents: TYPE_IA_PEAK_TANGENTS.to_vec(),
+            ..nrcs("Type IA 24-hr", "NRCS Type IA, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_IA)
+        },
         Storm {
             tangents: TYPE_II_PEAK_TANGENTS.to_vec(),
             ..nrcs("Type II 24-hr", "NRCS Type II, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_II)

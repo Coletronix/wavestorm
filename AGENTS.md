@@ -98,7 +98,7 @@ sample reports summarised in `reference_images/research/NOTES.md` (a 2003 versio
 
 Current-version oracles from public engineering submittals (texts and parsed `cases.json` in
 gitignored `reference_images/research/ext*/`):
-- `tests/published_subcatchments.rs`: 46 subcatchments (Type II/III, Tc 4.8-90.6 min) and
+- `tests/published_subcatchments.rs`: 74 subcatchments (Type II/III/IA, Tc 4.8-90.6 min) and
   four two-subcatchment link sums.
 - `tests/published_ponds.rs`: four ponds x two storms (stage-area storage with gravel voids,
   starting elevations, culverts fed by orifices and perimeter-limited grates, broad-crested
@@ -154,7 +154,9 @@ Keep this section updated at the end of every session.
   table value — Type II (11.8 h 0.75, 11.9 h 1.6, 12.0 h 0.214 /h), Type III (12.0 h 1.3 /h).
   Fitted (`ext/tools/peakfit.py`) to the short-Tc cases now in
   `tests/published_subcatchments.rs` (46 cases from 5 public reports, Tc 4.8-90.6 min; all
-  within ~1-2 %). Type I/IA have no published data yet and keep plain smoothing.
+  within ~1-2 %). Type IA (7.7 h 0.145, 7.8 h 0.218, 7.9 h 0.211 /h) was fitted to 28
+  published cases (peaks +0.4..+2.2 %, times ±0.04 h; its flat peak makes timing noisy).
+  Type I has no published data yet and keeps plain smoothing.
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. Commands
