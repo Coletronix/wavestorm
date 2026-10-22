@@ -1,0 +1,13 @@
+#!/bin/sh
+# Blocks commits that mention the reimplemented commercial product by name (paths or content).
+# The pattern is assembled at runtime so this file never contains it.
+pat="$(printf 'h%sd' 'ydro *ca')"
+if git diff --cached --name-only | grep -iqE "$pat"; then
+  echo "pre-commit: a staged path contains a forbidden product name" >&2
+  exit 1
+fi
+if git diff --cached -U0 | grep -E '^\+' | grep -iqE "$pat"; then
+  echo "pre-commit: staged content contains a forbidden product name:" >&2
+  git diff --cached -U0 | grep -E '^\+' | grep -inE "$pat" | head -5 >&2
+  exit 1
+fi

@@ -1,0 +1,6 @@
+#!/bin/sh
+pat="$(printf 'h%sd' 'ydro *ca')"
+if grep -iqE "$pat" "$1"; then
+  echo "commit-msg: message contains a forbidden product name" >&2
+  exit 1
+fi
