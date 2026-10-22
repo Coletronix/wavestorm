@@ -304,6 +304,77 @@ fn wet_basin_with_orifice_and_overflow_grate() {
     }
 }
 
+/// A detention basin from a third public report (Type IA, span 1-28 h, dt 0.01 h) with primary
+/// and secondary culverts, each fed by an 18" horizontal grate (the primary also by four 2" x 6"
+/// orifices). Its inflow subcatchment is fully published; nothing is fitted. At the larger storms
+/// the water passes the secondary grate (835.00') and both outlets run.
+#[test]
+fn basin_with_primary_and_secondary_culverts() {
+    let culvert = |d_in: f64, invert: f64, length: f64, routing: Routing| {
+        let d = d_in / 12.0;
+        let kind = DeviceKind::Culvert { shape: PipeShape::Round, width: d, height: d, length, outlet_invert: 826.10, n: 0.010, ke: 0.9, cc: 0.9, fill: 0.0, entrance: String::new() };
+        OutletDevice::new("Culvert", invert, routing, kind)
+    };
+    let opening = |shape: OpeningShape, plane: Plane, columns: u32, invert: f64, into: usize| {
+        let kind = DeviceKind::Orifice { shape, plane, cd: 0.6, columns, rows: 1, row_spacing: 0.0, weir_at_low_head: true, grate: None };
+        OutletDevice::new("Orifice/Grate", invert, Routing::Device(into), kind)
+    };
+    let pond = Pond {
+        storage: PondStorage { volumes: vec![prismatic("Basin", &[(831.0, 483.0), (832.0, 722.0), (833.0, 986.0), (834.0, 1276.0), (835.0, 1590.0), (836.0, 1930.0)])] },
+        devices: vec![
+            culvert(6.0, 831.50, 37.0, Routing::Primary),
+            opening(OpeningShape::Circular { diameter: 1.5 }, Plane::Horizontal, 1, 833.00, 0),
+            culvert(8.0, 833.00, 32.0, Routing::Secondary),
+            opening(OpeningShape::Circular { diameter: 1.5 }, Plane::Horizontal, 1, 835.00, 2),
+            opening(OpeningShape::Rectangular { width: 2.0 / 12.0, height: 6.0 / 12.0 }, Plane::Vertical, 4, 831.75, 0),
+        ],
+        ..Pond::default()
+    };
+    // (depth, inflow, outflow, time, elevation, storage)
+    for (depth, inflow, outflow, time, elevation, storage) in
+        [(4.44, 0.85, 0.64, 8.17, 832.49, 986.0), (6.5, 1.78, 1.05, 8.28, 833.72, 2240.0), (8.52, 2.78, 1.46, 8.34, 835.03, 4071.0), (9.36, 3.21, 2.56, 8.13, 835.18, 4311.0)]
+    {
+        let mut p = Project::default();
+        p.settings.events = vec![RainEvent::new("Event", "Type IA 24-hr", depth)];
+        p.settings.current_event = 0;
+        p.settings.span_start = 1.0;
+        p.settings.span_end = 28.0;
+        p.settings.dt = 0.01;
+        let pid = p.add_node(NodeType::Pond, [0.0, 0.0]);
+        let sub = p.add_node(NodeType::Subcat, [0.0, 0.0]);
+        if let Some(n) = p.node_mut(sub) {
+            n.outflows[0] = Some(pid);
+            n.data = NodeData::Subcat(Subcatchment {
+                areas: vec![SubArea::new(1.086 * AC, 75.0, "a"), SubArea::new(1.01 * AC, 70.0, "b")],
+                tc: vec![TcSegment { kind: TcKind::Direct { minutes: 8.9, length: 0.0, velocity: 0.0 }, description: String::new() }],
+                uh: None,
+                large_units: true,
+            });
+        }
+        if let Some(n) = p.node_mut(pid) {
+            n.data = NodeData::Pond(pond.clone());
+        }
+        let r = calc::calculate(&p);
+        let n = r.node(pid).expect("pond result");
+        let Detail::Pond(d) = &n.detail else { panic!("pond detail") };
+        let out = n.outflow.peak();
+        eprintln!(
+            "1P basin {depth}\": in {:.2} ({inflow}) out {:.3} @ {:.2} ({outflow} @ {time}) elev {:.3} ({elevation}) stor {:.0} ({storage}) sec {:.2}",
+            n.inflow.peak().value,
+            out.value,
+            out.time,
+            d.peak_elevation,
+            d.peak_storage,
+            n.routes[1].peak().value
+        );
+        assert!((n.inflow.peak().value - inflow).abs() <= 0.01 * inflow + 0.02, "{depth}\" inflow");
+        assert!((out.value - outflow).abs() <= 0.03 * outflow + 0.01, "{depth}\" outflow {:.3}", out.value);
+        assert!((out.time - time).abs() <= 0.05, "{depth}\" time {:.2}", out.time);
+        assert!((d.peak_elevation - elevation).abs() <= 0.02, "{depth}\" elevation {:.3}", d.peak_elevation);
+        assert!((d.peak_storage - storage).abs() <= 0.02 * storage, "{depth}\" storage {:.0}", d.peak_storage);
+    }
+}
+
 #[test]
 fn gravel_cell_pond_with_two_orifices_and_grate() {
     let pond = Pond {
