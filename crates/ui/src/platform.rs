@@ -23,12 +23,26 @@ pub struct Incoming {
     pub bytes: Vec<u8>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Platform {
     inbox: Arc<Mutex<Vec<Incoming>>>,
+    /// Native file dialogs may be shown. Off for headless runs (tests, snapshots), where a
+    /// dialog would block forever waiting for a user.
+    dialogs: bool,
+}
+
+impl Default for Platform {
+    fn default() -> Self {
+        Platform { inbox: Arc::default(), dialogs: true }
+    }
 }
 
 impl Platform {
+    /// A platform that never shows file dialogs: picks are ignored and dialog saves are skipped.
+    pub fn headless() -> Self {
+        Platform { dialogs: false, ..Platform::default() }
+    }
+
     pub fn take(&self) -> Vec<Incoming> {
         std::mem::take(&mut *self.inbox.lock().unwrap_or_else(PoisonError::into_inner))
     }
@@ -48,6 +62,9 @@ impl Platform {
 
     /// Asks the user for a file.
     pub fn pick(&self, purpose: Purpose) {
+        if !self.dialogs {
+            return;
+        }
         let (name, ext) = Self::filters(purpose);
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -88,6 +105,9 @@ impl Platform {
     /// Saves bytes: to `path` if given, else asks (desktop) or downloads (browser).
     /// Returns the path written, if any.
     pub fn save(&self, suggested: &str, path: Option<&str>, bytes: &[u8], ext: &str) -> Result<Option<String>, String> {
+        if !self.dialogs && path.is_none() {
+            return Ok(None);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         {
             let target = match path {

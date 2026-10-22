@@ -52,6 +52,11 @@ impl Default for StormwavesApp {
 }
 
 impl StormwavesApp {
+    /// The app for automated runs (tests, snapshots): it never opens native file dialogs.
+    pub fn headless() -> Self {
+        StormwavesApp { platform: Platform::headless(), ..Self::new() }
+    }
+
     pub fn new() -> Self {
         let mut doc = Doc::new(samples::sample_project(), None);
         doc.dirty = false;

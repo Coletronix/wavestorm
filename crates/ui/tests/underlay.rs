@@ -48,7 +48,7 @@ fn pdf() -> Vec<u8> {
 }
 
 fn harness() -> egui_kittest::Harness<'static, StormwavesApp> {
-    egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), StormwavesApp::new())
+    egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), StormwavesApp::headless())
 }
 
 #[test]

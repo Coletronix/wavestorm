@@ -14,7 +14,7 @@ fn main() {
     let (w, h) = arg(&args, "--size").and_then(|s| s.split_once('x').and_then(|(a, b)| Some((a.parse::<f32>().ok()?, b.parse::<f32>().ok()?)))).unwrap_or((1280.0, 800.0));
     let scale: f32 = arg(&args, "--scale").and_then(|s| s.parse().ok()).unwrap_or(1.0);
     let script: Vec<String> = arg(&args, "--do").map(|s| s.split(';').map(String::from).collect()).unwrap_or_default();
-    let app = StormwavesApp::new();
+    let app = StormwavesApp::headless();
     let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(w, h)).with_pixels_per_point(scale).wgpu().build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), app);
     harness.run_steps(4);
     for cmd in script {
