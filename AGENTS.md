@@ -108,8 +108,12 @@ Keep this section updated at the end of every session.
   calibration and subcatchment tracing, desktop and web (trunk) apps.
 - Remaining parity gaps: TR-55 graphical peak/storage worksheet, built-in county event
   tables (we look events up from a user-downloaded NOAA Atlas 14 CSV instead: `core::noaa`,
-  Settings > Rainfall Event Lookup), custom units, rock-fill/asymmetrical weirs, status-bar
-  hints, pop-up tips on edit screens (General setting).
+  Settings > Rainfall Event Lookup), rock-fill outlet (needs a verified public equation —
+  the reference cites Haan, Barfield & Hayes 1994 pp. 151-155). Pop-up tips
+  (`widgets::with_tip`, General setting) exist on node General, reach, pond Advanced and Tc
+  segment fields; extend them to the remaining fields (areas/CN grid, storage, outlets, links).
+- Done later in the session: custom decimal places (Settings > Units), status-bar hints for
+  toolbar/palette, "Asymmetrical / Custom Weir" (our crest-profile weir).
 - Also done this session: pump max elevation + priority groups; node Profile tab
   (`core::profile`, drawn by `reports::profile_view`) on subcat/reach/pond reports and as a
   "Profile" view of the comparison report (nodes chained in selection order).

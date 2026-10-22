@@ -171,9 +171,13 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
 
 fn general(ui: &mut Ui, st: &mut EditState) {
     ui.horizontal(|ui| {
-        widgets::text_field(ui, "Node Number:", &mut st.draft.number, 90.0);
+        widgets::with_tip(ui, "Identifies the node on the diagram and in reports, with its type letter (S, R, P, L). Numbers must be unique for each type.", |ui| {
+            widgets::text_field(ui, "Node Number:", &mut st.draft.number, 90.0);
+        });
         ui.add_space(8.0);
-        widgets::text_field(ui, "Name:", &mut st.draft.name, 320.0);
+        widgets::with_tip(ui, "A short description shown under the node and in report headings.", |ui| {
+            widgets::text_field(ui, "Name:", &mut st.draft.name, 320.0);
+        });
     });
     ui.add_space(6.0);
     let t = Tokens::get(ui.ctx());
@@ -188,7 +192,10 @@ fn general(ui: &mut Ui, st: &mut EditState) {
             for u in stormwaves_core::uh::builtin_uhs() {
                 opts.push((u.name.clone(), u.name));
             }
-            if widgets::combo_field(ui, "uh", "Unit Hydrograph:", &mut uh, &opts, 220.0) {
+            let changed = widgets::with_tip(ui, "Unit hydrograph shape for this subcatchment only. The project default (Settings > Calculation > Unit Hydro) is the standard NRCS unit hydrograph unless changed there.", |ui| {
+                widgets::combo_field(ui, "uh", "Unit Hydrograph:", &mut uh, &opts, 220.0)
+            });
+            if changed {
                 sc.uh = if uh.is_empty() { None } else { Some(uh) };
             }
             if st.draft.outline.is_some() {
@@ -338,10 +345,14 @@ fn tc_editor(ctx: &egui::Context, st: &mut EditState, u: &Units, doc: &Doc) {
     let _ = p2_default;
     crate::frame::Win::new(format!("Tc Segment: {}", seg.kind.label())).collapsible(false).resizable(false).show(ctx, |ui| {
         let lf = |ui: &mut Ui, id: &str, label: &str, v: &mut f64| {
-            conv_field(ui, id, label, u.len_label(), v, |x| u.len(x), |x| u.len_in(x), 1, 130.0);
+            widgets::with_tip(ui, "Horizontal length of this part of the flow path, measured along the path the water takes.", |ui| {
+                conv_field(ui, id, label, u.len_label(), v, |x| u.len(x), |x| u.len_in(x), 1, 130.0);
+            });
         };
         let sf = |ui: &mut Ui, id: &str, v: &mut f64| {
-            conv_field(ui, id, "Slope:", "ft/ft", v, |x| x, |x| x, 4, 130.0);
+            widgets::with_tip(ui, "Average land or channel slope along this segment (rise over run, e.g. 0.02 for 2 %).", |ui| {
+                conv_field(ui, id, "Slope:", "ft/ft", v, |x| x, |x| x, 4, 130.0);
+            });
         };
         ui.horizontal(|ui| {
             widgets::text_field(ui, "Segment ID / Description:", &mut seg.description, 260.0);
@@ -370,8 +381,12 @@ fn tc_editor(ctx: &egui::Context, st: &mut EditState, u: &Units, doc: &Doc) {
                     sf(ui, "slope", slope);
                 });
                 ui.horizontal(|ui| {
-                    conv_field(ui, "n", "Manning's n:", "", n, |x| x, |x| x, 3, 130.0);
-                    conv_field(ui, "p2", "2-Year 24-hr Rainfall P2:", u.rain_heading(), p2, |x| u.rain(x), |x| u.rain_in(x), 2, 170.0);
+                    widgets::with_tip(ui, "Sheet-flow roughness (TR-55 Table 3-1), much higher than channel n: e.g. 0.011 smooth pavement, 0.15 short grass, 0.40 light woods.", |ui| {
+                        conv_field(ui, "n", "Manning's n:", "", n, |x| x, |x| x, 3, 130.0);
+                    });
+                    widgets::with_tip(ui, "The 2-year, 24-hour rainfall depth at the site (not the design storm). TR-55 uses it in the sheet-flow equation.", |ui| {
+                        conv_field(ui, "p2", "2-Year 24-hr Rainfall P2:", u.rain_heading(), p2, |x| u.rain(x), |x| u.rain_in(x), 2, 170.0);
+                    });
                 });
                 if *length > 300.0 {
                     ui.colored_label(Tokens::get(ui.ctx()).warning, "Sheet flow should not exceed 300 feet (TR-55).");
@@ -390,7 +405,9 @@ fn tc_editor(ctx: &egui::Context, st: &mut EditState, u: &Units, doc: &Doc) {
                 ui.horizontal(|ui| {
                     lf(ui, "len", "Flow Length:", length);
                     sf(ui, "slope", slope);
-                    conv_field(ui, "kv", "Velocity Factor Kv:", "fps", kv, |x| x, |x| x, 2, 130.0);
+                    widgets::with_tip(ui, "Velocity factor in V = Kv × √slope: 20.3 paved, 16.1 unpaved (TR-55), lower for grass and woodland. Choose a surface above to fill it in.", |ui| {
+                        conv_field(ui, "kv", "Velocity Factor Kv:", "fps", kv, |x| x, |x| x, 2, 130.0);
+                    });
                 });
             }
             TcKind::Channel { length, slope, n, section } => {
@@ -655,22 +672,34 @@ fn reach_tab(ui: &mut Ui, st: &mut EditState, u: &Units) {
     section_editor(ui, &mut r.section, u, false);
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        conv_field(ui, "n", "Manning's n:", "", &mut r.n, |x| x, |x| x, 3, 100.0);
-        if let Some(v) = lookup::manning_button(ui, "rn") {
-            r.n = v;
-        }
-        conv_field(ui, "len", "Length:", u.len_label(), &mut r.length, |x| u.len(x), |x| u.len_in(x), 1, 110.0);
+        widgets::with_tip(ui, "Manning's roughness of the channel or pipe. Use the lookup button for typical values (e.g. 0.013 concrete pipe, 0.030-0.040 grassed channel). Not used for rating tables.", |ui| {
+            conv_field(ui, "n", "Manning's n:", "", &mut r.n, |x| x, |x| x, 3, 100.0);
+            if let Some(v) = lookup::manning_button(ui, "rn") {
+                r.n = v;
+            }
+        });
+        widgets::with_tip(ui, "Length of the reach along the flow path. Storage is the flow area times this length; Stor-Ind+Trans also delays the outflow by length / peak velocity.", |ui| {
+            conv_field(ui, "len", "Length:", u.len_label(), &mut r.length, |x| u.len(x), |x| u.len_in(x), 1, 110.0);
+        });
     });
     ui.horizontal(|ui| {
-        conv_field(ui, "in", "Inlet Invert:", u.len_label(), &mut r.inlet_invert, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
-        conv_field(ui, "out", "Outlet Invert:", u.len_label(), &mut r.outlet_invert, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
-        let mut slope = r.slope();
-        if conv_field(ui, "s", "Slope:", "ft/ft", &mut slope, |x| x, |x| x, 4, 110.0) && slope.is_finite() {
-            r.outlet_invert = r.inlet_invert - slope * r.length;
-        }
+        widgets::with_tip(ui, "Channel bottom (or pipe invert) elevation at the upstream end. Depths and water surface elevations are reported from here.", |ui| {
+            conv_field(ui, "in", "Inlet Invert:", u.len_label(), &mut r.inlet_invert, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
+        });
+        widgets::with_tip(ui, "Channel bottom (or pipe invert) elevation at the downstream end. Together with the length this sets the slope.", |ui| {
+            conv_field(ui, "out", "Outlet Invert:", u.len_label(), &mut r.outlet_invert, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
+        });
+        widgets::with_tip(ui, "Average bed slope. Editing it moves the outlet invert so that slope = (inlet - outlet) / length.", |ui| {
+            let mut slope = r.slope();
+            if conv_field(ui, "s", "Slope:", "ft/ft", &mut slope, |x| x, |x| x, 4, 110.0) && slope.is_finite() {
+                r.outlet_invert = r.inlet_invert - slope * r.length;
+            }
+        });
     });
     ui.horizontal(|ui| {
-        conv_field(ui, "exf", "Constant Exfiltration:", u.flow_label(), &mut r.exfiltration, |x| u.flow(x), |x| u.flow_in(x), 2, 150.0);
+        widgets::with_tip(ui, "A constant loss through the channel bed (e.g. infiltration in a dry swale). It is taken from the inflow first and reported as discarded.", |ui| {
+            conv_field(ui, "exf", "Constant Exfiltration:", u.flow_label(), &mut r.exfiltration, |x| u.flow(x), |x| u.flow_in(x), 2, 150.0);
+        });
     });
     let cap = r.section.manning_q(r.section.full_depth(), r.n, r.slope());
     ui.label(RichText::new(format!("Capacity at bank full = {}", u.fmt_flow(cap))).strong());
@@ -826,8 +855,12 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
         }
         "Advanced" => {
             ui.horizontal(|ui| {
-                opt_field(ui, "start", "Starting Elevation:", u.len_label(), &mut p.start_elevation, |x| u.len(x), |x| u.len_in(x), 2, 150.0);
-                opt_field(ui, "flood", "Flood Elevation:", u.len_label(), &mut p.flood_elevation, |x| u.len(x), |x| u.len_in(x), 2, 150.0);
+                widgets::with_tip(ui, "Water level at the start of the calculation, e.g. the permanent pool of a wet pond. Blank starts the pond empty.", |ui| {
+                    opt_field(ui, "start", "Starting Elevation:", u.len_label(), &mut p.start_elevation, |x| u.len(x), |x| u.len_in(x), 2, 150.0);
+                });
+                widgets::with_tip(ui, "The level at which the pond floods (e.g. top of berm). It is shown in reports for comparison with the peak elevation; it does not change the routing.", |ui| {
+                    opt_field(ui, "flood", "Flood Elevation:", u.len_label(), &mut p.flood_elevation, |x| u.len(x), |x| u.len_in(x), 2, 150.0);
+                });
             });
             ui.label("Leave the starting elevation blank to start at the bottom of storage.");
         }

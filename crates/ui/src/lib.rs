@@ -1283,6 +1283,7 @@ impl StormwavesApp {
             Tokens::for_kind(self.theme).apply(&ctx);
             self.styled = true;
         }
+        widgets::set_tips_enabled(&ctx, self.prefs.show_tips);
         let t = Tokens::get(&ctx);
         self.receive(&ctx);
         self.sync_underlay(&ctx);

@@ -80,6 +80,33 @@ pub fn tool_button(ui: &mut Ui, tip: &str, selected: bool, draw: impl FnOnce(&eg
     resp.on_hover_text(tip)
 }
 
+fn tips_id() -> egui::Id {
+    egui::Id::new("show-tips")
+}
+
+/// Turns the pop-up tips of [`with_tip`] on or off (Settings > General).
+pub fn set_tips_enabled(ctx: &egui::Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(tips_id(), on));
+}
+
+/// Adds a field (caption, box and buttons) with a pop-up tip shown after the pointer rests on
+/// any part of it for half a second. The tip is a plain explanation for engineers new to the
+/// field; it can be turned off in the General settings.
+pub fn with_tip<R>(ui: &mut Ui, tip: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+    const DELAY: f32 = 0.5;
+    let inner = ui.scope(add);
+    let enabled = ui.ctx().data(|d| d.get_temp::<bool>(tips_id())).unwrap_or(true);
+    if enabled && inner.response.contains_pointer() && !ui.ctx().input(|i| i.pointer.any_down()) {
+        let still = ui.ctx().input(|i| i.pointer.time_since_last_movement());
+        if still >= DELAY {
+            inner.response.show_tooltip_text(tip);
+        } else {
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f32(DELAY - still + 0.01));
+        }
+    }
+    inner.inner
+}
+
 fn status_hint_id() -> egui::Id {
     egui::Id::new("status-hint")
 }

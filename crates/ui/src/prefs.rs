@@ -14,11 +14,13 @@ pub struct Prefs {
     pub backup_minutes: f64,
     /// Allow several Project Reports windows at once (otherwise reopening replaces the window).
     pub multiple_project_reports: bool,
+    /// Pop-up tips on node editing screens.
+    pub show_tips: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { theme: ThemeKind::Classic, backup_minutes: 5.0, multiple_project_reports: false }
+        Prefs { theme: ThemeKind::Classic, backup_minutes: 5.0, multiple_project_reports: false, show_tips: true }
     }
 }
 
