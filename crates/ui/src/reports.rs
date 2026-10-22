@@ -5,7 +5,7 @@ use crate::doc::Doc;
 use crate::theme::Tokens;
 use crate::widgets;
 use crate::windows::WindowAction;
-use egui::{Align2, Color32, FontId, RichText, Sense, Ui, vec2};
+use egui::{Align2, Color32, FontId, RichText, Sense, Stroke, Ui, vec2};
 use stormwaves_core::calc::{Detail, NodeResult, Severity};
 use stormwaves_core::outlets;
 use stormwaves_core::project::{Node, NodeData, NodeId, NodeType, Project};
@@ -20,6 +20,7 @@ pub enum Tab {
     Storage,
     Events,
     Sizing,
+    Profile,
 }
 
 impl Tab {
@@ -31,6 +32,7 @@ impl Tab {
             Tab::Storage => "Storage",
             Tab::Events => "Events",
             Tab::Sizing => "Sizing",
+            Tab::Profile => "Profile",
         }
     }
 }
@@ -55,8 +57,9 @@ impl ReportState {
 
 fn tabs_for(t: NodeType) -> Vec<Tab> {
     match t {
-        NodeType::Pond => vec![Tab::Summary, Tab::Hydrograph, Tab::Discharge, Tab::Storage, Tab::Events, Tab::Sizing],
-        NodeType::Reach => vec![Tab::Summary, Tab::Hydrograph, Tab::Discharge, Tab::Events],
+        NodeType::Pond => vec![Tab::Summary, Tab::Hydrograph, Tab::Discharge, Tab::Storage, Tab::Events, Tab::Sizing, Tab::Profile],
+        NodeType::Reach => vec![Tab::Summary, Tab::Hydrograph, Tab::Discharge, Tab::Events, Tab::Profile],
+        NodeType::Subcat => vec![Tab::Summary, Tab::Hydrograph, Tab::Events, Tab::Profile],
         _ => vec![Tab::Summary, Tab::Hydrograph, Tab::Events],
     }
 }
@@ -188,6 +191,60 @@ fn text_area(ui: &mut Ui, lines: &[String], height: f32) {
             ui.add(egui::Label::new(RichText::new(l).monospace().color(color)).wrap_mode(egui::TextWrapMode::Extend));
         }
     });
+}
+
+/// Draws a node profile (side view) fitted to `size`; the vertical scale is exaggerated
+/// independently of the horizontal one.
+fn profile_view(ui: &mut Ui, prof: &stormwaves_core::profile::Profile, size: egui::Vec2) {
+    use stormwaves_core::profile::{Anchor, Ink};
+    let t = Tokens::get(ui.ctx());
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    widgets::sunken(ui.painter(), rect, t.field, &t);
+    let Some([x0, y0, x1, y1]) = prof.bounds() else { return };
+    let inner = egui::Rect::from_min_max(rect.min + vec2(16.0, 36.0), rect.max - vec2(16.0, 16.0));
+    let (w, h) = ((x1 - x0).max(1e-6), (y1 - y0).max(1e-6));
+    let map = |[x, y]: [f64; 2]| egui::pos2(inner.left() + ((x - x0) / w) as f32 * inner.width(), inner.bottom() - ((y - y0) / h) as f32 * inner.height());
+    let dark = t.kind == crate::theme::ThemeKind::ModernDark;
+    let water = if dark { Color32::from_rgb(0, 150, 170) } else { Color32::from_rgb(0, 235, 245) };
+    let painter = ui.painter().with_clip_rect(rect.shrink(2.0));
+    for s in &prof.shapes {
+        let pts: Vec<egui::Pos2> = s.points.iter().map(|p| map(*p)).collect();
+        let color = match s.ink {
+            Ink::FlowPath => Color32::from_rgb(30, 60, 220),
+            Ink::Structure => t.text,
+            Ink::Water | Ink::Outlet => water,
+            Ink::Device => Color32::from_rgb(220, 30, 30),
+        };
+        if s.filled {
+            painter.add(egui::Shape::convex_polygon(pts, color, Stroke::new(1.0, t.text)));
+        } else {
+            let width = if s.ink == Ink::Device { 2.5 } else { 2.0 };
+            painter.add(egui::Shape::line(pts, Stroke::new(width, color)));
+        }
+    }
+    // Labels that would overlap (e.g. devices at the same invert) are moved up until clear.
+    let mut used: Vec<egui::Rect> = Vec::new();
+    for l in &prof.labels {
+        let (align, offset) = match l.anchor {
+            Anchor::Left => (egui::Align2::LEFT_BOTTOM, vec2(2.0, -2.0)),
+            Anchor::Right => (egui::Align2::RIGHT_CENTER, vec2(-2.0, 0.0)),
+            Anchor::Below => (egui::Align2::LEFT_TOP, vec2(6.0, 4.0)),
+        };
+        let font = egui::FontId::proportional(if l.title { 13.0 } else { 11.0 });
+        let text = if l.title { format!("Profile for {}", l.text) } else { l.text.clone() };
+        let galley = painter.layout_no_wrap(text, font, t.text);
+        let mut at = map(l.at) + offset;
+        let mut r = align.anchor_size(at, galley.size());
+        for _ in 0..20 {
+            if !used.iter().any(|u| u.intersects(r)) {
+                break;
+            }
+            at.y -= galley.size().y;
+            r = align.anchor_size(at, galley.size());
+        }
+        used.push(r);
+        painter.galley(r.min, galley, t.text);
+    }
 }
 
 /// A sunken, scrolling table of numbers. The returned response takes right-clicks for menus.
@@ -335,6 +392,10 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
             events_tab(ui, project, node, all, size);
         }
         Tab::Sizing => sizing_tab(ui, project, node, r, st, size),
+        Tab::Profile => {
+            let prof = stormwaves_core::profile::chain(project, Some(&doc.results), &[node.id]);
+            profile_view(ui, &prof, size);
+        }
     }
 }
 
@@ -595,15 +656,26 @@ pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState) -
     }
     crate::frame::Win::new("Comparison Report").open(&mut open).default_size(vec2(620.0, 420.0)).resizable(true).show(ctx, |ui| {
         ui.horizontal(|ui| {
-            let opts = vec![(0usize, "Inflow".to_string()), (1, "Outflow".to_string()), (2, "Primary".to_string()), (3, "Secondary".to_string())];
+            let opts = vec![(0usize, "Inflow".to_string()), (1, "Outflow".to_string()), (2, "Primary".to_string()), (3, "Secondary".to_string()), (4, "Profile".to_string())];
             widgets::combo(ui, "cmp-what", &mut st.what, &opts, 120.0);
-            if widgets::button(ui, if st.three_d { "2D" } else { "3D" }, 50.0).clicked() {
+            if widgets::button_enabled(ui, if st.three_d { "2D" } else { "3D" }, 50.0, st.what < 4).clicked() {
                 st.three_d = !st.three_d;
             }
             if widgets::button(ui, "Use Selection", 100.0).clicked() {
                 st.nodes = doc.selection.clone();
             }
         });
+        if st.what == 4 {
+            // Side-by-side profile in the order the nodes were selected.
+            let prof = stormwaves_core::profile::chain(&doc.project, Some(&doc.results), &st.nodes);
+            if prof.shapes.is_empty() {
+                ui.label("Select subcatchments, reaches or ponds in flow order, then click Use Selection.");
+            } else {
+                let size = ui.available_size();
+                profile_view(ui, &prof, size);
+            }
+            return;
+        }
         let u = doc.project.units;
         let mut series = Vec::new();
         for (i, id) in st.nodes.iter().enumerate() {

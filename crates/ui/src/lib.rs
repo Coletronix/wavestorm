@@ -1331,7 +1331,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             if let Some(w) = app.doc().windows.last_mut() {
                 match w {
                     Window::Report(r) => {
-                        r.tab = [reports::Tab::Summary, reports::Tab::Hydrograph, reports::Tab::Discharge, reports::Tab::Storage, reports::Tab::Events, reports::Tab::Sizing][n.min(5)];
+                        r.tab = [reports::Tab::Summary, reports::Tab::Hydrograph, reports::Tab::Discharge, reports::Tab::Storage, reports::Tab::Events, reports::Tab::Sizing, reports::Tab::Profile][n.min(6)];
                     }
                     Window::Edit(e) => e.tab = n,
                     Window::Settings(s) => s.tab = n,
@@ -1375,6 +1375,14 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         "compare" => {
             let sel: Vec<NodeId> = app.doc().project.nodes.iter().filter(|n| n.node_type() != NodeType::Text).map(|n| n.id).take(3).collect();
             app.open_window(Window::Compare(reports::CompareState::new(sel)));
+        }
+        "profile" => {
+            // Comparison-report profile of the listed nodes, e.g. `profile:2S,1R,1P`.
+            let project = &app.doc().project;
+            let sel: Vec<NodeId> = arg.split(',').filter_map(|l| project.nodes.iter().find(|n| n.label().eq_ignore_ascii_case(l.trim())).map(|n| n.id)).collect();
+            let mut st = reports::CompareState::new(sel);
+            st.what = 4;
+            app.open_window(Window::Compare(st));
         }
         "theme" => {
             app.theme = match arg {

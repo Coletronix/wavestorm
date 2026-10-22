@@ -17,6 +17,7 @@ pub mod link;
 pub mod outlets;
 pub mod pdf;
 pub mod printing;
+pub mod profile;
 pub mod project;
 pub mod report;
 pub mod rainfall;
