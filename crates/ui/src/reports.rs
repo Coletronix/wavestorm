@@ -277,6 +277,14 @@ pub fn show_node_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ReportState
                 if widgets::button(ui, "Edit", 62.0).clicked() {
                     actions.push(WindowAction::OpenEdit(node.id));
                 }
+                if widgets::button(ui, "Help", 62.0).clicked() {
+                    actions.push(WindowAction::Help(match node.node_type() {
+                        NodeType::Subcat => "runoff",
+                        NodeType::Reach => "reach",
+                        NodeType::Pond => "pond",
+                        _ => "link",
+                    }));
+                }
             });
         });
     });

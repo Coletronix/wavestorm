@@ -97,6 +97,16 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
                 },
             }
         });
+        let help = match st.draft.node_type() {
+            NodeType::Subcat => if st.tab == 2 { "tc" } else { "cn" },
+            NodeType::Reach => "reach",
+            NodeType::Pond => "pond",
+            NodeType::Link => "link",
+            NodeType::Text => "start",
+        };
+        if widgets::button(ui, "Help", 70.0).clicked() {
+            actions.push(WindowAction::Help(help));
+        }
         match ok_cancel_apply(ui, true) {
             Buttons::Ok => {
                 apply = true;

@@ -25,6 +25,7 @@ pub enum Window {
     StormEdit(dialogs::storm::StormEditor),
     Idf(dialogs::storm::IdfEditor),
     LandUse(dialogs::misc::LandUseState),
+    Help(crate::help::HelpState),
 }
 
 impl Window {
@@ -49,6 +50,7 @@ pub enum WindowAction {
     OpenWindow(Window),
     PickCsvForLink(NodeId),
     Status(String),
+    Help(&'static str),
     PrintPdf(stormwaves_core::printing::PrintOptions),
 }
 
@@ -76,6 +78,7 @@ pub fn show_all(ctx: &egui::Context, doc: &mut Doc) -> Vec<WindowAction> {
             Window::StormEdit(s) => dialogs::storm::show(ctx, doc, s),
             Window::Idf(s) => dialogs::storm::idf(ctx, doc, s),
             Window::LandUse(s) => dialogs::misc::land_use(ctx, doc, s),
+            Window::Help(s) => crate::help::show(ctx, s),
             Window::Print(s) => {
                 let (keep, go) = dialogs::misc::print(ctx, s);
                 if let Some(o) = go {

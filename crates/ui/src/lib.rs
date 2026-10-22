@@ -7,6 +7,7 @@ pub mod diagram;
 pub mod dialogs;
 pub mod doc;
 pub mod frame;
+pub mod help;
 pub mod icons;
 pub mod platform;
 pub mod reports;
@@ -310,6 +311,8 @@ impl StormwavesApp {
             self.delete_selection();
         } else if cmd && pressed(Key::V) {
             self.paste();
+        } else if pressed(Key::F1) {
+            self.open_window(Window::Help(help::HelpState::topic("start")));
         } else if cmd && pressed(Key::A) {
             let doc = self.doc();
             doc.selection = doc.project.nodes.iter().map(|n| n.id).collect();
@@ -550,6 +553,16 @@ impl StormwavesApp {
                 }
             });
             ui.menu_button("Help", |ui| {
+                if ui.button("Contents").clicked() {
+                    self.open_window(Window::Help(help::HelpState::topic("start")));
+                }
+                if ui.button("Mouse and Keyboard").clicked() {
+                    self.open_window(Window::Help(help::HelpState::topic("mouse")));
+                }
+                if ui.button("Calculation Methods").clicked() {
+                    self.open_window(Window::Help(help::HelpState::topic("runoff")));
+                }
+                ui.separator();
                 if ui.button("About Stormwaves").clicked() {
                     self.open_window(Window::About);
                 }
@@ -743,8 +756,8 @@ impl StormwavesApp {
                 doc.edit("Select Event", |p| p.settings.current_event = cur);
             }
             ui.add_space(6.0);
-            if tb(ui, Glyph::Help, "About / Help") {
-                self.open_window(Window::About);
+            if tb(ui, Glyph::Help, "Help") {
+                self.open_window(Window::Help(help::HelpState::topic("start")));
             }
         });
     }
@@ -1046,6 +1059,7 @@ impl StormwavesApp {
                     self.platform.pick(Purpose::LinkCsv);
                 }
                 WindowAction::Status(s) => self.status = s,
+                WindowAction::Help(topic) => self.open_window(Window::Help(help::HelpState::topic(topic))),
                 WindowAction::PrintPdf(o) => self.print_pdf(&o),
             }
         }
@@ -1091,13 +1105,19 @@ impl StormwavesApp {
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::same(2))).show(ui, |ui| {
             let outer = ui.available_rect_before_wrap();
             widgets::bevel(ui.painter(), outer, false, &t);
-            let inner = outer.shrink(2.0);
+            let full = outer.shrink(2.0);
+            let sb = 16.0;
+            let inner = Rect::from_min_max(full.min, pos2(full.max.x - sb, full.max.y - sb));
+            let vbar = Rect::from_min_max(pos2(inner.max.x, full.min.y), pos2(full.max.x, inner.max.y));
+            let hbar = Rect::from_min_max(pos2(full.min.x, inner.max.y), pos2(inner.max.x, full.max.y));
+            ui.painter().rect_filled(Rect::from_min_max(inner.max, full.max), 0.0, t.face);
             self.canvas_rect = inner;
-            frame::set_canvas(&ctx, inner);
+            frame::set_canvas(&ctx, full);
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
             let idx = self.active.min(self.docs.len().saturating_sub(1));
             if let Some(doc) = self.docs.get_mut(idx) {
                 actions = diagram::show(&mut child, doc, &mut self.tool, &mut self.interaction, &mut self.palette_drag);
+                diagram::scrollbars(ui, doc, inner, vbar, hbar);
             }
             if self.palette_drag.is_some() && !ctx.input(|i| i.pointer.any_down()) {
                 self.palette_drag = None;
@@ -1207,6 +1227,8 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         }
         "new" => app.new_project(),
         "trace" => app.start_trace(),
+        "help" => app.open_window(Window::Help(help::HelpState::topic(if arg.is_empty() { "start" } else { arg }))),
+        "print" => app.open_window(Window::Print(dialogs::misc::PrintState::default())),
         "calibrate" => app.tool = Tool::Calibrate { points: Vec::new() },
         "measure" => app.tool = Tool::Measure { points: Vec::new() },
         _ => {}

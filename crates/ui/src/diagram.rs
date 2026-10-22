@@ -726,3 +726,87 @@ mod tests {
         assert!((to_world(&view, canvas, to_screen(&view, canvas, w)) - w).length() < 1e-5);
     }
 }
+
+/// Classic scrollbars for the diagram: `canvas` is the diagram area, `vbar`/`hbar` the strips.
+pub fn scrollbars(ui: &mut Ui, doc: &mut Doc, canvas: Rect, vbar: Rect, hbar: Rect) {
+    let t = Tokens::get(ui.ctx());
+    let d = doc.project.diagram.symbol_size as f32;
+    let view_world = Rect::from_min_max(to_world(&doc.view, canvas, canvas.min), to_world(&doc.view, canvas, canvas.max));
+    let mut content = view_world;
+    for n in &doc.project.nodes {
+        content = content.union(Rect::from_center_size(wp(n.pos), vec2(d * 6.0, d * 6.0)));
+    }
+    if let (Some(u), Some(tex)) = (&doc.project.diagram.underlay, &doc.underlay_tex) {
+        content = content.union(Rect::from_min_size(wp(u.origin), tex.size_vec2() * u.scale as f32));
+    }
+    for (bar, vertical) in [(vbar, true), (hbar, false)] {
+        let p = ui.painter();
+        p.rect_filled(bar, 0.0, t.face.gamma_multiply(0.92));
+        let arrow = 16.0f32;
+        let (a1, a2, track) = if vertical {
+            (
+                Rect::from_min_size(bar.min, vec2(bar.width(), arrow)),
+                Rect::from_min_size(pos2(bar.min.x, bar.max.y - arrow), vec2(bar.width(), arrow)),
+                Rect::from_min_max(pos2(bar.min.x, bar.min.y + arrow), pos2(bar.max.x, bar.max.y - arrow)),
+            )
+        } else {
+            (
+                Rect::from_min_size(bar.min, vec2(arrow, bar.height())),
+                Rect::from_min_size(pos2(bar.max.x - arrow, bar.min.y), vec2(arrow, bar.height())),
+                Rect::from_min_max(pos2(bar.min.x + arrow, bar.min.y), pos2(bar.max.x - arrow, bar.max.y)),
+            )
+        };
+        let (c0, c1, v0, v1) = if vertical {
+            (content.min.y, content.max.y, view_world.min.y, view_world.max.y)
+        } else {
+            (content.min.x, content.max.x, view_world.min.x, view_world.max.x)
+        };
+        let span = (c1 - c0).max(1e-3);
+        let len = if vertical { track.height() } else { track.width() };
+        let start = (v0 - c0) / span * len;
+        let size = ((v1 - v0) / span * len).max(14.0).min(len);
+        let thumb = if vertical {
+            Rect::from_min_size(pos2(track.min.x, track.min.y + start), vec2(track.width(), size))
+        } else {
+            Rect::from_min_size(pos2(track.min.x + start, track.min.y), vec2(size, track.height()))
+        };
+        for (r, dir) in [(a1, -1.0f32), (a2, 1.0)] {
+            let resp = ui.interact(r, ui.id().with(("sb", vertical, dir as i32)), Sense::click_and_drag());
+            let p = ui.painter();
+            p.rect_filled(r, 0.0, t.face);
+            crate::widgets::bevel(p, r, !resp.is_pointer_button_down_on(), &t);
+            let c = r.center();
+            let tri = if vertical {
+                if dir < 0.0 { vec![c + vec2(-4.0, 2.0), c + vec2(4.0, 2.0), c + vec2(0.0, -2.0)] } else { vec![c + vec2(-4.0, -2.0), c + vec2(4.0, -2.0), c + vec2(0.0, 2.0)] }
+            } else if dir < 0.0 {
+                vec![c + vec2(2.0, -4.0), c + vec2(2.0, 4.0), c + vec2(-2.0, 0.0)]
+            } else {
+                vec![c + vec2(-2.0, -4.0), c + vec2(-2.0, 4.0), c + vec2(2.0, 0.0)]
+            };
+            p.add(Shape::convex_polygon(tri, t.text, Stroke::NONE));
+            if resp.clicked() || resp.is_pointer_button_down_on() && resp.dragged() {
+                let step = 30.0 * dir;
+                if vertical { doc.view.offset.y -= step } else { doc.view.offset.x -= step }
+            }
+        }
+        let resp = ui.interact(thumb, ui.id().with(("thumb", vertical)), Sense::drag());
+        let p = ui.painter();
+        p.rect_filled(thumb, 0.0, t.face);
+        crate::widgets::bevel(p, thumb, true, &t);
+        if resp.dragged() {
+            let delta = if vertical { resp.drag_delta().y } else { resp.drag_delta().x };
+            let world = delta / len * span;
+            let screen = world * doc.view.zoom;
+            if vertical { doc.view.offset.y -= screen } else { doc.view.offset.x -= screen }
+        }
+        // Clicking the track pages the view.
+        let track_resp = ui.interact(track, ui.id().with(("track", vertical)), Sense::click());
+        if track_resp.clicked() {
+            if let Some(pp) = track_resp.interact_pointer_pos() {
+                let before = if vertical { pp.y < thumb.min.y } else { pp.x < thumb.min.x };
+                let page = if vertical { canvas.height() } else { canvas.width() } * 0.9 * if before { -1.0 } else { 1.0 };
+                if vertical { doc.view.offset.y -= page } else { doc.view.offset.x -= page }
+            }
+        }
+    }
+}
