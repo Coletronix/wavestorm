@@ -56,6 +56,8 @@ pub enum WindowAction {
     PrintPdf(stormwaves_core::printing::PrintOptions),
     SetPrefs(crate::prefs::Prefs),
     PickFile(crate::platform::Purpose),
+    /// Save bytes to a file the user chooses (download in the browser).
+    SaveFile { name: String, bytes: Vec<u8>, ext: &'static str },
     /// Replace the project's rainfall events, or add/update them by name.
     SetEvents { events: Vec<stormwaves_core::rainfall::RainEvent>, replace: bool },
 }
@@ -74,7 +76,7 @@ pub fn show_all(ctx: &egui::Context, doc: &mut Doc) -> Vec<WindowAction> {
             Window::Diagram(s) => dialogs::misc::diagram(ctx, doc, s),
             Window::Notes(s) => dialogs::misc::notes(ctx, doc, s),
             Window::ProjectReport(s) => reports::show_project_report(ctx, doc, s),
-            Window::Compare(s) => reports::show_compare(ctx, doc, s),
+            Window::Compare(s) => reports::show_compare(ctx, doc, s, &mut actions),
             Window::Messages => reports::show_messages(ctx, doc, &mut actions),
             Window::About => dialogs::misc::about(ctx),
             Window::Calibrate(s) => dialogs::misc::calibrate(ctx, doc, s),

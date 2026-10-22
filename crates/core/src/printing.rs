@@ -17,11 +17,13 @@ pub struct PrintOptions {
     pub tables: bool,
     /// Date string for the page headers (supplied by the caller).
     pub date: String,
+    /// Print summaries for these nodes only (all nodes when empty).
+    pub only: Vec<crate::project::NodeId>,
 }
 
 impl Default for PrintOptions {
     fn default() -> Self {
-        PrintOptions { diagram: true, node_listing: true, area_listing: true, summaries: true, graphs: true, tables: false, date: String::new() }
+        PrintOptions { diagram: true, node_listing: true, area_listing: true, summaries: true, graphs: true, tables: false, date: String::new(), only: Vec::new() }
     }
 }
 
@@ -374,7 +376,7 @@ pub fn report_pdf(project: &Project, results: &Results, opts: &PrintOptions) -> 
         c.doc.add(page);
     }
     if opts.summaries {
-        let mut nodes: Vec<&Node> = project.nodes.iter().filter(|n| n.node_type() != NodeType::Text).collect();
+        let mut nodes: Vec<&Node> = project.nodes.iter().filter(|n| n.node_type() != NodeType::Text && (opts.only.is_empty() || opts.only.contains(&n.id))).collect();
         nodes.sort_by_key(|n| (match n.node_type() {
             NodeType::Subcat => 0,
             NodeType::Reach => 1,

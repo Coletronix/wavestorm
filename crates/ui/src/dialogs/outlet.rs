@@ -435,7 +435,7 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
             });
             sketch(ui, &d.kind);
         });
-        result = ok_cancel_apply(ui, false);
+        result = ok_cancel_apply(ui, false, "pond");
     });
     match result {
         Buttons::Ok | Buttons::Apply => Some(true),

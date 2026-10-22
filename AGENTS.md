@@ -157,6 +157,36 @@ Keep this section updated at the end of every session.
   within ~1-2 %). Type IA (7.7 h 0.145, 7.8 h 0.218, 7.9 h 0.211 /h) was fitted to 28
   published cases (peaks +0.4..+2.2 %, times ±0.04 h; its flat peak makes timing noisy).
   Type I has no published data yet and keeps plain smoothing.
+- UI parity pass (started 2026-10-22, user priority: "ensure all parts of UI match reference";
+  validation work is paused). Reference screenshots: `reference_images/*.gif` and
+  `reference_images/research/web/shots/` (s1-s8 are current-version screens). Compare with
+  `cargo run -p stormwaves-ui --example snapshot -- --out x.png --do "<script>"`.
+  Done: OK/Cancel/Apply/Help row in every dialog (`ok_cancel_apply(ui, apply, help_topic)`),
+  white chart background, report button column (Table, 2D/Shrink, Print, Export, Edit, Help;
+  `widgets::toggle_button`), min/max/close boxes on report windows (`Win::min_max`), Events
+  table in the reference style (`reports::report_table`), comparison report with
+  Summary/Hydrograph/Profile tabs and the outflow selector at top right.
+  Still to do, in order:
+  1. Project Reports: tabs Node Listing, Area Listing, Soil Listing, Land-Use, Pollutants,
+     Subcat Loading, Project Loading, Pipe Listing; All/Selected Nodes + Show Totals options;
+     right button column; listings as `report_table` (bold TOTAL row).
+  2. Storm / UH / IDF viewers (s2, s3): Depth/Intensity radios, Time Increment field and
+     description at top, Graph/Table tabs, tree of curves grouped by name prefix with
+     checkboxes, buttons More Storms / OK / Print / Export / Edit / Help.
+  3. Calculation Settings Rainfall tab (rainfall-tab2.png): Storm Type + Storm Curve combos,
+     View Storm / More Storms column, Rainfall Event group with Name combo, Save, Delete,
+     Sort by Manual/Name/Depth, Import Events From..., Del All, View All; add a Resize tab.
+  4. Pond Outlets tab (s3): grid # / Invert / Description / Routing, tip text, Edit Outlet...
+     button that asks for the device type on an empty row (instead of our type buttons).
+  5. Outlet editors (s4, s5): Description, Routing, Discharge Multiplier along the top;
+     pump Disch. Length/Diam/Hazen-Williams and a Load From File button; orifice angle
+     (custom plane) and grate group boxes.
+  6. Link edit Manual tab (s1): Multi-Event checkbox, starting time, time step, inflow area,
+     impervious %, a time x event grid, Interpolate button.
+  7. Land-Use Settings (s6): General / Land-Uses tabs, impervious-calculation radio group.
+  8. Main window: right toolbar icon set (v10scrn1.gif), link circle markers for manual
+     hydrograph/elevation links, bold outline on the selected node.
+  9. Chamber Wizard (s8) — needs a user-defined chamber library (no proprietary data).
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. Commands

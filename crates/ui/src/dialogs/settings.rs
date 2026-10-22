@@ -46,7 +46,13 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut SettingsState, actions:
                 _ => advanced(ui, &mut st.draft),
             }
         });
-        match ok_cancel_apply(ui, true) {
+        let help = match st.tab {
+            1 => "rainfall",
+            2 | 3 => "start",
+            4 | 0 => "runoff",
+            _ => "cn",
+        };
+        match ok_cancel_apply(ui, true, help) {
             Buttons::Ok => {
                 apply = true;
                 keep = false;

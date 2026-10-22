@@ -226,7 +226,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut StormEditor) -> bool {
                 ui.colored_label(t.warning, e);
             }
         }
-        match ok_cancel_apply(ui, false) {
+        match ok_cancel_apply(ui, false, "rainfall") {
             Buttons::Ok | Buttons::Apply => {
                 if let Ok(storm) = st.build() {
                     doc.edit("Custom Rainfall", |p| {
@@ -291,7 +291,7 @@ pub fn idf(ctx: &egui::Context, doc: &mut Doc, st: &mut IdfEditor) -> bool {
         if widgets::button(ui, "Add Event", 90.0).clicked() {
             st.draft.events.push(("New".into(), 60.0, 10.0, 0.8));
         }
-        match ok_cancel_apply(ui, false) {
+        match ok_cancel_apply(ui, false, "rainfall") {
             Buttons::Ok | Buttons::Apply => {
                 let d = st.draft.clone();
                 doc.edit("IDF Curve", |p| p.settings.idf = Some(d.clone()));

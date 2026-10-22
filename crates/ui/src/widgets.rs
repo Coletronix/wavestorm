@@ -35,6 +35,15 @@ pub fn button(ui: &mut Ui, label: &str, width: f32) -> Response {
 }
 
 pub fn button_enabled(ui: &mut Ui, label: &str, width: f32, enabled: bool) -> Response {
+    push_button(ui, label, width, enabled, false)
+}
+
+/// A push button that stays pressed while `on` (e.g. a report's Table or Shrink button).
+pub fn toggle_button(ui: &mut Ui, label: &str, width: f32, on: bool, enabled: bool) -> Response {
+    push_button(ui, label, width, enabled, on)
+}
+
+fn push_button(ui: &mut Ui, label: &str, width: f32, enabled: bool, latched: bool) -> Response {
     let t = Tokens::get(ui.ctx());
     let font = FontId::proportional(13.0);
     let text_w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), t.text).size().x);
@@ -43,8 +52,15 @@ pub fn button_enabled(ui: &mut Ui, label: &str, width: f32, enabled: bool) -> Re
     let (rect, resp) = ui.allocate_exact_size(size, sense);
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
-        let pressed = resp.is_pointer_button_down_on();
-        let fill = if !t.bevel && resp.hovered() && enabled { t.light } else { t.face };
+        let pressed = resp.is_pointer_button_down_on() || latched;
+        let fill = if latched && t.bevel {
+            // The classic latched look: a lighter, dithered-looking face.
+            t.light.gamma_multiply(0.9)
+        } else if !t.bevel && resp.hovered() && enabled {
+            t.light
+        } else {
+            t.face
+        };
         p.rect_filled(rect, t.radius as f32, fill);
         bevel(p, rect, !pressed, &t);
         let off = if pressed && t.bevel { vec2(1.0, 1.0) } else { Vec2::ZERO };
@@ -105,6 +121,24 @@ pub fn with_tip<R>(ui: &mut Ui, tip: &str, add: impl FnOnce(&mut Ui) -> R) -> R 
         }
     }
     inner.inner
+}
+
+fn help_request_id() -> egui::Id {
+    egui::Id::new("help-request")
+}
+
+/// Asks the app to open help topic `topic` (handled once per frame).
+pub fn request_help(ctx: &egui::Context, topic: &'static str) {
+    ctx.data_mut(|d| d.insert_temp(help_request_id(), topic));
+}
+
+/// The help topic requested this frame, if any; clears the request.
+pub fn take_help_request(ctx: &egui::Context) -> Option<&'static str> {
+    ctx.data_mut(|d| {
+        let t = d.get_temp::<&'static str>(help_request_id());
+        d.remove::<&'static str>(help_request_id());
+        t
+    })
 }
 
 fn status_hint_id() -> egui::Id {

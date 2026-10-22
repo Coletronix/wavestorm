@@ -299,7 +299,7 @@ pub fn show_node_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ReportState
     if events_needed {
         doc.all_results();
     }
-    crate::frame::Win::new(title).id(egui::Id::new(("report", st.node))).open(&mut open).default_size(vec2(640.0, 430.0)).min_size(vec2(420.0, 300.0)).resizable(true).collapsible(true).show(ctx, |ui| {
+    crate::frame::Win::new(title).id(egui::Id::new(("report", st.node))).open(&mut open).default_size(vec2(640.0, 430.0)).min_size(vec2(420.0, 300.0)).resizable(true).min_max().show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             for tab in &tabs {
@@ -321,22 +321,53 @@ pub fn show_node_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ReportState
                 body(ui, doc, &node, st, vec2(body_w, h));
             });
             ui.vertical(|ui| {
+                // The classic report buttons: Table, 2D (graphs) or Shrink (tables), Print, Export,
+                // Edit, Help.
                 ui.spacing_mut().item_spacing.y = 4.0;
                 let charty = matches!(st.tab, Tab::Hydrograph | Tab::Discharge | Tab::Storage | Tab::Sizing);
-                if widgets::button_enabled(ui, if st.table { "Graph" } else { "Table" }, 62.0, charty).clicked() {
+                if widgets::toggle_button(ui, "Table", 62.0, st.table && charty, charty).clicked() {
                     st.table = !st.table;
                 }
-                if widgets::button_enabled(ui, if st.three_d { "2D" } else { "3D" }, 62.0, charty && !st.table).clicked() {
+                if !charty || st.table {
+                    // Text reports (Summary, Events, Profile) show it disabled, as the reference does.
+                    if widgets::toggle_button(ui, "Shrink", 62.0, st.shrink && charty, charty).clicked() {
+                        st.shrink = !st.shrink;
+                    }
+                } else if widgets::button(ui, if st.three_d { "2D" } else { "3D" }, 62.0).clicked() {
                     st.three_d = !st.three_d;
                 }
-                if widgets::button_enabled(ui, if st.shrink { "Expand" } else { "Shrink" }, 62.0, st.table).clicked() {
-                    st.shrink = !st.shrink;
+                if widgets::button(ui, "Print", 62.0).on_hover_text("Print this node's report (PDF)").clicked() {
+                    actions.push(WindowAction::PrintPdf(stormwaves_core::printing::PrintOptions {
+                        diagram: false,
+                        node_listing: false,
+                        area_listing: false,
+                        summaries: true,
+                        graphs: true,
+                        tables: st.table,
+                        date: crate::dialogs::misc::today(),
+                        only: vec![node.id],
+                    }));
                 }
-                if widgets::button(ui, "Copy", 62.0).on_hover_text("Copy the summary to the clipboard").clicked() {
-                    let lines = report::node_summary(&doc.project, &doc.results, &node);
-                    ui.ctx().copy_text(lines.join("\n"));
-                    actions.push(WindowAction::Status("Summary copied to the clipboard".into()));
-                }
+                let export = widgets::button(ui, "Export", 62.0);
+                egui::Popup::menu(&export).show(|ui| {
+                    let summary = || report::node_summary(&doc.project, &doc.results, &node).join("\n");
+                    if ui.button("Copy Summary to Clipboard").clicked() {
+                        ui.ctx().copy_text(summary());
+                        actions.push(WindowAction::Status("Summary copied to the clipboard".into()));
+                    }
+                    if ui.button("Save Summary as Text...").clicked() {
+                        actions.push(WindowAction::SaveFile { name: format!("{}.txt", node.label()), bytes: summary().into_bytes(), ext: "txt" });
+                    }
+                    if ui.button("Save Hydrograph as CSV...").clicked() {
+                        let (heads, cols) = report::hydrograph_table(&doc.project, &doc.results, &node, false, st.inflows);
+                        let mut csv = heads.join(",");
+                        for i in 0..cols.first().map_or(0, Vec::len) {
+                            csv.push('\n');
+                            csv.push_str(&cols.iter().map(|c| c.get(i).map_or(String::new(), |v| format!("{v}"))).collect::<Vec<_>>().join(","));
+                        }
+                        actions.push(WindowAction::SaveFile { name: format!("{} hydrograph.csv", node.label()), bytes: csv.into_bytes(), ext: "csv" });
+                    }
+                });
                 if widgets::button(ui, "Edit", 62.0).clicked() {
                     actions.push(WindowAction::OpenEdit(node.id));
                 }
@@ -515,56 +546,97 @@ fn fixed_tw(t: stormwaves_core::project::Tailwater) -> Option<f64> {
     }
 }
 
-fn events_tab(ui: &mut Ui, project: &Project, node: &Node, all: &[stormwaves_core::calc::Results], size: egui::Vec2) {
-    let u = &project.units;
+/// A classic report table in a sunken box: two-line headers (title over units), a rule, text in
+/// the first `text_cols` columns left-aligned and numbers right-aligned, and an optional bold row
+/// (the largest event, or a total).
+fn report_table(ui: &mut Ui, size: egui::Vec2, heads: &[(String, String)], rows: &[Vec<String>], text_cols: usize, bold: Option<usize>) {
     let t = Tokens::get(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     widgets::sunken(ui.painter(), rect, t.field, &t);
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(8.0)));
+    let font = FontId::proportional(13.0);
+    let measure = |ui: &Ui, s: &str| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), font.clone(), t.text).size().x);
+    let ncols = heads.len();
+    let widths: Vec<f32> = (0..ncols)
+        .map(|c| {
+            let h = heads.get(c).map_or(0.0f32, |(a, b)| measure(ui, a).max(measure(ui, b)));
+            rows.iter().filter_map(|r| r.get(c)).fold(h, |w, s| w.max(measure(ui, s))) + 26.0
+        })
+        .collect();
+    let row_h = 19.0;
+    let total = vec2(widths.iter().sum::<f32>() + 16.0, row_h * (rows.len() as f32 + 2.6) + 8.0);
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(3.0)));
     egui::ScrollArea::both().auto_shrink([false, false]).show(&mut child, |ui| {
-        egui::Grid::new("events").spacing(vec2(22.0, 4.0)).show(ui, |ui| {
-            let is_sub = node.node_type() == NodeType::Subcat;
-            let heads: Vec<String> = if is_sub {
-                vec!["Event".into(), format!("Rainfall ({})", u.rain_heading()), format!("Runoff ({})", u.flow_label()), format!("Volume ({})", u.volume_heading()), format!("Depth ({})", u.rain_heading())]
-            } else {
-                vec![
-                    "Event".into(),
-                    format!("Inflow ({})", u.flow_label()),
-                    format!("Outflow ({})", u.flow_label()),
-                    format!("Primary ({})", u.flow_label()),
-                    format!("Secondary ({})", u.flow_label()),
-                    format!("Elevation ({})", if u.metric() { "m" } else { "feet" }),
-                    format!("Storage ({})", u.volume_heading()),
-                ]
-            };
-            for h in &heads {
-                ui.label(RichText::new(h).strong());
+        let (area, _) = ui.allocate_exact_size(total, Sense::hover());
+        let p = ui.painter();
+        let cell = |row_y: f32, c: usize, text: &str, strong: bool| {
+            let x0 = area.left() + 8.0 + widths[..c].iter().sum::<f32>();
+            let (pos, align) = if c < text_cols { (egui::pos2(x0 + 4.0, row_y), Align2::LEFT_TOP) } else { (egui::pos2(x0 + widths[c] - 4.0, row_y), Align2::RIGHT_TOP) };
+            if strong {
+                // Bold by over-striking, as the proportional UI font has no bold face.
+                p.text(pos + vec2(0.6, 0.0), align, text, font.clone(), t.text);
             }
-            ui.end_row();
-            if is_sub {
-                for (r, e) in all.iter().zip(&project.settings.events) {
-                    let Some(n) = r.node(node.id) else { continue };
-                    let area = match &n.detail {
-                        Detail::Subcat(d) => d.composite.total_area,
-                        _ => 0.0,
-                    };
-                    ui.label(&e.name);
-                    ui.label(format!("{:.2}", u.rain(e.depth)));
-                    ui.label(group(u.flow(n.outflow.peak().value), u.flow_dp()));
-                    ui.label(group(u.volume(n.outflow.volume_cf()), u.volume_dp()));
-                    ui.label(format!("{:.2}", if area > 0.0 { u.rain(n.outflow.volume_cf() / area * 12.0) } else { 0.0 }));
-                    ui.end_row();
-                }
-            } else {
-                for row in report::events_table(project, all, node.id) {
-                    for c in row.iter() {
-                        ui.label(c);
-                    }
-                    ui.end_row();
-                }
+            p.text(pos, align, text, font.clone(), t.text);
+        };
+        let y0 = area.top() + 4.0;
+        for (c, (a, b)) in heads.iter().enumerate() {
+            cell(y0, c, a, false);
+            cell(y0 + row_h, c, b, false);
+        }
+        let rule_y = y0 + 2.0 * row_h + 3.0;
+        p.line_segment([egui::pos2(area.left() + 8.0, rule_y), egui::pos2(area.left() + 8.0 + widths.iter().sum::<f32>(), rule_y)], Stroke::new(1.0, t.text));
+        for (i, r) in rows.iter().enumerate() {
+            let y = rule_y + 5.0 + i as f32 * row_h;
+            for (c, s) in r.iter().enumerate().take(ncols) {
+                cell(y, c, s, bold == Some(i));
             }
-        });
+        }
     });
+}
+
+fn events_tab(ui: &mut Ui, project: &Project, node: &Node, all: &[stormwaves_core::calc::Results], size: egui::Vec2) {
+    let u = &project.units;
+    let h = |a: &str, b: String| (a.to_string(), format!("({b})"));
+    let elev_unit = if u.metric() { "meters" } else { "feet" }.to_string();
+    let is_sub = node.node_type() == NodeType::Subcat;
+    let (heads, rows, peaks): (Vec<(String, String)>, Vec<Vec<String>>, Vec<f64>) = if is_sub {
+        let heads = vec![("Event".to_string(), String::new()), h("Rainfall", u.rain_heading().into()), h("Runoff", u.flow_label().into()), h("Volume", u.volume_heading().into()), h("Depth", u.rain_heading().into())];
+        let mut rows = Vec::new();
+        let mut peaks = Vec::new();
+        for (r, e) in all.iter().zip(&project.settings.events) {
+            let Some(n) = r.node(node.id) else { continue };
+            let area = match &n.detail {
+                Detail::Subcat(d) => d.composite.total_area,
+                _ => 0.0,
+            };
+            let q = n.outflow.peak().value;
+            peaks.push(q);
+            rows.push(vec![
+                e.name.clone(),
+                format!("{:.2}", u.rain(e.depth)),
+                group(u.flow(q), u.flow_dp()),
+                group(u.volume(n.outflow.volume_cf()), u.volume_dp()),
+                format!("{:.2}", if area > 0.0 { u.rain(n.outflow.volume_cf() / area * 12.0) } else { 0.0 }),
+            ]);
+        }
+        (heads, rows, peaks)
+    } else {
+        let flow = u.flow_label().to_string();
+        let heads = vec![
+            ("Event".to_string(), String::new()),
+            h("Inflow", flow.clone()),
+            h("Outflow", flow.clone()),
+            h("Primary", flow.clone()),
+            h("Secondary", flow),
+            h("Elevation", elev_unit),
+            h("Storage", u.volume_heading().into()),
+        ];
+        let rows: Vec<Vec<String>> = report::events_table(project, all, node.id).into_iter().map(|r| r.to_vec()).collect();
+        let peaks = all.iter().filter_map(|r| r.node(node.id)).map(|n| n.outflow.peak().value).collect();
+        (heads, rows, peaks)
+    };
+    // The event with the largest peak is shown in bold, as in the reference reports.
+    let bold = peaks.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i);
+    report_table(ui, size, &heads, &rows, 1, bold);
 }
 
 // ---------------------------------------------------------------- project reports
@@ -578,7 +650,7 @@ pub struct ProjectReportState {
 
 pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectReportState) -> bool {
     let mut open = true;
-    crate::frame::Win::new(format!("Project Reports - {}", doc.project.title)).id(egui::Id::new(("project-report", st.serial))).open(&mut open).default_size(vec2(760.0, 460.0)).resizable(true).show(ctx, |ui| {
+    crate::frame::Win::new(format!("Project Reports - {}", doc.project.title)).id(egui::Id::new(("project-report", st.serial))).open(&mut open).default_size(vec2(760.0, 460.0)).resizable(true).min_max().show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             for (i, name) in ["Node Listing", "Area Listing", "Soil Listing", "Events", "Notes", "Pollutant Loading"].iter().enumerate() {
@@ -638,44 +710,123 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
 
 pub struct CompareState {
     pub nodes: Vec<NodeId>,
+    /// Hydrograph shown: 0 inflow, 1 outflow, 2 primary, 3 secondary.
     pub what: usize,
+    /// 0 Summary, 1 Hydrograph, 2 Profile.
+    pub tab: usize,
     pub three_d: bool,
+    pub table: bool,
     pub view: ChartView,
 }
 
 impl CompareState {
     pub fn new(nodes: Vec<NodeId>) -> Self {
-        CompareState { nodes, what: 1, three_d: true, view: ChartView::default() }
+        CompareState { nodes, what: 1, tab: 1, three_d: true, table: false, view: ChartView::default() }
     }
 }
 
-pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState) -> bool {
+pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState, actions: &mut Vec<WindowAction>) -> bool {
     let mut open = true;
     if st.nodes.is_empty() {
         st.nodes = doc.selection.clone();
     }
-    crate::frame::Win::new("Comparison Report").open(&mut open).default_size(vec2(620.0, 420.0)).resizable(true).show(ctx, |ui| {
+    crate::frame::Win::new("Comparison Report").open(&mut open).default_size(vec2(680.0, 430.0)).resizable(true).min_max().show(ctx, |ui| {
+        // Reference layout: report tabs at the left, the hydrograph selector at the right.
         ui.horizontal(|ui| {
-            let opts = vec![(0usize, "Inflow".to_string()), (1, "Outflow".to_string()), (2, "Primary".to_string()), (3, "Secondary".to_string()), (4, "Profile".to_string())];
-            widgets::combo(ui, "cmp-what", &mut st.what, &opts, 120.0);
-            if widgets::button_enabled(ui, if st.three_d { "2D" } else { "3D" }, 50.0, st.what < 4).clicked() {
-                st.three_d = !st.three_d;
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (i, name) in ["Summary", "Hydrograph", "Profile"].iter().enumerate() {
+                if tab_button(ui, name, st.tab == i) {
+                    st.tab = i;
+                }
             }
-            if widgets::button(ui, "Use Selection", 100.0).clicked() {
-                st.nodes = doc.selection.clone();
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let opts = vec![(0usize, "Inflow".to_string()), (1, "Outflow".to_string()), (2, "Primary".to_string()), (3, "Secondary".to_string())];
+                widgets::combo(ui, "cmp-what", &mut st.what, &opts, 120.0);
+            });
         });
-        if st.what == 4 {
-            // Side-by-side profile in the order the nodes were selected.
-            let prof = stormwaves_core::profile::chain(&doc.project, Some(&doc.results), &st.nodes);
-            if prof.shapes.is_empty() {
-                ui.label("Select subcatchments, reaches or ponds in flow order, then click Use Selection.");
-            } else {
-                let size = ui.available_size();
-                profile_view(ui, &prof, size);
-            }
-            return;
+        ui.add_space(4.0);
+        let avail = ui.available_size();
+        let body = vec2((avail.x - 70.0).max(200.0), (avail.y - 6.0).max(150.0));
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(body.x);
+                compare_body(ui, doc, st, body);
+            });
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                let graph = st.tab == 1;
+                if widgets::toggle_button(ui, "Table", 62.0, st.table && graph, graph).clicked() {
+                    st.table = !st.table;
+                }
+                if widgets::button_enabled(ui, if st.three_d { "2D" } else { "3D" }, 62.0, graph && !st.table).clicked() {
+                    st.three_d = !st.three_d;
+                }
+                if widgets::button(ui, "Print", 62.0).clicked() {
+                    let o = stormwaves_core::printing::PrintOptions {
+                        diagram: false,
+                        node_listing: false,
+                        area_listing: false,
+                        summaries: true,
+                        graphs: true,
+                        tables: false,
+                        date: crate::dialogs::misc::today(),
+                        only: st.nodes.clone(),
+                    };
+                    actions.push(WindowAction::PrintPdf(o));
+                }
+                let export = widgets::button(ui, "Export", 62.0);
+                egui::Popup::menu(&export).show(|ui| {
+                    if ui.button("Copy Summary to Clipboard").clicked() {
+                        let rows = compare_rows(doc, st);
+                        ui.ctx().copy_text(rows.iter().map(|r| r.join("\t")).collect::<Vec<_>>().join("\n"));
+                    }
+                });
+                if widgets::button(ui, "Selection", 62.0).on_hover_text("Compare the nodes now selected on the diagram").clicked() {
+                    st.nodes = doc.selection.clone();
+                }
+                if widgets::button(ui, "Help", 62.0).clicked() {
+                    widgets::request_help(ui.ctx(), "print");
+                }
+            });
+        });
+    });
+    open
+}
+
+/// Peak values of each compared node (label, inflow, outflow, primary, secondary).
+fn compare_rows(doc: &Doc, st: &CompareState) -> Vec<Vec<String>> {
+    let u = doc.project.units;
+    let f = |h: &stormwaves_core::hydrograph::Hydrograph| group(u.flow(h.peak().value), u.flow_dp());
+    st.nodes
+        .iter()
+        .filter_map(|id| Some((doc.project.node(*id)?, doc.results.node(*id)?)))
+        .map(|(n, r)| vec![n.title(), f(&r.inflow), f(&r.outflow), f(&r.routes[0]), f(&r.routes[1])])
+        .collect()
+}
+
+fn compare_body(ui: &mut Ui, doc: &mut Doc, st: &mut CompareState, size: egui::Vec2) {
+    if st.tab == 0 {
+        let flow = doc.project.units.flow_label().to_string();
+        let heads: Vec<(String, String)> = ["Node", "Inflow", "Outflow", "Primary", "Secondary"]
+            .iter()
+            .enumerate()
+            .map(|(i, h)| (h.to_string(), if i == 0 { String::new() } else { format!("({flow})") }))
+            .collect();
+        let rows = compare_rows(doc, st);
+        report_table(ui, size, &heads, &rows, 1, None);
+        return;
+    }
+    if st.tab == 2 {
+        // Side-by-side profile in the order the nodes were selected.
+        let prof = stormwaves_core::profile::chain(&doc.project, Some(&doc.results), &st.nodes);
+        if prof.shapes.is_empty() {
+            ui.label("Select subcatchments, reaches or ponds in flow order, then click Selection.");
+        } else {
+            profile_view(ui, &prof, size);
         }
+        return;
+    }
+    {
         let u = doc.project.units;
         let mut series = Vec::new();
         for (i, id) in st.nodes.iter().enumerate() {
@@ -695,16 +846,22 @@ pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState) -
             });
         }
         if series.is_empty() {
-            ui.label("Select two or more nodes on the diagram, then click Use Selection.");
+            ui.label("Select two or more nodes on the diagram, then click Selection.");
+            return;
+        }
+        if st.table {
+            let mut heads = vec!["Time (hours)".to_string()];
+            heads.extend(series.iter().map(|s| format!("{} ({})", s.name, u.flow_label())));
+            let mut cols = vec![series[0].x.clone()];
+            cols.extend(series.iter().map(|s| s.y.clone()));
+            let _ = data_table(ui, &heads, &cols, size.y, true);
             return;
         }
         let title = ["Inflow", "Outflow", "Primary", "Secondary"][st.what.min(3)];
         let y = format!("Flow ({})", u.flow_label());
         let spec = ChartSpec { title: &format!("{title} Hydrograph Comparison"), subtitle: "", x_label: "Time (hours)", y_label: &y, series: &series, summary: &[], three_d: st.three_d, marks: &[] };
-        let size = ui.available_size();
         chart::chart(ui, &spec, &mut st.view, size);
-    });
-    open
+    }
 }
 
 // ---------------------------------------------------------------- messages
@@ -712,7 +869,7 @@ pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState) -
 pub fn show_messages(ctx: &egui::Context, doc: &mut Doc, actions: &mut Vec<WindowAction>) -> bool {
     let mut open = true;
     let t = Tokens::get(ctx);
-    crate::frame::Win::new(format!("Messages - {}", doc.project.title)).open(&mut open).default_size(vec2(560.0, 240.0)).resizable(true).show(ctx, |ui| {
+    crate::frame::Win::new(format!("Messages - {}", doc.project.title)).open(&mut open).default_size(vec2(560.0, 240.0)).resizable(true).min_max().show(ctx, |ui| {
         let lines = report::message_lines(&doc.project, &doc.results);
         let h = (ui.available_height() - 30.0).max(80.0);
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::hover());
@@ -770,7 +927,7 @@ impl CurveState {
 pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState) -> bool {
     let mut open = true;
     let title = if st.storms { "Storm Distribution Report" } else { "Unit Hydrograph Report" };
-    crate::frame::Win::new(title).open(&mut open).default_size(vec2(720.0, 440.0)).resizable(true).show(ctx, |ui| {
+    crate::frame::Win::new(title).open(&mut open).default_size(vec2(720.0, 440.0)).resizable(true).min_max().show(ctx, |ui| {
         let names: Vec<String> = if st.storms {
             let mut v: Vec<String> = stormwaves_core::rainfall::builtin_storms().into_iter().map(|s| s.name).collect();
             v.extend(doc.project.storms.iter().map(|s| s.name.clone()));

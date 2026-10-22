@@ -104,10 +104,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
             NodeType::Link => "link",
             NodeType::Text => "start",
         };
-        if widgets::button(ui, "Help", 70.0).clicked() {
-            actions.push(WindowAction::Help(help));
-        }
-        match ok_cancel_apply(ui, true) {
+        match ok_cancel_apply(ui, true, help) {
             Buttons::Ok => {
                 apply = true;
                 keep = false;
@@ -454,7 +451,7 @@ fn tc_editor(ctx: &egui::Context, st: &mut EditState, u: &Units, doc: &Doc) {
         ui.add_space(4.0);
         let r = seg.kind.evaluate(70.0);
         ui.label(RichText::new(format!("Tt = {:.1} min   V = {:.2} {}{}", r.minutes, u.vel(r.velocity), u.vel_label(), r.capacity.map(|c| format!("   Capacity = {}", u.fmt_flow(c))).unwrap_or_default())).strong());
-        result = ok_cancel_apply(ui, false);
+        result = ok_cancel_apply(ui, false, "tc");
     });
     match result {
         Buttons::Ok | Buttons::Apply => {
@@ -969,7 +966,7 @@ fn volume_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
             }
             widgets::combo_field(ui, "emb", "Embedded in:", &mut vol.embedded_in, &opts, 140.0);
         });
-        result = ok_cancel_apply(ui, false);
+        result = ok_cancel_apply(ui, false, "pond");
     });
     match result {
         Buttons::Ok | Buttons::Apply => {

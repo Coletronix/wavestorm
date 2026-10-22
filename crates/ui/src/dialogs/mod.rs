@@ -19,11 +19,12 @@ pub enum Buttons {
     Apply,
 }
 
-pub fn ok_cancel_apply(ui: &mut Ui, apply: bool) -> Buttons {
+/// The dialog button row: OK, Cancel, (Apply) and Help, centred. Help opens help topic `help`.
+pub fn ok_cancel_apply(ui: &mut Ui, apply: bool, help: &'static str) -> Buttons {
     let mut r = Buttons::None;
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        let w = if apply { 3.0 * 84.0 } else { 2.0 * 84.0 };
+        let w = if apply { 4.0 * 84.0 } else { 3.0 * 84.0 };
         ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
         if widgets::button(ui, "OK", 78.0).clicked() {
             r = Buttons::Ok;
@@ -33,6 +34,9 @@ pub fn ok_cancel_apply(ui: &mut Ui, apply: bool) -> Buttons {
         }
         if apply && widgets::button(ui, "Apply", 78.0).clicked() {
             r = Buttons::Apply;
+        }
+        if widgets::button(ui, "Help", 78.0).clicked() {
+            widgets::request_help(ui.ctx(), help);
         }
     });
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {

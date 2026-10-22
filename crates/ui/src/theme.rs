@@ -105,7 +105,7 @@ impl Tokens {
             link: (Color32::from_rgb(252, 212, 222), Color32::from_rgb(214, 50, 90)),
             node_text: Color32::from_rgb(20, 20, 20),
             label_text: Color32::from_rgb(20, 20, 20),
-            chart_bg: Color32::from_rgb(255, 255, 160),
+            chart_bg: Color32::WHITE,
             chart_plot: Color32::from_rgb(255, 255, 255),
             chart_grid: Color32::from_rgb(170, 170, 170),
             chart_title: Color32::from_rgb(0, 0, 200),

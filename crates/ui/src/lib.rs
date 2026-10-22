@@ -693,7 +693,7 @@ impl StormwavesApp {
                     ui.close();
                 }
                 if ui.button("Diagram (PDF)...").clicked() {
-                    let o = stormwaves_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today() };
+                    let o = stormwaves_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new() };
                     self.print_pdf(&o);
                     ui.close();
                 }
@@ -920,7 +920,7 @@ impl StormwavesApp {
                 self.open_window(Window::Print(dialogs::misc::PrintState::default()));
             }
             if tb(ui, Glyph::PrintDiagram, "Print routing diagram (PDF)") {
-                let o = stormwaves_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today() };
+                let o = stormwaves_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new() };
                 self.print_pdf(&o);
             }
             separator(ui);
@@ -1253,6 +1253,11 @@ impl StormwavesApp {
                 WindowAction::PrintPdf(o) => self.print_pdf(&o),
                 WindowAction::SetPrefs(p) => self.set_prefs(p),
                 WindowAction::PickFile(purpose) => self.platform.pick(purpose),
+                WindowAction::SaveFile { name, bytes, ext } => match self.platform.save(&name, None, &bytes, ext) {
+                    Ok(Some(path)) => self.status = format!("Saved {path}"),
+                    Ok(None) => {}
+                    Err(e) => self.error = Some(e),
+                },
                 WindowAction::SetEvents { events, replace } => self.set_events(events, replace),
             }
         }
@@ -1326,6 +1331,9 @@ impl StormwavesApp {
             None => Vec::new(),
         };
         self.window_actions(wactions);
+        if let Some(topic) = widgets::take_help_request(&ctx) {
+            self.open_window(Window::Help(help::HelpState::topic(topic)));
+        }
         self.error_dialog(&ctx);
         let title = format!("{} - Stormwaves", self.doc().title());
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
@@ -1436,7 +1444,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             // Comparison-report profile of the listed nodes, e.g. `profile:2S,1R,1P`.
             let sel: Vec<NodeId> = arg.split(',').filter_map(|l| find(app, l.trim())).collect();
             let mut st = reports::CompareState::new(sel);
-            st.what = 4;
+            st.tab = 2;
             app.open_window(Window::Compare(st));
         }
         "theme" => {

@@ -48,7 +48,7 @@ pub fn units(ctx: &egui::Context, doc: &mut Doc, st: &mut UnitsState) -> bool {
         });
         let draft = st.draft;
         ui.label(RichText::new(format!("Areas in {}, volumes in {}, flows in {}", draft.area_heading(), draft.volume_heading(), draft.flow_label())).color(Tokens::get(ui.ctx()).text_dim));
-        match ok_cancel_apply(ui, false) {
+        match ok_cancel_apply(ui, false, "start") {
             Buttons::Ok | Buttons::Apply => {
                 doc.edit("Units", |p| p.units = draft);
                 keep = false;
@@ -86,7 +86,7 @@ pub fn diagram(ctx: &egui::Context, doc: &mut Doc, st: &mut DiagramState) -> boo
             doc.project.title = title;
             doc.dirty = true;
         }
-        match ok_cancel_apply(ui, false) {
+        match ok_cancel_apply(ui, false, "mouse") {
             Buttons::Ok | Buttons::Apply => {
                 let d = st.draft.clone();
                 doc.edit("Diagram Settings", |p| {
@@ -123,7 +123,7 @@ pub fn general(ctx: &egui::Context, st: &mut GeneralState, actions: &mut Vec<Win
         });
         widgets::check(ui, &mut st.draft.multiple_project_reports, "Allow multiple Project Reports windows");
         widgets::check(ui, &mut st.draft.show_tips, "Show pop-up tips on node editing screens");
-        match ok_cancel_apply(ui, true) {
+        match ok_cancel_apply(ui, true, "start") {
             Buttons::Ok => {
                 actions.push(WindowAction::SetPrefs(st.draft.clone()));
                 keep = false;
@@ -155,7 +155,7 @@ pub fn notes(ctx: &egui::Context, doc: &mut Doc, st: &mut NotesState) -> bool {
         widgets::text_field(ui, "Prepared by:", &mut st.prepared_by, 380.0);
         ui.label("Notes:");
         ui.add_sized(vec2(ui.available_width(), 220.0), egui::TextEdit::multiline(&mut st.notes));
-        match ok_cancel_apply(ui, false) {
+        match ok_cancel_apply(ui, false, "start") {
             Buttons::Ok | Buttons::Apply => {
                 let (t, pb, n) = (st.title.clone(), st.prepared_by.clone(), st.notes.clone());
                 doc.edit("Project Notes", |p| {
@@ -217,7 +217,7 @@ pub fn calibrate(ctx: &egui::Context, doc: &mut Doc, st: &mut CalibrateState) ->
             ui.label("(or the ruler button on the right toolbar) and click two points");
             ui.label("on the background that are a known distance apart, such as the");
             ui.label("ends of a scale bar or a dimensioned property line.");
-            if ok_cancel_apply(ui, false) != Buttons::None {
+            if ok_cancel_apply(ui, false, "background") != Buttons::None {
                 keep = false;
             }
             return;
@@ -229,7 +229,7 @@ pub fn calibrate(ctx: &egui::Context, doc: &mut Doc, st: &mut CalibrateState) ->
             let fpu = st.distance / units_dist;
             ui.label(format!("Scale: 1 diagram unit = {}", u.fmt_len(fpu).replace("'", &format!(" {}", if u.metric() { "" } else { "ft" }))));
         }
-        match ok_cancel_apply(ui, false) {
+        match ok_cancel_apply(ui, false, "background") {
             Buttons::Ok | Buttons::Apply => {
                 if units_dist > 0.0 && st.distance > 0.0 {
                     let fpu = st.distance / units_dist;
@@ -480,7 +480,7 @@ pub fn land_use(ctx: &egui::Context, doc: &mut Doc, st: &mut LandUseState) -> bo
                 });
             }
         });
-        match ok_cancel_apply(ui, true) {
+        match ok_cancel_apply(ui, true, "landuse") {
             Buttons::Ok | Buttons::Apply => {
                 let d = st.draft.clone();
                 doc.edit("Land-Use Settings", |p| p.land_use = d.clone());
