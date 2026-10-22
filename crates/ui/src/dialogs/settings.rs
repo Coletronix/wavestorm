@@ -119,6 +119,9 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
                 if widgets::button(ui, "IDF...", 50.0).on_hover_text("IDF curve for the Rational method").clicked() {
                     actions.push(WindowAction::OpenWindow(Window::Idf(crate::dialogs::storm::IdfEditor::new(doc))));
                 }
+                if widgets::button(ui, "Lookup...", 70.0).on_hover_text("Create events from a NOAA Atlas 14 precipitation-frequency table").clicked() {
+                    actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
+                }
             });
         });
     });

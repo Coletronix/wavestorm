@@ -106,9 +106,10 @@ Keep this section updated at the end of every session.
   messages, reports, PDF printing, land-use loading, CSV import/export/merge, full egui UI
   (menus, palette, diagram, dialogs, charts, help), background image/PDF underlay with scale
   calibration and subcatchment tracing, desktop and web (trunk) apps.
-- Remaining parity gaps: TR-55 graphical peak/storage worksheet, rainfall event lookup
-  tables, custom units, rock-fill/asymmetrical weirs, status-bar hints, pop-up tips on edit
-  screens (General setting).
+- Remaining parity gaps: TR-55 graphical peak/storage worksheet, built-in county event
+  tables (we look events up from a user-downloaded NOAA Atlas 14 CSV instead: `core::noaa`,
+  Settings > Rainfall Event Lookup), custom units, rock-fill/asymmetrical weirs, status-bar
+  hints, pop-up tips on edit screens (General setting).
 - Also done this session: pump max elevation + priority groups; node Profile tab
   (`core::profile`, drawn by `reports::profile_view`) on subcat/reach/pond reports and as a
   "Profile" view of the comparison report (nodes chained in selection order).

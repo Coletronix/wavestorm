@@ -27,6 +27,7 @@ pub enum Window {
     LandUse(dialogs::misc::LandUseState),
     Help(crate::help::HelpState),
     General(dialogs::misc::GeneralState),
+    EventLookup(dialogs::storm::EventLookup),
 }
 
 impl Window {
@@ -54,6 +55,9 @@ pub enum WindowAction {
     Help(&'static str),
     PrintPdf(stormwaves_core::printing::PrintOptions),
     SetPrefs(crate::prefs::Prefs),
+    PickFile(crate::platform::Purpose),
+    /// Replace the project's rainfall events, or add/update them by name.
+    SetEvents { events: Vec<stormwaves_core::rainfall::RainEvent>, replace: bool },
 }
 
 /// Shows every window of the document; returns follow-up actions.
@@ -82,6 +86,7 @@ pub fn show_all(ctx: &egui::Context, doc: &mut Doc) -> Vec<WindowAction> {
             Window::LandUse(s) => dialogs::misc::land_use(ctx, doc, s),
             Window::Help(s) => crate::help::show(ctx, s),
             Window::General(s) => dialogs::misc::general(ctx, s, &mut actions),
+            Window::EventLookup(s) => dialogs::storm::event_lookup(ctx, doc, s, &mut actions),
             Window::Print(s) => {
                 let (keep, go) = dialogs::misc::print(ctx, s);
                 if let Some(o) = go {

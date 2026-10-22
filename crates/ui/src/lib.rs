@@ -153,6 +153,20 @@ impl StormwavesApp {
                 self.active = self.docs.len() - 1;
                 self.status = format!("Imported {} from TR-20: {nodes} nodes{}", item.name, if notes > 0 { format!(", {notes} notes (see Project Notes)") } else { String::new() });
             }
+            Purpose::NoaaCsv => {
+                let table = stormwaves_core::noaa::parse_pfds_csv(&String::from_utf8_lossy(&item.bytes))?;
+                let doc = self.doc();
+                let lookup = doc.windows.iter_mut().find_map(|w| if let Window::EventLookup(s) = w { Some(s) } else { None });
+                match lookup {
+                    Some(s) => s.load(&item.name, table),
+                    None => {
+                        let mut s = dialogs::storm::EventLookup::new(doc);
+                        s.load(&item.name, table);
+                        doc.windows.push(Window::EventLookup(s));
+                    }
+                }
+                self.status = format!("Loaded {}", item.name);
+            }
             Purpose::ImportSubareas => {
                 let text = String::from_utf8_lossy(&item.bytes).into_owned();
                 let mut result = Ok((0, 0));
@@ -250,6 +264,33 @@ impl StormwavesApp {
             }
             Err(e) => self.error = Some(e),
         }
+    }
+
+    /// Replaces the rainfall events, or adds them (an event with the same name is updated).
+    /// Open Calculation Settings drafts get the same change so their OK does not undo it.
+    pub fn set_events(&mut self, events: Vec<stormwaves_core::rainfall::RainEvent>, replace: bool) {
+        let n = events.len();
+        let merge = |list: &mut Vec<stormwaves_core::rainfall::RainEvent>, current: &mut usize| {
+            if replace {
+                *list = events.clone();
+                *current = 0;
+            } else {
+                for e in &events {
+                    match list.iter_mut().find(|x| x.name == e.name) {
+                        Some(x) => *x = e.clone(),
+                        None => list.push(e.clone()),
+                    }
+                }
+            }
+        };
+        let doc = self.doc();
+        doc.edit("Rainfall Event Lookup", |p| merge(&mut p.settings.events, &mut p.settings.current_event));
+        for w in doc.windows.iter_mut() {
+            if let Window::Settings(s) = w {
+                merge(&mut s.draft.events, &mut s.draft.current_event);
+            }
+        }
+        self.status = format!("{} {n} rainfall events", if replace { "Created" } else { "Added" });
     }
 
     /// Applies new preferences and saves them for later sessions.
@@ -685,6 +726,10 @@ impl StormwavesApp {
                 if ui.button("IDF Curve...").clicked() {
                     let st = dialogs::storm::IdfEditor::new(self.doc());
                     self.open_window(Window::Idf(st));
+                }
+                if ui.button("Rainfall Event Lookup...").on_hover_text("Create rainfall events from a NOAA Atlas 14 table").clicked() {
+                    let st = dialogs::storm::EventLookup::new(self.doc());
+                    self.open_window(Window::EventLookup(st));
                 }
                 ui.separator();
                 if ui.button("General...").clicked() {
@@ -1202,6 +1247,8 @@ impl StormwavesApp {
                 WindowAction::Help(topic) => self.open_window(Window::Help(help::HelpState::topic(topic))),
                 WindowAction::PrintPdf(o) => self.print_pdf(&o),
                 WindowAction::SetPrefs(p) => self.set_prefs(p),
+                WindowAction::PickFile(purpose) => self.platform.pick(purpose),
+                WindowAction::SetEvents { events, replace } => self.set_events(events, replace),
             }
         }
     }
@@ -1306,7 +1353,7 @@ impl eframe::App for StormwavesApp {
 /// `report:1P`, `edit:1S`, `tab:<n>`, `select:1R`, `settings`, `settings-tab:<n>`, `messages`,
 /// `project-report`, `storms`, `uhs`, `units`, `theme:<classic|modern|dark>`, `compare`, `new`,
 /// `table`, `inflows` (tabular hydrograph with inflow columns), `general`,
-/// `import-tr20:<path>` (desktop).
+/// `profile:<labels,…>`, `import-tr20:<path>` and `lookup:<NOAA csv path>` (desktop).
 pub fn script(app: &mut StormwavesApp, cmd: &str) {
     let (verb, arg) = cmd.split_once(':').unwrap_or((cmd, ""));
     let find = |app: &mut StormwavesApp, label: &str| app.doc().project.by_label(label).map(|n| n.id);
@@ -1366,8 +1413,11 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             app.open_window(Window::General(st));
         }
         #[cfg(not(target_arch = "wasm32"))]
-        "import-tr20" => match std::fs::read(arg) {
-            Ok(bytes) => app.platform.push(Incoming { purpose: Purpose::ImportTr20, name: arg.to_string(), path: None, bytes }),
+        "import-tr20" | "lookup" => match std::fs::read(arg) {
+            Ok(bytes) => {
+                let purpose = if verb.trim() == "lookup" { Purpose::NoaaCsv } else { Purpose::ImportTr20 };
+                app.platform.push(Incoming { purpose, name: arg.to_string(), path: None, bytes });
+            }
             Err(e) => app.error = Some(format!("Cannot read {arg}: {e}")),
         },
         "storms" => app.open_window(Window::Storms(reports::CurveState::storms())),
@@ -1378,8 +1428,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         }
         "profile" => {
             // Comparison-report profile of the listed nodes, e.g. `profile:2S,1R,1P`.
-            let project = &app.doc().project;
-            let sel: Vec<NodeId> = arg.split(',').filter_map(|l| project.nodes.iter().find(|n| n.label().eq_ignore_ascii_case(l.trim())).map(|n| n.id)).collect();
+            let sel: Vec<NodeId> = arg.split(',').filter_map(|l| find(app, l.trim())).collect();
             let mut st = reports::CompareState::new(sel);
             st.what = 4;
             app.open_window(Window::Compare(st));

@@ -72,7 +72,10 @@ A minimum Tc can be set on the Advanced settings tab.",
 The NRCS Type I, IA, II and III 24-hour distributions use the published 0.1-hour tables, smoothed with a monotone cubic so short Tc values see realistic intensities; \"Tabular\" versions are unsmoothed for direct TR-20 comparisons. \
 6- and 12-hour Type II and III storms are the central part of the 24-hour storms.\n\n\
 Duration mode Rescale stretches a storm to a new duration; Trim keeps its central part (recommended for the NRCS types).\n\
-More Storms creates custom distributions from mass-curve, intensity or incremental data, or from IDF coefficients (Chicago storm).",
+More Storms creates custom distributions from mass-curve, intensity or incremental data, or from IDF coefficients (Chicago storm).\n\n\
+Rainfall Event Lookup (Settings menu, or Lookup on the Rainfall tab) creates events from a NOAA Atlas 14 precipitation-frequency table: \
+download the point estimates (precipitation depth, CSV) for the site from NOAA's Precipitation Frequency Data Server, load the file, \
+pick the duration row and the recurrence intervals, then Replace or Add events.",
     },
     Topic {
         id: "reach",

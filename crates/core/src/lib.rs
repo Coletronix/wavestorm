@@ -14,6 +14,7 @@ pub mod geometry;
 pub mod hydrograph;
 pub mod landuse;
 pub mod link;
+pub mod noaa;
 pub mod outlets;
 pub mod pdf;
 pub mod printing;
