@@ -3,99 +3,13 @@
 use super::{Buttons, conv_field, ok_cancel_apply};
 use crate::chart::{self, ChartSpec, ChartView, Series};
 use crate::doc::Doc;
-use crate::platform::Purpose;
 use crate::theme::Tokens;
 use crate::widgets;
-use crate::windows::WindowAction;
 use egui::{Color32, RichText, vec2};
-use stormwaves_core::noaa::PfTable;
 use stormwaves_core::project::IdfCurve;
 use stormwaves_core::rainfall::Storm;
 
-/// Rainfall Event Lookup: events from a NOAA Atlas 14 precipitation-frequency table.
-pub struct EventLookup {
-    pub file_name: String,
-    pub table: Option<PfTable>,
-    /// Selected duration row.
-    pub row: Option<usize>,
-    /// Recurrence intervals to create events for.
-    pub checked: Vec<bool>,
-    pub storm: String,
-}
-
-impl EventLookup {
-    pub fn new(doc: &Doc) -> Self {
-        let storm = doc.project.settings.events.get(doc.project.settings.current_event).map_or_else(|| "Type II 24-hr".to_string(), |e| e.storm.clone());
-        EventLookup { file_name: String::new(), table: None, row: None, checked: Vec::new(), storm }
-    }
-
-    /// Shows a newly loaded table: the 24-hour row and the usual design events selected.
-    pub fn load(&mut self, name: &str, table: PfTable) {
-        self.row = table.rows.iter().position(|r| (r.hours - 24.0).abs() < 1e-9).or(Some(0));
-        self.checked = table.aris.iter().map(|a| [2.0, 5.0, 10.0, 25.0, 50.0, 100.0].contains(a)).collect();
-        self.file_name = name.to_string();
-        self.table = Some(table);
-    }
-}
-
-pub fn event_lookup(ctx: &egui::Context, doc: &Doc, st: &mut EventLookup, actions: &mut Vec<WindowAction>) -> bool {
-    let mut keep = true;
-    let storms: Vec<(String, String)> = stormwaves_core::rainfall::builtin_storms().into_iter().map(|s| s.name).chain(doc.project.storms.iter().map(|s| s.name.clone())).map(|n| (n.clone(), n)).collect();
-    crate::frame::Win::new("Rainfall Event Lookup").collapsible(false).resizable(true).default_size(vec2(790.0, 470.0)).show(ctx, |ui| {
-        let t = Tokens::get(ui.ctx());
-        ui.horizontal(|ui| {
-            if widgets::button(ui, "Load NOAA Atlas 14 CSV...", 180.0).on_hover_text("Precipitation depth table (CSV) from the NOAA Precipitation Frequency Data Server").clicked() {
-                actions.push(WindowAction::PickFile(Purpose::NoaaCsv));
-            }
-            ui.label(RichText::new(if st.file_name.is_empty() { "No table loaded".to_string() } else { st.file_name.clone() }).color(t.text_dim));
-        });
-        let Some(table) = &st.table else {
-            ui.add_space(8.0);
-            ui.label("Download the point precipitation frequency estimates (depth, CSV) for the site from NOAA's");
-            ui.label("Precipitation Frequency Data Server, then load the file here to create rainfall events.");
-            if widgets::button(ui, "Cancel", 78.0).clicked() {
-                keep = false;
-            }
-            return;
-        };
-        ui.label(RichText::new(&table.source).color(t.text_dim));
-        let mut cols: Vec<(String, f32, bool)> = vec![("Duration".into(), 80.0, false)];
-        cols.extend(table.aris.iter().map(|a| (format!("{}-Year", *a as i64), 62.0, true)));
-        let cols_ref: Vec<(&str, f32, bool)> = cols.iter().map(|(n, w, r)| (n.as_str(), *w, *r)).collect();
-        let rows: Vec<Vec<String>> = table.rows.iter().map(|r| std::iter::once(r.label.clone()).chain(r.depths.iter().map(|d| if d.is_finite() { format!("{d:.2}") } else { String::new() })).collect()).collect();
-        let h = (ui.available_height() - 120.0).max(120.0);
-        widgets::list_table(ui, "noaa-table", &cols_ref, &rows, &mut st.row, h);
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.label("Create events for:");
-            for (i, a) in table.aris.iter().enumerate() {
-                if let Some(c) = st.checked.get_mut(i) {
-                    widgets::check(ui, c, &format!("{}-Year", *a as i64));
-                }
-            }
-        });
-        widgets::combo_field(ui, "lk-storm", "Storm Type:", &mut st.storm, &storms, 220.0);
-        let picked: Vec<usize> = st.checked.iter().enumerate().filter(|c| *c.1).map(|c| c.0).collect();
-        let row = st.row.unwrap_or(0);
-        let events = stormwaves_core::noaa::events(table, row, &picked, &st.storm);
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            let ok = !events.is_empty();
-            if widgets::button_enabled(ui, "Replace Events", 110.0, ok).on_hover_text("Replace the project's rainfall events").clicked() {
-                actions.push(WindowAction::SetEvents { events: events.clone(), replace: true });
-                keep = false;
-            }
-            if widgets::button_enabled(ui, "Add Events", 100.0, ok).on_hover_text("Add to (or update) the project's rainfall events").clicked() {
-                actions.push(WindowAction::SetEvents { events: events.clone(), replace: false });
-                keep = false;
-            }
-            if widgets::button(ui, "Cancel", 78.0).clicked() {
-                keep = false;
-            }
-        });
-    });
-    keep
-}
+pub use super::lookup::{EventLookup, event_lookup};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataKind {
@@ -253,16 +167,36 @@ impl IdfEditor {
         let draft = doc.project.settings.idf.clone().unwrap_or_else(|| IdfCurve {
             name: "Local IDF".into(),
             events: events.iter().map(|e| (e.name.clone(), 60.0, 10.0, 0.8)).collect(),
+            tables: Vec::new(),
         });
         IdfEditor { draft }
     }
 }
 
 /// IDF coefficient editor: i = a / (b + t)^c with t in minutes, i in in/hr.
-pub fn idf(ctx: &egui::Context, doc: &mut Doc, st: &mut IdfEditor) -> bool {
+pub fn idf(ctx: &egui::Context, doc: &mut Doc, st: &mut IdfEditor, actions: &mut Vec<crate::windows::WindowAction>) -> bool {
     let mut keep = true;
     crate::frame::Win::new("IDF Curve (Rational Method)").resizable(true).default_size(vec2(560.0, 420.0)).show(ctx, |ui| {
         widgets::text_field(ui, "Name:", &mut st.draft.name, 240.0);
+        ui.horizontal(|ui| {
+            let lib = crate::library::current();
+            let resp = widgets::button_enabled(ui, "From Library...", 120.0, !lib.idfs.is_empty()).on_hover_text("Use an IDF curve file from the rainfall library");
+            egui::Popup::menu(&resp).show(|ui| {
+                for f in &lib.idfs {
+                    if ui.button(&f.name).clicked() {
+                        st.draft = f.to_curve();
+                        ui.close();
+                    }
+                }
+            });
+            if widgets::button(ui, "Save File...", 100.0).on_hover_text("Save this curve as an IDF (.idf) file").clicked() {
+                let file = stormwaves_core::rainlib::IdfFile::from_curve(&st.draft);
+                actions.push(crate::windows::WindowAction::SaveFile { name: format!("{}.idf", st.draft.name), bytes: stormwaves_core::rainlib::write_idf(&file).into_bytes(), ext: "idf" });
+            }
+        });
+        if !st.draft.tables.is_empty() {
+            ui.label(RichText::new(format!("Also holds {} discrete-value events (from a table); they are used as given.", st.draft.tables.len())).color(Tokens::get(ui.ctx()).text_dim));
+        }
         ui.label("Intensity i = a / (b + t)^c   (t = duration in minutes, i in in/hr)");
         egui::Grid::new("idf").spacing(vec2(10.0, 3.0)).show(ui, |ui| {
             for h in ["Event", "a", "b", "c", "i(10)", "i(30)", "i(60)"] {

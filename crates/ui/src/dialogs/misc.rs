@@ -121,14 +121,50 @@ pub fn general(ctx: &egui::Context, st: &mut GeneralState, actions: &mut Vec<Win
             conv_field(ui, "backup", "Backup Interval", "minutes", &mut st.draft.backup_minutes, |x| x, |x| x.clamp(0.0, 1440.0), 0, 200.0);
             ui.label(RichText::new("Changed projects are copied to <project>.bak (desktop only); 0 turns backups off.").color(Tokens::get(ui.ctx()).text_dim));
         });
+        widgets::group(ui, "Rainfall Library", |ui| {
+            let lib = crate::library::current();
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ui.label("Folder with rainfall files (.hcr storms, .huh unit hydrographs, .idf IDF curves, *-Rain.txt county tables):");
+                ui.horizontal(|ui| {
+                    widgets::text_box(ui, &mut st.draft.rainfall_folder, 360.0);
+                    if widgets::button(ui, "Browse...", 78.0).clicked() {
+                        if let Some(p) = crate::platform::Platform::default().pick_folder() {
+                            st.draft.rainfall_folder = p;
+                        }
+                    }
+                });
+            }
+            ui.horizontal(|ui| {
+                if widgets::button(ui, "Import Rainfall Files...", 170.0).on_hover_text("Choose several rainfall files at once").clicked() {
+                    actions.push(WindowAction::PickFile(crate::platform::Purpose::RainLib));
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                if widgets::button(ui, "Rescan", 70.0).on_hover_text("Read the folder again").clicked() {
+                    crate::library::set_folder(&st.draft.rainfall_folder);
+                }
+                if widgets::button_enabled(ui, "Forget Imports", 110.0, crate::library::import_count() > 0).clicked() {
+                    crate::library::clear_imports();
+                }
+            });
+            let t = Tokens::get(ui.ctx());
+            ui.label(RichText::new(format!("{} storms, {} unit hydrographs, {} IDF files, {} lookup tables loaded", lib.storms.len(), lib.uhs.len(), lib.idfs.len(), lib.tables.len())).color(t.text_dim));
+            for p in lib.problems.iter().take(3) {
+                ui.colored_label(t.warning, p);
+            }
+        });
         widgets::check(ui, &mut st.draft.multiple_project_reports, "Allow multiple Project Reports windows");
         widgets::check(ui, &mut st.draft.show_tips, "Show pop-up tips on node editing screens");
         match ok_cancel_apply(ui, true, "start") {
             Buttons::Ok => {
+                crate::library::set_folder_if_changed(&st.draft.rainfall_folder);
                 actions.push(WindowAction::SetPrefs(st.draft.clone()));
                 keep = false;
             }
-            Buttons::Apply => actions.push(WindowAction::SetPrefs(st.draft.clone())),
+            Buttons::Apply => {
+                crate::library::set_folder_if_changed(&st.draft.rainfall_folder);
+                actions.push(WindowAction::SetPrefs(st.draft.clone()));
+            }
             Buttons::Cancel => keep = false,
             Buttons::None => {}
         }

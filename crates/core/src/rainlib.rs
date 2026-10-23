@@ -583,6 +583,13 @@ pub struct IdfFile {
 }
 
 impl IdfFile {
+    /// The file form of a project IDF curve (for saving it).
+    pub fn from_curve(c: &IdfCurve) -> IdfFile {
+        let mut events: Vec<IdfEvent> = c.events.iter().map(|(n, a, b, cc)| IdfEvent { name: n.clone(), shape: IdfShape::Coef { a: *a, b: *b, c: *cc }, factor: 1.0 }).collect();
+        events.extend(c.tables.iter().map(|(n, p)| IdfEvent { name: n.clone(), shape: IdfShape::Table(p.clone()), factor: 1.0 }));
+        IdfFile { name: c.name.clone(), comment: String::new(), events }
+    }
+
     /// Converts to the project's IDF curve (tables and coefficient sets).
     pub fn to_curve(&self) -> IdfCurve {
         let mut c = IdfCurve { name: self.name.clone(), events: Vec::new(), tables: Vec::new() };
@@ -1177,6 +1184,7 @@ coef=24.00      0.5920    0.0230   -.00025    0
         let c = f.to_curve();
         assert!((c.intensity("10-yr", 30.0).unwrap() - f.events[0].intensity(30.0).unwrap()).abs() < 1e-12);
         assert!((c.intensity("2-yr", 60.0).unwrap() - 1.5).abs() < 1e-9);
+        assert_eq!(IdfFile::from_curve(&c).events.len(), 2);
         let back = parse_idf(&write_idf(&f)).unwrap();
         assert_eq!(back.events.len(), 2);
         assert!((back.events[0].intensity(30.0).unwrap() - f.events[0].intensity(30.0).unwrap()).abs() < 1e-4);

@@ -9,6 +9,7 @@ pub mod doc;
 pub mod frame;
 pub mod help;
 pub mod icons;
+pub mod library;
 pub mod platform;
 pub mod prefs;
 pub mod reports;
@@ -70,6 +71,7 @@ impl StormwavesApp {
     fn with(platform: Platform, prefs: Prefs, persist_prefs: bool) -> Self {
         let mut doc = Doc::new(samples::sample_project(), None);
         doc.dirty = false;
+        library::init(&prefs.rainfall_folder, persist_prefs);
         StormwavesApp {
             docs: vec![doc],
             active: 0,
@@ -154,19 +156,20 @@ impl StormwavesApp {
                 self.status = format!("Imported {} from TR-20: {nodes} nodes{}", item.name, if notes > 0 { format!(", {notes} notes (see Project Notes)") } else { String::new() });
             }
             Purpose::NoaaCsv => {
-                let table = stormwaves_core::noaa::parse_pfds_csv(&String::from_utf8_lossy(&item.bytes))?;
+                // A lookup table (*-Rain.txt), an IDF file or a NOAA Atlas 14 CSV.
                 let doc = self.doc();
                 let lookup = doc.windows.iter_mut().find_map(|w| if let Window::EventLookup(s) = w { Some(s) } else { None });
                 match lookup {
-                    Some(s) => s.load(&item.name, table),
+                    Some(s) => s.load_file(&item.name, &item.bytes)?,
                     None => {
                         let mut s = dialogs::storm::EventLookup::new(doc);
-                        s.load(&item.name, table);
+                        s.load_file(&item.name, &item.bytes)?;
                         doc.windows.push(Window::EventLookup(s));
                     }
                 }
                 self.status = format!("Loaded {}", item.name);
             }
+            Purpose::RainLib => self.status = library::import(&item.name, &item.bytes),
             Purpose::ImportSubareas => {
                 let text = String::from_utf8_lossy(&item.bytes).into_owned();
                 let mut result = Ok((0, 0));
@@ -284,7 +287,11 @@ impl StormwavesApp {
             }
         };
         let doc = self.doc();
-        doc.edit("Rainfall Event Lookup", |p| merge(&mut p.settings.events, &mut p.settings.current_event));
+        doc.edit("Rainfall Event Lookup", |p| {
+            merge(&mut p.settings.events, &mut p.settings.current_event);
+            // Library storms used by the new events become part of the project.
+            library::adopt(p);
+        });
         for w in doc.windows.iter_mut() {
             if let Window::Settings(s) = w {
                 merge(&mut s.draft.events, &mut s.draft.current_event);
@@ -1421,6 +1428,11 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             app.open_window(Window::Units(st));
         }
         "messages" => app.open_window(Window::Messages),
+        "rainlib" => library::set_folder(arg),
+        "lookup-open" => {
+            let st = dialogs::storm::EventLookup::new(app.doc());
+            app.open_window(Window::EventLookup(st));
+        }
         "project-report" => app.open_window(Window::ProjectReport(reports::ProjectReportState::default())),
         "general" => {
             let st = dialogs::misc::GeneralState { draft: app.prefs.clone() };

@@ -83,7 +83,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
             ui.set_min_size(vec2(520.0, 300.0));
             let tab = names.get(st.tab).copied().unwrap_or("General");
             match tab {
-                "General" => general(ui, st),
+                "General" => general(ui, st, &doc.project),
                 "Notes" => {
                     ui.label("Notes (included in reports):");
                     ui.add_sized(vec2(ui.available_width(), 260.0), egui::TextEdit::multiline(&mut st.draft.notes));
@@ -161,12 +161,14 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
                 n.outflows = outflows;
                 n.pos = pos;
             }
+            // A library unit hydrograph chosen here is copied into the project.
+            crate::library::adopt(p);
         });
     }
     keep
 }
 
-fn general(ui: &mut Ui, st: &mut EditState) {
+fn general(ui: &mut Ui, st: &mut EditState, project: &stormwaves_core::project::Project) {
     ui.horizontal(|ui| {
         widgets::with_tip(ui, "Identifies the node on the diagram and in reports, with its type letter (S, R, P, L). Numbers must be unique for each type.", |ui| {
             widgets::text_field(ui, "Node Number:", &mut st.draft.number, 90.0);
@@ -186,8 +188,8 @@ fn general(ui: &mut Ui, st: &mut EditState) {
             ui.add_space(6.0);
             let mut uh = sc.uh.clone().unwrap_or_default();
             let mut opts = vec![(String::new(), "(project default)".to_string())];
-            for u in stormwaves_core::uh::builtin_uhs() {
-                opts.push((u.name.clone(), u.name));
+            for name in crate::library::uh_names(project) {
+                opts.push((name.clone(), name));
             }
             let changed = widgets::with_tip(ui, "Unit hydrograph shape for this subcatchment only. The project default (Settings > Calculation > Unit Hydro) is the standard NRCS unit hydrograph unless changed there.", |ui| {
                 widgets::combo_field(ui, "uh", "Unit Hydrograph:", &mut uh, &opts, 220.0)
