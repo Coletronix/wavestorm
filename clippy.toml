@@ -1,3 +1,5 @@
+# Drawing helpers (EMF/PDF/print/icon painters) naturally take geometry + style + text arguments.
+too-many-arguments-threshold = 10
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true

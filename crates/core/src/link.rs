@@ -210,9 +210,12 @@ fn table_interp(pts: &[(f64, f64)], t: f64) -> f64 {
     last.1
 }
 
+/// Times (hours) and named discharge columns (cfs) read from a hydrograph CSV.
+pub type CsvColumns = (Vec<f64>, Vec<(String, Vec<f64>)>);
+
 /// Parses a hydrograph CSV: first column time (hours/minutes/seconds in the heading), further
 /// columns are named hydrographs in cfs or cms. Returns (times in hours, named columns in cfs).
-pub fn parse_csv(text: &str) -> Result<(Vec<f64>, Vec<(String, Vec<f64>)>), String> {
+pub fn parse_csv(text: &str) -> Result<CsvColumns, String> {
     let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.chars().all(|c| c == ','));
     let header = lines.next().ok_or("empty file")?;
     let heads: Vec<String> = header.split(',').map(|s| s.trim().trim_matches('"').to_string()).collect();

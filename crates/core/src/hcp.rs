@@ -208,27 +208,27 @@ pub fn import(text: &str) -> Result<(Project, Vec<String>), String> {
 
     // ---- project header (whatever the first section is called)
     let mut head = Rec::new(first);
-    if let Some(u) = head.take("FileUnits") {
-        if !u.eq_ignore_ascii_case("English") {
-            return Err(format!(
-                "Project files stored in {u} units are not supported yet (no sample to verify the unit conversions against). Files stored in English units open fine, including ones whose reports are set to metric."
-            ));
-        }
+    if let Some(u) = head.take("FileUnits")
+        && !u.eq_ignore_ascii_case("English")
+    {
+        return Err(format!(
+            "Project files stored in {u} units are not supported yet (no sample to verify the unit conversions against). Files stored in English units open fine, including ones whose reports are set to metric."
+        ));
     }
     if let Some(u) = head.take("ReportUnits") {
         project.units.system = if u.eq_ignore_ascii_case("Metric") { UnitSystem::Metric } else { UnitSystem::English };
     }
     project.title = head.take("Name").unwrap_or_default();
-    if let Some(v) = head.nums("TimeSpan") {
-        if let [a, b, ..] = v[..] {
-            project.settings.span_start = r10(a / 3600.0);
-            project.settings.span_end = r10(b / 3600.0);
-        }
+    if let Some(v) = head.nums("TimeSpan")
+        && let [a, b, ..] = v[..]
+    {
+        project.settings.span_start = r10(a / 3600.0);
+        project.settings.span_end = r10(b / 3600.0);
     }
-    if let Some(v) = head.num("TimeInc") {
-        if v > 0.0 {
-            project.settings.dt = r10(v / 3600.0);
-        }
+    if let Some(v) = head.num("TimeInc")
+        && v > 0.0
+    {
+        project.settings.dt = r10(v / 3600.0);
     }
     if let Some(v) = head.take("RunoffMethod") {
         let l = v.to_ascii_lowercase();
@@ -552,9 +552,10 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
             }
             pond.flood_elevation = head.num("FloodElev");
             // Storage: each [STORAGE] opens a volume that the following [STAGE] records fill.
-            let mut volume: Option<(StorageVolume, Vec<f64>, Vec<f64>, usize, usize)> = None;
+            type PendingVolume = Option<(StorageVolume, Vec<f64>, Vec<f64>, usize, usize)>;
+            let mut volume: PendingVolume = None;
             let mut vol_no = 0usize;
-            let finish = |v: Option<(StorageVolume, Vec<f64>, Vec<f64>, usize, usize)>, pond: &mut Pond| {
+            let finish = |v: PendingVolume, pond: &mut Pond| {
                 if let Some((mut vol, elev, area, _, _)) = v {
                     if let VolumeShape::Custom { elevations, values, .. } = &mut vol.shape {
                         *elevations = elev;
@@ -1555,10 +1556,10 @@ mod tests {
         // Linked worktrees keep the gitignored folder in the main checkout.
         let mut dir = Some(root);
         while let Some(d) = dir {
-            if let Some(main) = d.ancestors().find(|a| a.file_name().is_some_and(|n| n == ".claude")).and_then(|a| a.parent()) {
-                if let Ok(b) = std::fs::read(main.join(name)) {
-                    return Some(b);
-                }
+            if let Some(main) = d.ancestors().find(|a| a.file_name().is_some_and(|n| n == ".claude")).and_then(|a| a.parent())
+                && let Ok(b) = std::fs::read(main.join(name))
+            {
+                return Some(b);
             }
             dir = d.parent();
         }

@@ -187,10 +187,10 @@ impl Storm {
     /// Tangent at knot `k`: a storm's own tangent for that time, else the Fritsch–Carlson
     /// monotone one.
     fn slope(&self, k: usize) -> f64 {
-        if let Some(t) = self.times.get(k) {
-            if let Some((_, m)) = self.tangents.iter().find(|(at, _)| (at - t).abs() < 1e-6) {
-                return *m;
-            }
+        if let Some(t) = self.times.get(k)
+            && let Some((_, m)) = self.tangents.iter().find(|(at, _)| (at - t).abs() < 1e-6)
+        {
+            return *m;
         }
         let n = self.times.len();
         let secant = |a: usize| {

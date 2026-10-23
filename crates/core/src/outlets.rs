@@ -310,10 +310,8 @@ pub fn update_states(devices: &[OutletDevice], hw: f64, t: f64, states: &mut [De
                     st.since = Some(t);
                 }
             }
-            DeviceKind::DelayedGate { trigger_elevation, .. } => {
-                if hw >= *trigger_elevation && st.since.is_none() {
-                    st.since = Some(t);
-                }
+            DeviceKind::DelayedGate { trigger_elevation, .. } if hw >= *trigger_elevation && st.since.is_none() => {
+                st.since = Some(t);
             }
             _ => {}
         }
@@ -335,10 +333,10 @@ pub fn update_states(devices: &[OutletDevice], hw: f64, t: f64, states: &mut [De
         }
     }
     for (i, (d, st)) in devices.iter().zip(states.iter_mut()).enumerate() {
-        if let Some((g, _)) = pump(d) {
-            if leader.iter().any(|l| l.0 == g && l.1 != i) {
-                st.active = false;
-            }
+        if let Some((g, _)) = pump(d)
+            && leader.iter().any(|l| l.0 == g && l.1 != i)
+        {
+            st.active = false;
         }
     }
 }
@@ -483,10 +481,10 @@ pub fn culvert_flow(
     if head <= 0.0 || width <= 0.0 || height <= 0.0 {
         return DeviceFlow::ZERO;
     }
-    if let Some(t) = tw {
-        if t >= hw {
-            return DeviceFlow::ZERO;
-        }
+    if let Some(t) = tw
+        && t >= hw
+    {
+        return DeviceFlow::ZERO;
     }
     let fill = fill.clamp(0.0, height * 0.99);
     let section = Section::Pipe { shape, width, height, fill };

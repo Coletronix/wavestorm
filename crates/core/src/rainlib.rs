@@ -295,6 +295,8 @@ fn finish(mut s: Storm, c: &Curve, du: f64) -> Storm {
     s
 }
 
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 fn build_storm(name: &str, c: &Curve, tu: f64, du: f64) -> Result<Storm, String> {
     let smooth = c.smoothing.unwrap_or(true);
     let comment = c.comment.clone().unwrap_or_default();
@@ -604,6 +606,8 @@ impl IdfFile {
 
     /// Rainfall events for a storm of `hours` duration: depth = intensity(duration) x duration,
     /// one event per IDF event, named with `suffix` appended.
+    // `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+    #[allow(clippy::neg_cmp_op_on_partial_ord)]
     pub fn events_for(&self, storm: &str, hours: f64, suffix: &str) -> Vec<RainEvent> {
         self.events
             .iter()

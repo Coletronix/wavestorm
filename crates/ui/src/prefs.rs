@@ -42,7 +42,7 @@ impl Prefs {
 
     /// Seconds between backups, or None when backups are off.
     pub fn backup_interval(&self) -> Option<f64> {
-        (self.backup_minutes.is_finite() && self.backup_minutes > 0.0).then(|| self.backup_minutes * 60.0)
+        (self.backup_minutes.is_finite() && self.backup_minutes > 0.0).then_some(self.backup_minutes * 60.0)
     }
 }
 

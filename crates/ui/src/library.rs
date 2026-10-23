@@ -84,10 +84,10 @@ pub fn import(name: &str, bytes: &[u8]) -> String {
     rebuild(&mut st);
     if st.persist {
         let total: usize = st.imports.iter().map(|(_, t)| t.len()).sum();
-        if total <= IMPORT_LIMIT {
-            if let Ok(json) = serde_json::to_string(&st.imports) {
-                store::write(IMPORT_KEY, &json);
-            }
+        if total <= IMPORT_LIMIT
+            && let Ok(json) = serde_json::to_string(&st.imports)
+        {
+            store::write(IMPORT_KEY, &json);
         }
     }
     if name.to_ascii_lowercase().ends_with(".idf") {
@@ -249,11 +249,11 @@ pub fn adopt(p: &mut Project) -> usize {
     let mut copied = 0;
     let storms: Vec<String> = p.settings.events.iter().map(|e| e.storm.clone()).collect();
     for name in storms {
-        if p.storm(&name).is_none() {
-            if let Some(s) = lib.storms.iter().find(|s| s.name == name) {
-                p.storms.push(s.clone());
-                copied += 1;
-            }
+        if p.storm(&name).is_none()
+            && let Some(s) = lib.storms.iter().find(|s| s.name == name)
+        {
+            p.storms.push(s.clone());
+            copied += 1;
         }
     }
     let mut uhs: Vec<String> = vec![p.settings.uh.clone()];
@@ -263,11 +263,11 @@ pub fn adopt(p: &mut Project) -> usize {
         }
     }
     for name in uhs {
-        if p.unit_hydrograph(&name).is_none() {
-            if let Some(u) = lib.uhs.iter().find(|u| u.name == name) {
-                p.uhs.push(u.clone());
-                copied += 1;
-            }
+        if p.unit_hydrograph(&name).is_none()
+            && let Some(u) = lib.uhs.iter().find(|u| u.name == name)
+        {
+            p.uhs.push(u.clone());
+            copied += 1;
         }
     }
     copied

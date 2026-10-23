@@ -63,13 +63,13 @@ fn random_input_never_panics() {
                 }
                 6 => {
                     h.input_mut().events.push(Event::PointerMoved(p));
-                    h.input_mut().events.push(Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: vec2(0.0, if rng.next() % 2 == 0 { 2.0 } else { -2.0 }), modifiers: Modifiers::NONE, phase: egui::TouchPhase::Move });
+                    h.input_mut().events.push(Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: vec2(0.0, if rng.next().is_multiple_of(2) { 2.0 } else { -2.0 }), modifiers: Modifiers::NONE, phase: egui::TouchPhase::Move });
                     h.step();
                 }
                 7 => {
                     let keys = [Key::Delete, Key::Escape, Key::Enter, Key::Z, Key::Y, Key::C, Key::V, Key::A, Key::Backspace];
                     let key = keys[(rng.next() % keys.len() as u64) as usize];
-                    let modifiers = if rng.next() % 2 == 0 { Modifiers::COMMAND } else { Modifiers::NONE };
+                    let modifiers = if rng.next().is_multiple_of(2) { Modifiers::COMMAND } else { Modifiers::NONE };
                     h.input_mut().events.push(Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
                     h.step();
                     h.input_mut().events.push(Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers });

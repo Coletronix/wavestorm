@@ -129,10 +129,10 @@ pub fn general(ctx: &egui::Context, st: &mut GeneralState, actions: &mut Vec<Win
                 ui.label("Folder with rainfall files (.hcr storms, .huh unit hydrographs, .idf IDF curves, *-Rain.txt county tables):");
                 ui.horizontal(|ui| {
                     widgets::text_box(ui, &mut st.draft.rainfall_folder, 360.0);
-                    if widgets::button(ui, "Browse...", 78.0).clicked() {
-                        if let Some(p) = crate::platform::Platform::default().pick_folder() {
-                            st.draft.rainfall_folder = p;
-                        }
+                    if widgets::button(ui, "Browse...", 78.0).clicked()
+                        && let Some(p) = crate::platform::Platform::default().pick_folder()
+                    {
+                        st.draft.rainfall_folder = p;
                     }
                 });
             }
@@ -322,10 +322,10 @@ pub fn underlay(ctx: &egui::Context, doc: &mut Doc, st: &mut UnderlayState, acti
         let _ = st;
         if draft != ul {
             // Rescaling the image keeps the calibration consistent: real size per pixel is fixed.
-            if (draft.scale - ul.scale).abs() > 1e-12 {
-                if let Some(f) = draft.feet_per_unit {
-                    draft.feet_per_unit = Some(f * ul.scale / draft.scale);
-                }
+            if (draft.scale - ul.scale).abs() > 1e-12
+                && let Some(f) = draft.feet_per_unit
+            {
+                draft.feet_per_unit = Some(f * ul.scale / draft.scale);
             }
             doc.edit("Background Settings", |p| p.diagram.underlay = Some(draft.clone()));
             actions.push(WindowAction::Status("Background updated".into()));

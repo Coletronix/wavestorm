@@ -14,10 +14,10 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |_cc| {
             let app = stormwaves_ui::StormwavesApp::new();
-            if let Some(p) = &path {
-                if let Err(e) = app.platform.open_path(p) {
-                    eprintln!("{e}");
-                }
+            if let Some(p) = &path
+                && let Err(e) = app.platform.open_path(p)
+            {
+                eprintln!("{e}");
             }
             Ok(Box::new(app))
         }),

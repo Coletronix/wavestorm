@@ -119,10 +119,10 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
                     out.push(format!("{:>44}{}", "", tc_detail(&seg.kind, u)));
                 }
                 out.push(format!("{:>6.1} {:>7}  Total", d.tc_minutes, group(u.len(d.flow_length), 0)));
-                if let Some(m) = s.min_tc {
-                    if d.tc_minutes <= m {
-                        out.push(format!("        (minimum Tc of {m:.1} min applied)"));
-                    }
+                if let Some(m) = s.min_tc
+                    && d.tc_minutes <= m
+                {
+                    out.push(format!("        (minimum Tc of {m:.1} min applied)"));
                 }
             } else {
                 out.push(format!("Tc= {:.1} min", d.tc_minutes));
@@ -149,11 +149,9 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
         }
         (NodeData::Pond(pond), Detail::Pond(d)) => {
             reach_header(&mut out, project, r, &results.event);
-            for k in 0..4 {
-                if r.routes[k].has_flow() || (k == 0 && pond.devices.iter().any(|_| true)) {
-                    if pond.devices.iter().enumerate().any(|(i, _)| final_routing(&pond.devices, i).and_then(route_index) == Some(k)) {
-                        out.push(peak_line(OUT_NAMES[k], u, &r.routes[k]));
-                    }
+            for (k, name) in OUT_NAMES.iter().enumerate() {
+                if (r.routes[k].has_flow() || (k == 0 && pond.devices.iter().any(|_| true))) && pond.devices.iter().enumerate().any(|(i, _)| final_routing(&pond.devices, i).and_then(route_index) == Some(k)) {
+                    out.push(peak_line(name, u, &r.routes[k]));
                 }
             }
             out.push(String::new());
@@ -212,8 +210,8 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
                     }
                 }
                 out.push(String::new());
-                for k in 0..4 {
-                    let Some((step, q, flows)) = &d.device_analysis[k] else { continue };
+                for (k, (name, analysis)) in OUT_NAMES.iter().zip(&d.device_analysis).enumerate() {
+                    let Some((step, q, flows)) = analysis else { continue };
                     let t = r.inflow.time(*step);
                     let hw = d.elevation.get(*step).copied().unwrap_or(0.0);
                     let tw = if k < 3 {
@@ -225,7 +223,7 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
                     } else {
                         String::new()
                     };
-                    out.push(format!("{} OutFlow  Max={} @ {:.2} hrs HW={}{tw}", OUT_NAMES[k], u.fmt_flow(*q), t, u.fmt_elev(hw)));
+                    out.push(format!("{} OutFlow  Max={} @ {:.2} hrs HW={}{tw}", name, u.fmt_flow(*q), t, u.fmt_elev(hw)));
                     let mut tree = Vec::new();
                     for (i, dev) in pond.devices.iter().enumerate() {
                         if route_index(dev.routing) == Some(k) {
@@ -487,9 +485,9 @@ pub fn node_listing(project: &Project, results: &Results) -> Vec<String> {
             ),
             (NodeData::Pond(_), Detail::Pond(d)) => {
                 let mut parts = Vec::new();
-                for k in 0..4 {
+                for (k, name) in OUT_NAMES.iter().enumerate() {
                     if r.routes[k].has_flow() && r.routes.iter().filter(|h| h.has_flow()).count() > 1 {
-                        parts.push(format!("{}={}", OUT_NAMES[k], pk(&r.routes[k])));
+                        parts.push(format!("{}={}", name, pk(&r.routes[k])));
                     }
                 }
                 parts.push(format!("Outflow={}", pk(&r.outflow)));
@@ -646,9 +644,9 @@ pub fn hydrograph_table(project: &Project, results: &Results, node: &Node, shrin
             cols.push(pick(&d.elevation, &|v| u.len(v)));
             heads.push(format!("Outflow ({})", u.flow_label()));
             cols.push(pick(&r.outflow.q, &flow));
-            for k in 0..4 {
+            for (k, name) in OUT_NAMES.iter().enumerate() {
                 if r.routes[k].has_flow() {
-                    heads.push(format!("{} ({})", OUT_NAMES[k], u.flow_label()));
+                    heads.push(format!("{} ({})", name, u.flow_label()));
                     cols.push(pick(&r.routes[k].q, &flow));
                 }
             }
@@ -774,7 +772,7 @@ mod tests {
         let (heads, cols) = hydrograph_table(&p, &r, node, false, true);
         assert_eq!(heads.len(), plain.len() + 2);
         assert!(heads[1].starts_with("Inflow") && heads[2].starts_with("1S") && heads[3].starts_with("2S"), "{heads:?}");
-        for i in 0..cols[0].len() {
+        for (i, _) in cols[0].iter().enumerate() {
             assert!((cols[2][i] + cols[3][i] - cols[1][i]).abs() < 1e-9);
         }
     }

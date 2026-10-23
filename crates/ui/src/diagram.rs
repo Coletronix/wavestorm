@@ -168,10 +168,10 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
         if shift && scroll != Vec2::ZERO {
             doc.view.offset += vec2(scroll.y + scroll.x, 0.0);
         }
-        if (factor - 1.0).abs() > 1e-4 {
-            if let Some(p) = pointer {
-                zoom_about(doc, canvas, p, factor);
-            }
+        if (factor - 1.0).abs() > 1e-4
+            && let Some(p) = pointer
+        {
+            zoom_about(doc, canvas, p, factor);
         }
     }
 
@@ -186,16 +186,16 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
     it.hover_node = world_ptr.filter(|_| resp.hovered()).and_then(|w| node_at(&doc.project, w, d));
 
     // Palette drop.
-    if palette_drop.is_some() && ui.input(|i| i.pointer.any_released()) {
-        if let (Some(kind), Some(p)) = (palette_drop.take(), pointer) {
-            if canvas.contains(p) {
-                let w = to_world(&doc.view, canvas, p);
-                let w = snap(doc, w);
-                let mut new_id = 0;
-                doc.edit("Node Create", |pr| new_id = pr.add_node(kind, [w.x as f64, w.y as f64]));
-                doc.selection = vec![new_id];
-            }
-        }
+    if palette_drop.is_some()
+        && ui.input(|i| i.pointer.any_released())
+        && let (Some(kind), Some(p)) = (palette_drop.take(), pointer)
+        && canvas.contains(p)
+    {
+        let w = to_world(&doc.view, canvas, p);
+        let w = snap(doc, w);
+        let mut new_id = 0;
+        doc.edit("Node Create", |pr| new_id = pr.add_node(kind, [w.x as f64, w.y as f64]));
+        doc.selection = vec![new_id];
     }
 
     match tool {
@@ -206,10 +206,10 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
             let mut finished = None;
             if let Tool::Calibrate { points } | Tool::Measure { points } = tool {
                 let need = if calibrate { 2 } else { usize::MAX };
-                if resp.clicked() {
-                    if let Some(w) = world_ptr {
-                        points.push(w);
-                    }
+                if resp.clicked()
+                    && let Some(w) = world_ptr
+                {
+                    points.push(w);
                 }
                 let finish = (calibrate && points.len() >= need) || (!calibrate && (resp.double_clicked() || ui.input(|i| i.key_pressed(Key::Enter))) && points.len() >= 2);
                 draw_polyline(&painter, doc, canvas, points, world_ptr, false, Color32::from_rgb(220, 30, 30));
@@ -279,13 +279,12 @@ pub fn fit_view(doc: &mut Doc, canvas: Rect, only: Option<&[NodeId]>) {
             }
         }
     }
-    if only.is_none() {
-        if let (Some(u), Some(tex)) = (&doc.project.diagram.underlay, &doc.underlay_tex) {
-            if u.visible {
-                let s = tex.size_vec2() * u.scale as f32;
-                bb = bb.union(Rect::from_min_size(wp(u.origin), s));
-            }
-        }
+    if only.is_none()
+        && let (Some(u), Some(tex)) = (&doc.project.diagram.underlay, &doc.underlay_tex)
+        && u.visible
+    {
+        let s = tex.size_vec2() * u.scale as f32;
+        bb = bb.union(Rect::from_min_size(wp(u.origin), s));
     }
     if !bb.is_finite() || bb.width() <= 0.0 {
         doc.view = View::default();
@@ -392,14 +391,15 @@ fn draw_arrows(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: 
     let head = (doc.project.diagram.symbol_size as f32 * 0.22 * doc.view.zoom).clamp(6.0, 18.0);
     for n in &doc.project.nodes {
         for k in 0..n.node_type().outflow_count() {
-            if let Some(Drag::Reroute { from, k: dk, at }) = &it.drag {
-                if *from == n.id && *dk == k {
-                    let a = to_screen(&doc.view, canvas, wp(n.pos));
-                    let (s, dashed) = route_stroke(k, t, doc.view.zoom);
-                    line(p, a, *at, s, dashed);
-                    arrow_head(p, *at, *at - a, head, s);
-                    continue;
-                }
+            if let Some(Drag::Reroute { from, k: dk, at }) = &it.drag
+                && *from == n.id
+                && *dk == k
+            {
+                let a = to_screen(&doc.view, canvas, wp(n.pos));
+                let (s, dashed) = route_stroke(k, t, doc.view.zoom);
+                line(p, a, *at, s, dashed);
+                arrow_head(p, *at, *at - a, head, s);
+                continue;
             }
             if let Some((a, b)) = arrow_geom(doc, canvas, n.id, k) {
                 let (s, dashed) = route_stroke(k, t, doc.view.zoom);
@@ -465,13 +465,13 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
         // Outflow handles for unconnected outflows of selected or hovered nodes.
         if sel || it.hover_node == Some(n.id) {
             for k in 0..n.node_type().outflow_count() {
-                if n.outflows[k].is_none() {
-                    if let Some(h) = handle_pos(doc, canvas, n.id, k) {
-                        let (s, dashed) = route_stroke(k, t, doc.view.zoom);
-                        let from = boundary_point(n.node_type(), c, d, h);
-                        line(p, from, h, s, dashed);
-                        arrow_head(p, h, h - c, (d * 0.2).clamp(6.0, 14.0), s);
-                    }
+                if n.outflows[k].is_none()
+                    && let Some(h) = handle_pos(doc, canvas, n.id, k)
+                {
+                    let (s, dashed) = route_stroke(k, t, doc.view.zoom);
+                    let from = boundary_point(n.node_type(), c, d, h);
+                    line(p, from, h, s, dashed);
+                    arrow_head(p, h, h - c, (d * 0.2).clamp(6.0, 14.0), s);
                 }
             }
         }
@@ -512,64 +512,64 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
     // Drag start.
     if resp.drag_started_by(egui::PointerButton::Middle) || (resp.drag_started_by(egui::PointerButton::Primary) && ui.input(|i| i.key_down(Key::Space))) {
         it.drag = Some(Drag::Pan);
-    } else if resp.drag_started_by(egui::PointerButton::Primary) {
-        if let (Some(p), Some(_w)) = (resp.interact_pointer_pos(), world) {
-            // Arrow handles first (only when not over a symbol's body).
-            let mut handle = None;
-            for n in &doc.project.nodes {
-                if !(doc.is_selected(n.id) || n.outflows.iter().any(|o| o.is_some())) {
+    } else if resp.drag_started_by(egui::PointerButton::Primary)
+        && let (Some(p), Some(_w)) = (resp.interact_pointer_pos(), world)
+    {
+        // Arrow handles first (only when not over a symbol's body).
+        let mut handle = None;
+        for n in &doc.project.nodes {
+            if !(doc.is_selected(n.id) || n.outflows.iter().any(|o| o.is_some())) {
+                continue;
+            }
+            for k in 0..n.node_type().outflow_count() {
+                if n.outflows[k].is_none() && !doc.is_selected(n.id) {
                     continue;
                 }
-                for k in 0..n.node_type().outflow_count() {
-                    if n.outflows[k].is_none() && !doc.is_selected(n.id) {
-                        continue;
-                    }
-                    if let Some(h) = handle_pos(doc, canvas, n.id, k) {
-                        if (h - p).length() < 9.0 {
-                            handle = Some((n.id, k));
-                        }
-                    }
+                if let Some(h) = handle_pos(doc, canvas, n.id, k)
+                    && (h - p).length() < 9.0
+                {
+                    handle = Some((n.id, k));
                 }
             }
-            let start = resp.interact_pointer_pos().map(|q| q - resp.drag_delta()).unwrap_or(p);
-            let start_world = to_world(&doc.view, canvas, start);
-            if let Some((from, k)) = handle {
-                it.drag = Some(Drag::Reroute { from, k, at: p });
-            } else if let Some(id) = node_at(&doc.project, start_world, d) {
-                if !doc.is_selected(id) {
-                    if mods.ctrl || mods.command || mods.shift {
-                        doc.selection.push(id);
-                    } else {
-                        doc.selection = vec![id];
-                    }
+        }
+        let start = resp.interact_pointer_pos().map(|q| q - resp.drag_delta()).unwrap_or(p);
+        let start_world = to_world(&doc.view, canvas, start);
+        if let Some((from, k)) = handle {
+            it.drag = Some(Drag::Reroute { from, k, at: p });
+        } else if let Some(id) = node_at(&doc.project, start_world, d) {
+            if !doc.is_selected(id) {
+                if mods.ctrl || mods.command || mods.shift {
+                    doc.selection.push(id);
+                } else {
+                    doc.selection = vec![id];
                 }
-                let before = doc.project.clone();
-                let mut cloned = false;
-                if mods.ctrl || mods.command {
-                    // Ctrl-drag clones the selection.
-                    let ids = doc.selection.clone();
-                    let mut new_ids = Vec::new();
-                    for id in ids {
-                        if let Some(n) = doc.project.node(id).cloned() {
-                            let nid = doc.project.add_node(n.node_type(), n.pos);
-                            if let Some(m) = doc.project.node_mut(nid) {
-                                m.data = n.data.clone();
-                                m.name = n.name.clone();
-                                m.notes = n.notes.clone();
-                            }
-                            new_ids.push(nid);
-                        }
-                    }
-                    doc.selection = new_ids;
-                    cloned = true;
-                }
-                it.drag = Some(Drag::Nodes { before, last: start_world, cloned });
-            } else {
-                if !(mods.ctrl || mods.shift) {
-                    doc.selection.clear();
-                }
-                it.rubber = Some((start, p));
             }
+            let before = doc.project.clone();
+            let mut cloned = false;
+            if mods.ctrl || mods.command {
+                // Ctrl-drag clones the selection.
+                let ids = doc.selection.clone();
+                let mut new_ids = Vec::new();
+                for id in ids {
+                    if let Some(n) = doc.project.node(id).cloned() {
+                        let nid = doc.project.add_node(n.node_type(), n.pos);
+                        if let Some(m) = doc.project.node_mut(nid) {
+                            m.data = n.data.clone();
+                            m.name = n.name.clone();
+                            m.notes = n.notes.clone();
+                        }
+                        new_ids.push(nid);
+                    }
+                }
+                doc.selection = new_ids;
+                cloned = true;
+            }
+            it.drag = Some(Drag::Nodes { before, last: start_world, cloned });
+        } else {
+            if !(mods.ctrl || mods.shift) {
+                doc.selection.clear();
+            }
+            it.rubber = Some((start, p));
         }
     }
 
@@ -628,10 +628,10 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
                 let target = node_at(&doc.project, w, d).filter(|t| *t != from);
                 let ok = target.and_then(|t| doc.project.node(t)).is_some_and(|n| n.node_type().accepts_inflow());
                 doc.edit("Node Reroute", |pr| {
-                    if let Some(n) = pr.node_mut(from) {
-                        if let Some(slot) = n.outflows.get_mut(k) {
-                            *slot = if ok { target } else { None };
-                        }
+                    if let Some(n) = pr.node_mut(from)
+                        && let Some(slot) = n.outflows.get_mut(k)
+                    {
+                        *slot = if ok { target } else { None };
                     }
                 });
             }
@@ -648,50 +648,50 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
     }
 
     // Clicks.
-    if resp.clicked() {
-        if let Some(w) = world {
-            match node_at(&doc.project, w, d) {
-                Some(id) if mods.ctrl || mods.shift => {
-                    if let Some(i) = doc.selection.iter().position(|s| *s == id) {
-                        doc.selection.remove(i);
-                    } else {
-                        doc.selection.push(id);
-                    }
+    if resp.clicked()
+        && let Some(w) = world
+    {
+        match node_at(&doc.project, w, d) {
+            Some(id) if mods.ctrl || mods.shift => {
+                if let Some(i) = doc.selection.iter().position(|s| *s == id) {
+                    doc.selection.remove(i);
+                } else {
+                    doc.selection.push(id);
                 }
-                Some(id) => doc.selection = vec![id],
-                None => doc.selection.clear(),
             }
+            Some(id) => doc.selection = vec![id],
+            None => doc.selection.clear(),
         }
     }
-    if resp.double_clicked() {
-        if let Some(id) = world.and_then(|w| node_at(&doc.project, w, d)) {
-            actions.push(CanvasAction::OpenReport(id));
-        }
+    if resp.double_clicked()
+        && let Some(id) = world.and_then(|w| node_at(&doc.project, w, d))
+    {
+        actions.push(CanvasAction::OpenReport(id));
     }
-    if resp.secondary_clicked() {
-        if let Some(id) = world.and_then(|w| node_at(&doc.project, w, d)) {
-            if !doc.is_selected(id) {
-                doc.selection = vec![id];
-            }
-            actions.push(CanvasAction::ContextNode(id));
+    if resp.secondary_clicked()
+        && let Some(id) = world.and_then(|w| node_at(&doc.project, w, d))
+    {
+        if !doc.is_selected(id) {
+            doc.selection = vec![id];
         }
+        actions.push(CanvasAction::ContextNode(id));
     }
     if resp.hovered() && ui.input(|i| i.key_pressed(Key::Delete)) && !doc.selection.is_empty() && !ui.ctx().egui_wants_keyboard_input() {
         actions.push(CanvasAction::Delete);
     }
-    if let Some(id) = it.hover_node {
-        if let Some(n) = doc.project.node(id) {
-            resp.clone().on_hover_text_at_pointer(n.title());
-        }
+    if let Some(id) = it.hover_node
+        && let Some(n) = doc.project.node(id)
+    {
+        resp.clone().on_hover_text_at_pointer(n.title());
     }
 }
 
 fn move_underlay(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &mut Interaction) {
     let pointer = ui.input(|i| i.pointer.interact_pos());
-    if resp.drag_started_by(egui::PointerButton::Primary) {
-        if let Some(p) = pointer {
-            it.drag = Some(Drag::Underlay { last: to_world(&doc.view, canvas, p), before: doc.project.clone() });
-        }
+    if resp.drag_started_by(egui::PointerButton::Primary)
+        && let Some(p) = pointer
+    {
+        it.drag = Some(Drag::Underlay { last: to_world(&doc.view, canvas, p), before: doc.project.clone() });
     }
     if let (Some(Drag::Underlay { last, .. }), Some(p)) = (&mut it.drag, pointer) {
         let w = to_world(&doc.view, canvas, p);
@@ -702,32 +702,13 @@ fn move_underlay(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: 
             u.origin[1] += delta.y as f64;
         }
     }
-    if resp.drag_stopped() {
-        if let Some(Drag::Underlay { before, .. }) = it.drag.take() {
-            doc.commit_from("Move Background", before);
-        }
+    if resp.drag_stopped()
+        && let Some(Drag::Underlay { before, .. }) = it.drag.take()
+    {
+        doc.commit_from("Move Background", before);
     }
     let _ = vec2(0.0, 0.0);
     let _ = Align2::CENTER_CENTER;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn geometry_helpers() {
-        let sq = [pos2(0.0, 0.0), pos2(10.0, 0.0), pos2(10.0, 10.0), pos2(0.0, 10.0)];
-        assert!((polygon_area(&sq) - 100.0).abs() < 1e-4);
-        assert!((polygon_centroid(&sq) - pos2(5.0, 5.0)).length() < 1e-4);
-        assert!((polyline_length(&sq) - 30.0).abs() < 1e-4);
-        let b = boundary_point(NodeType::Reach, pos2(0.0, 0.0), 100.0, pos2(100.0, 0.0));
-        assert!((b.x - 36.0).abs() < 1e-3);
-        let view = View { offset: vec2(5.0, 7.0), zoom: 2.0 };
-        let canvas = Rect::from_min_size(pos2(10.0, 20.0), vec2(500.0, 400.0));
-        let w = pos2(3.0, 4.0);
-        assert!((to_world(&view, canvas, to_screen(&view, canvas, w)) - w).length() < 1e-5);
-    }
 }
 
 /// Classic scrollbars for the diagram: `canvas` is the diagram area, `vbar`/`hbar` the strips.
@@ -804,12 +785,31 @@ pub fn scrollbars(ui: &mut Ui, doc: &mut Doc, canvas: Rect, vbar: Rect, hbar: Re
         }
         // Clicking the track pages the view.
         let track_resp = ui.interact(track, ui.id().with(("track", vertical)), Sense::click());
-        if track_resp.clicked() {
-            if let Some(pp) = track_resp.interact_pointer_pos() {
-                let before = if vertical { pp.y < thumb.min.y } else { pp.x < thumb.min.x };
-                let page = if vertical { canvas.height() } else { canvas.width() } * 0.9 * if before { -1.0 } else { 1.0 };
-                if vertical { doc.view.offset.y -= page } else { doc.view.offset.x -= page }
-            }
+        if track_resp.clicked()
+            && let Some(pp) = track_resp.interact_pointer_pos()
+        {
+            let before = if vertical { pp.y < thumb.min.y } else { pp.x < thumb.min.x };
+            let page = if vertical { canvas.height() } else { canvas.width() } * 0.9 * if before { -1.0 } else { 1.0 };
+            if vertical { doc.view.offset.y -= page } else { doc.view.offset.x -= page }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn geometry_helpers() {
+        let sq = [pos2(0.0, 0.0), pos2(10.0, 0.0), pos2(10.0, 10.0), pos2(0.0, 10.0)];
+        assert!((polygon_area(&sq) - 100.0).abs() < 1e-4);
+        assert!((polygon_centroid(&sq) - pos2(5.0, 5.0)).length() < 1e-4);
+        assert!((polyline_length(&sq) - 30.0).abs() < 1e-4);
+        let b = boundary_point(NodeType::Reach, pos2(0.0, 0.0), 100.0, pos2(100.0, 0.0));
+        assert!((b.x - 36.0).abs() < 1e-3);
+        let view = View { offset: vec2(5.0, 7.0), zoom: 2.0 };
+        let canvas = Rect::from_min_size(pos2(10.0, 20.0), vec2(500.0, 400.0));
+        let w = pos2(3.0, 4.0);
+        assert!((to_world(&view, canvas, to_screen(&view, canvas, w)) - w).length() < 1e-5);
     }
 }

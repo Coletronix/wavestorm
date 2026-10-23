@@ -55,10 +55,10 @@ fn windows_do_not_creep_wider() {
         h.run_steps(60);
         let after = widths(&h.ctx);
         for (id, w0) in &before {
-            if let Some((_, w1)) = after.iter().find(|(i, _)| i == id) {
-                if *w1 > w0 + 1.0 {
-                    failures.push(format!("{script}: window grew from {w0:.0} to {w1:.0} px in 60 frames"));
-                }
+            if let Some((_, w1)) = after.iter().find(|(i, _)| i == id)
+                && *w1 > w0 + 1.0
+            {
+                failures.push(format!("{script}: window grew from {w0:.0} to {w1:.0} px in 60 frames"));
             }
         }
     }

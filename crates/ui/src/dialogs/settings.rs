@@ -176,10 +176,10 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
                 if widgets::combo(ui, "ev", &mut pick, &names, 30.0) && pick < s.events.len() {
                     s.current_event = pick;
                 }
-                if widgets::button_enabled(ui, "Save", 56.0, can_save).on_hover_text("Rename this event").clicked() {
-                    if let Some(cur) = s.events.get_mut(s.current_event) {
-                        cur.name = st.name.trim().to_string();
-                    }
+                if widgets::button_enabled(ui, "Save", 56.0, can_save).on_hover_text("Rename this event").clicked()
+                    && let Some(cur) = s.events.get_mut(s.current_event)
+                {
+                    cur.name = st.name.trim().to_string();
                 }
                 if widgets::button_enabled(ui, "Delete", 56.0, s.events.len() > 1).clicked() {
                     s.events.remove(s.current_event);
@@ -191,7 +191,7 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
                 let sort_events = |s: &mut CalcSettings, how: usize| {
                     let current = s.events.get(s.current_event).map(|e| e.name.clone());
                     match how {
-                        1 => s.events.sort_by(|a, b| natural(&a.name).cmp(&natural(&b.name))),
+                        1 => s.events.sort_by_key(|e| natural(&e.name)),
                         _ => s.events.sort_by(|a, b| a.depth.total_cmp(&b.depth)),
                     }
                     s.current_event = current.and_then(|n| s.events.iter().position(|e| e.name == n)).unwrap_or(0);
@@ -238,11 +238,11 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
                 }
             });
             ui.horizontal(|ui| {
-                if widgets::button_enabled(ui, "Del All", 70.0, s.events.len() > 1).on_hover_text("Delete all events but the current one").clicked() {
-                    if let Some(keep) = s.events.get(s.current_event).cloned() {
-                        s.events = vec![keep];
-                        s.current_event = 0;
-                    }
+                if widgets::button_enabled(ui, "Del All", 70.0, s.events.len() > 1).on_hover_text("Delete all events but the current one").clicked()
+                    && let Some(keep) = s.events.get(s.current_event).cloned()
+                {
+                    s.events = vec![keep];
+                    s.current_event = 0;
                 }
                 let view = widgets::button(ui, "View All", 70.0);
                 egui::Popup::menu(&view).show(|ui| {

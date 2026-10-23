@@ -134,10 +134,10 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                     ui.horizontal(|ui| {
                         let mut opts: Vec<(String, String)> = ENTRANCES.iter().map(|(name, k)| (name.to_string(), format!("{name} (Ke={k})"))).collect();
                         opts.insert(0, (String::new(), "(custom)".into()));
-                        if widgets::combo_field(ui, "ent", "Entrance:", entrance, &opts, 270.0) {
-                            if let Some((_, k)) = ENTRANCES.iter().find(|(name, _)| name == entrance) {
-                                *ke = *k;
-                            }
+                        if widgets::combo_field(ui, "ent", "Entrance:", entrance, &opts, 270.0)
+                            && let Some((_, k)) = ENTRANCES.iter().find(|(name, _)| name == entrance)
+                        {
+                            *ke = *k;
                         }
                         conv_field(ui, "ke", "Ke:", "", ke, |x| x, |x| x.max(0.0), 3, 70.0);
                         conv_field(ui, "cc", "Contraction Coef.:", "", cc, |x| x, |x| x.clamp(0.1, 1.0), 3, 120.0);
@@ -517,18 +517,6 @@ pub fn set_rating(kind: &mut DeviceKind, rows: Vec<(f64, f64)>) -> bool {
     true
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rating_file_parsing() {
-        let rows = parse_rating("head,flow\n9.0, 0.5\n7;1.0\n\n6\t1.5\nbad,line\n");
-        assert_eq!(rows, Ok(vec![(9.0, 0.5), (7.0, 1.0), (6.0, 1.5)]));
-        assert!(parse_rating("a,b\n").is_err());
-    }
-}
-
 /// Area (sf) and perimeter (ft) of one opening, for the text under the shape preview.
 fn opening_props(kind: &DeviceKind) -> Option<(f64, f64)> {
     let sec = match kind {
@@ -618,5 +606,17 @@ fn sketch(ui: &mut Ui, kind: &DeviceKind) {
         _ => {
             p.text(rect.center(), egui::Align2::CENTER_CENTER, kind.label(), egui::FontId::proportional(13.0), t.text_dim);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rating_file_parsing() {
+        let rows = parse_rating("head,flow\n9.0, 0.5\n7;1.0\n\n6\t1.5\nbad,line\n");
+        assert_eq!(rows, Ok(vec![(9.0, 0.5), (7.0, 1.0), (6.0, 1.5)]));
+        assert!(parse_rating("a,b\n").is_err());
     }
 }
