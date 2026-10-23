@@ -1046,9 +1046,28 @@ impl StormwavesApp {
                 let st = dialogs::misc::UnitsState::new(&self.doc().project);
                 self.open_window(Window::Units(st));
             }
+            if tb(ui, Glyph::LandUse, "Land-Use Settings", false) {
+                let st = dialogs::misc::LandUseState::new(&self.doc().project);
+                self.open_window(Window::LandUse(st));
+            }
             if tb(ui, Glyph::Calculator, "Calculation Settings", false) {
                 let st = dialogs::settings::SettingsState::new(&self.doc().project);
                 self.open_window(Window::Settings(st));
+            }
+            if tb(ui, Glyph::DiagramSettings, "Diagram Settings", false) {
+                let st = dialogs::misc::DiagramState::new(&self.doc().project);
+                self.open_window(Window::Diagram(st));
+            }
+            if tb(ui, Glyph::General, "General Settings", false) {
+                let st = dialogs::misc::GeneralState { draft: self.prefs.clone() };
+                self.open_window(Window::General(st));
+            }
+            if tb(ui, Glyph::Idf, "IDF Curve", false) {
+                let st = dialogs::storm::IdfEditor::new(self.doc());
+                self.open_window(Window::Idf(st));
+            }
+            if tb(ui, Glyph::Print, "Print report (PDF)", false) {
+                self.open_window(Window::Print(dialogs::misc::PrintState::default()));
             }
             if tb(ui, Glyph::Messages, "Messages", false) {
                 self.open_window(Window::Messages);
