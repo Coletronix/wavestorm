@@ -1,6 +1,6 @@
 # AGENTS.md — guide for AI agents and contributors
 
-StormWAVES is a clean-room, open-source stormwater modelling application (TR-55 / TR-20 hydrology,
+WAVEStorm is a clean-room, open-source stormwater modelling application (TR-55 / TR-20 hydrology,
 reach and pond routing) written in **Rust only**. It runs natively on Linux, Windows and macOS
 (egui/eframe) and in the browser (the same Rust compiled to WebAssembly with trunk). The goal is
 close behavioural and visual parity with the established commercial routing-diagram stormwater
@@ -39,10 +39,10 @@ Read this file first. Keep it current: it is the hand-off between sessions.
 ## 2. Workspace
 
 ```text
-crates/core   stormwaves-core: hydrology & hydraulics engine (no UI, wasm-clean)
-crates/ui     stormwaves-ui:   egui application shell
-apps/stormwaves       desktop binary
-apps/stormwaves-web   browser build via trunk
+crates/core   wavestorm-core: hydrology & hydraulics engine (no UI, wasm-clean)
+crates/ui     wavestorm-ui:   egui application shell
+apps/wavestorm       desktop binary
+apps/wavestorm-web   browser build via trunk
 reference_images/     gitignored: screenshots and research material (never commit)
 ```
 
@@ -137,7 +137,7 @@ Keep this section updated at the end of every session.
   "Import Rainfall Files..." (desktop and web; web imports persist in localStorage up to 2.5 MB).
   Library storms/UHs used by events, the default UH or a subcatchment UH are copied into the
   project (`library::adopt`) so projects stay self-contained. The full-library test runs when
-  the folder exists (`STORMWAVES_RAIN_LIB` or `reference_images/expert_reference/Rainfall`);
+  the folder exists (`WAVESTORM_RAIN_LIB` or `reference_images/expert_reference/Rainfall`);
   never copy or commit those files.
 - Calculation messages emitted (`calc.rs`): 13 16 19 22 31 37 40 42 43 44 45 46 47 49 55 58 67 70 73 76 77 78 80 82 85 86 89 91 92 93 95 96 97 98 (plus errors 500 520 550 560 595).
 - Expert review pass (2026-10-23), all nine items addressed:
@@ -184,7 +184,7 @@ Keep this section updated at the end of every session.
   "Profile" view of the comparison report (nodes chained in selection order).
 - Recently done: tabular-hydrograph "Inflows" columns (right-click the table), Settings >
   General (theme, backup interval, multiple Project Reports; saved via `platform::store`),
-  headless app (`StormwavesApp::headless()`) for tests and snapshots — never open native
+  headless app (`WaveStormApp::headless()`) for tests and snapshots — never open native
   dialogs there.
 - TR-20 import (`core::tr20`, Project > Import): whitespace-token parsing of the legacy card
   format, with two layout rules learned from published decks: COMPUT often fuses duration and
@@ -215,7 +215,7 @@ Keep this section updated at the end of every session.
 - UI parity pass (started 2026-10-22, user priority: "ensure all parts of UI match reference";
   validation work is paused). Reference screenshots: `reference_images/*.gif` and
   `reference_images/research/web/shots/` (s1-s8 are current-version screens). Compare with
-  `cargo run -p stormwaves-ui --example snapshot -- --out x.png --do "<script>"`.
+  `cargo run -p wavestorm-ui --example snapshot -- --out x.png --do "<script>"`.
   Done: OK/Cancel/Apply/Help row in every dialog (`ok_cancel_apply(ui, apply, help_topic)`),
   white chart background, report button column (Table, 2D/Shrink, Print, Export, Edit, Help;
   `widgets::toggle_button`), min/max/close boxes on report windows (`Win::min_max`), Events
@@ -258,14 +258,15 @@ Keep this section updated at the end of every session.
   horizontal-state weir uses the generic 3.27 grate coefficient, not one derived from Cd),
   land-use and
   loading lines in subcatchment summaries driven by the Report flags.
-- Name and logo (2026-10-23): the product is written **StormWAVES** in all user-facing text.
-  Crate, binary and directory names, Rust identifiers (`StormwavesApp`), the
-  `STORMWAVES_RAIN_LIB` variable and the prefs/localStorage keys stay `stormwaves` (renaming the
-  keys would lose saved settings). `crates/ui/assets/logo.svg` is the vector master ("Storm" in
-  Liberation Sans Bold outlines, SIL OFL, before a vector trace of the WAVES wordmark,
-  `logo_waves.svg`). `logo.png` is it rendered 1024 px wide for egui (`ui::logo`, About
-  dialog; black ink drawn light on dark themes); re-render it after editing the SVG. The web
-  loading screen inlines a copy of the SVG paths in `apps/stormwaves-web/index.html`.
+- Name and logo (renamed 2026-10-23, user request): the product is **WAVEStorm** in all
+  user-facing text; crates, binaries, directories, the `WAVESTORM_RAIN_LIB` variable and the
+  prefs/localStorage keys use `wavestorm`, the app type is `WaveStormApp`. (It was briefly
+  "StormWAVES" in v0.1.0; nothing keeps the old name.) The logo master is the user's raster
+  `crates/ui/assets/logo.jpg` (no SVG yet). `ui::logo::cut_out` removes its white background at
+  load time (colour-to-alpha only near background white, so pale fills stay opaque); dark
+  themes mirror the lightness of dark ink (`lighten_dark`). `cargo run -p wavestorm-ui
+  --example logo_png` writes `logo.png`/`logo-dark.png` (640 px) for the README `<picture>` and
+  the web loading screen; re-run it after replacing the JPG.
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. README
@@ -279,16 +280,16 @@ only (never the user's private files or rainfall library):
 for s in "main select:1P" "hydrograph report:1P;tab:1" "reach-summary report:1R;tab:0" \
          "project-reports project-report:6" "storms storms" "chamber-wizard edit:1P;tab:1;chamber" \
          "outlets edit:1P;tab:2"; do
-  set -- $s; cargo run -q -p stormwaves-ui --example snapshot -- --out docs/screenshots/$1.png --size 1200x720 --do "$2"
+  set -- $s; cargo run -q -p wavestorm-ui --example snapshot -- --out docs/screenshots/$1.png --size 1200x720 --do "$2"
 done
 ```
 
 ## 7. Commands
 
 ```sh
-cargo test -p stormwaves-core          # engine tests (fast)
+cargo test -p wavestorm-core           # engine tests (fast)
 cargo test                             # everything
-cargo check -p stormwaves-core --target wasm32-unknown-unknown
+cargo check -p wavestorm-core --target wasm32-unknown-unknown
 ```
 
 ## 8. Versioning and releases
@@ -298,8 +299,13 @@ Semantic versioning: the single source of truth is `version` in the workspace `C
 (shown in the About dialog and on printed pages via `CARGO_PKG_VERSION`).
 
 - Record every user-visible change under `## [Unreleased]` in `CHANGELOG.md` as you commit it.
-- Release only when the user asks: move the Unreleased entries under a new `## [X.Y.Z] - date`
-  heading, bump the workspace version (patch = fixes, minor = features or file-format
-  additions, major = breaking project-file changes), run `cargo test`, clippy and the wasm
-  check, commit "Release vX.Y.Z", then `git tag -a vX.Y.Z`. Pushing tags is the user's call.
+- Release cadence (user, 2026-10-23): there are no real users yet, so cut a **minor** release
+  at the end of each substantial batch of work (a feature set, a redesign, a rename) without
+  waiting to be asked; patch releases for fix-only batches. Mention the new tag in the
+  hand-off.
+- To release: move the Unreleased entries under a new `## [X.Y.Z] - date` heading, bump the
+  workspace version (patch = fixes, minor = features or file-format additions, major =
+  breaking project-file changes; while 0.x, breaking changes may go in a minor), run
+  `cargo test`, clippy and the wasm check, commit "Release vX.Y.Z", then `git tag -a vX.Y.Z`.
+  Pushing commits and tags is the user's call.
 - Project files must stay readable by later versions: new fields get `#[serde(default)]`.

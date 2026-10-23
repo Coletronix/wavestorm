@@ -1,11 +1,11 @@
 //! Background underlay: load, calibrate with two clicks, trace a subcatchment.
 
 use egui::{Event, Modifiers, PointerButton, Pos2, pos2, vec2};
-use stormwaves_core::project::{NodeData, NodeType};
-use stormwaves_ui::platform::{Incoming, Purpose};
-use stormwaves_ui::{StormwavesApp, script};
+use wavestorm_core::project::{NodeData, NodeType};
+use wavestorm_ui::platform::{Incoming, Purpose};
+use wavestorm_ui::{WaveStormApp, script};
 
-fn click(h: &mut egui_kittest::Harness<'static, StormwavesApp>, pos: Pos2) {
+fn click(h: &mut egui_kittest::Harness<'static, WaveStormApp>, pos: Pos2) {
     h.input_mut().events.push(Event::PointerMoved(pos));
     h.step();
     h.input_mut().events.push(Event::PointerButton { pos, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
@@ -47,13 +47,13 @@ fn pdf() -> Vec<u8> {
     out.into_bytes()
 }
 
-fn harness() -> egui_kittest::Harness<'static, StormwavesApp> {
-    egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), StormwavesApp::headless())
+fn harness() -> egui_kittest::Harness<'static, WaveStormApp> {
+    egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless())
 }
 
 #[test]
 fn pdf_page_renders() {
-    let r = stormwaves_ui::underlay::rasterize(&pdf(), 0, 72.0).expect("pdf renders");
+    let r = wavestorm_ui::underlay::rasterize(&pdf(), 0, 72.0).expect("pdf renders");
     assert_eq!((r.width, r.height), (612, 792));
     // The green rectangle is drawn (PDF y is up: rectangle spans y 100..300 from the bottom).
     let px = |x: u32, y: u32| &r.rgba[((y * r.width + x) * 4) as usize..((y * r.width + x) * 4 + 3) as usize];

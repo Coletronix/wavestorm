@@ -3121,55 +3121,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
-name = "stormwaves"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "stormwaves-ui",
-]
-
-[[package]]
-name = "stormwaves-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "stormwaves-ui"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "egui",
- "egui_kittest",
- "hayro",
- "image",
- "js-sys",
- "log",
- "rfd",
- "serde",
- "serde_json",
- "stormwaves-core",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "stormwaves-web"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "log",
- "stormwaves-ui",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3570,6 +3521,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "wavestorm"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "wavestorm-ui",
+]
+
+[[package]]
+name = "wavestorm-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "wavestorm-ui"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "hayro",
+ "image",
+ "js-sys",
+ "log",
+ "rfd",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wavestorm-core",
+ "web-sys",
+]
+
+[[package]]
+name = "wavestorm-web"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "log",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wavestorm-ui",
+ "web-sys",
 ]
 
 [[package]]

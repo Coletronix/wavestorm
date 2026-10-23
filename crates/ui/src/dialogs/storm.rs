@@ -6,8 +6,8 @@ use crate::doc::Doc;
 use crate::theme::Tokens;
 use crate::widgets;
 use egui::{Color32, RichText, vec2};
-use stormwaves_core::project::IdfCurve;
-use stormwaves_core::rainfall::Storm;
+use wavestorm_core::project::IdfCurve;
+use wavestorm_core::rainfall::Storm;
 
 pub use super::lookup::{EventLookup, event_lookup};
 
@@ -190,8 +190,8 @@ pub fn idf(ctx: &egui::Context, doc: &mut Doc, st: &mut IdfEditor, actions: &mut
                 }
             });
             if widgets::button(ui, "Save File...", 100.0).on_hover_text("Save this curve as an IDF (.idf) file").clicked() {
-                let file = stormwaves_core::rainlib::IdfFile::from_curve(&st.draft);
-                actions.push(crate::windows::WindowAction::SaveFile { name: format!("{}.idf", st.draft.name), bytes: stormwaves_core::rainlib::write_idf(&file).into_bytes(), ext: "idf" });
+                let file = wavestorm_core::rainlib::IdfFile::from_curve(&st.draft);
+                actions.push(crate::windows::WindowAction::SaveFile { name: format!("{}.idf", st.draft.name), bytes: wavestorm_core::rainlib::write_idf(&file).into_bytes(), ext: "idf" });
             }
         });
         if !st.draft.tables.is_empty() {

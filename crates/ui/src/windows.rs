@@ -3,7 +3,7 @@
 use crate::dialogs;
 use crate::doc::Doc;
 use crate::reports;
-use stormwaves_core::project::NodeId;
+use wavestorm_core::project::NodeId;
 
 /// A floating window.
 // Windows are few and short-lived UI state; boxing each state type would churn every constructor and match.
@@ -57,13 +57,13 @@ pub enum WindowAction {
     PickCsvForLink(NodeId),
     Status(String),
     Help(&'static str),
-    PrintPdf(stormwaves_core::printing::PrintOptions),
+    PrintPdf(wavestorm_core::printing::PrintOptions),
     SetPrefs(crate::prefs::Prefs),
     PickFile(crate::platform::Purpose),
     /// Save bytes to a file the user chooses (download in the browser).
     SaveFile { name: String, bytes: Vec<u8>, ext: &'static str },
     /// Replace the project's rainfall events, or add/update them by name.
-    SetEvents { events: Vec<stormwaves_core::rainfall::RainEvent>, replace: bool },
+    SetEvents { events: Vec<wavestorm_core::rainfall::RainEvent>, replace: bool },
 }
 
 /// Shows every window of the document; returns follow-up actions.

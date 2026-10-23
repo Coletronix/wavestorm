@@ -7,11 +7,11 @@ use crate::theme::Tokens;
 use crate::widgets;
 use crate::windows::{Window, WindowAction};
 use egui::{RichText, Ui, vec2};
-use stormwaves_core::cn::CnWeighting;
-use stormwaves_core::project::{CalcSettings, NodeData, PondMethod, Project, ReachMethod, RunoffMethod};
-use stormwaves_core::resize::{ResizeCriterion, ResizeSettings};
-use stormwaves_core::rainfall::{Amc, DurationMode, RainEvent};
-use stormwaves_core::units::Units;
+use wavestorm_core::cn::CnWeighting;
+use wavestorm_core::project::{CalcSettings, NodeData, PondMethod, Project, ReachMethod, RunoffMethod};
+use wavestorm_core::resize::{ResizeCriterion, ResizeSettings};
+use wavestorm_core::rainfall::{Amc, DurationMode, RainEvent};
+use wavestorm_core::units::Units;
 
 pub struct SettingsState {
     pub draft: CalcSettings,
@@ -220,7 +220,7 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
                         actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
                         ui.close();
                     }
-                    if ui.button("IDF file (provisional)...").on_hover_text(stormwaves_core::rainlib::IDF_PROVISIONAL).clicked() {
+                    if ui.button("IDF file (provisional)...").on_hover_text(wavestorm_core::rainlib::IDF_PROVISIONAL).clicked() {
                         actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
                         actions.push(WindowAction::PickFile(crate::platform::Purpose::NoaaCsv));
                         ui.close();

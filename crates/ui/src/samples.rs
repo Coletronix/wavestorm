@@ -1,11 +1,11 @@
 //! A small original demonstration project shown at start-up.
 
-use stormwaves_core::cn::SubArea;
-use stormwaves_core::geometry::{PipeShape, Section};
-use stormwaves_core::outlets::{DeviceKind, OpeningShape, OutletDevice, Plane, Routing};
-use stormwaves_core::project::*;
-use stormwaves_core::storage::{CustomKind, PondStorage, StorageVolume, VolumeShape};
-use stormwaves_core::tc::{TcKind, TcSegment};
+use wavestorm_core::cn::SubArea;
+use wavestorm_core::geometry::{PipeShape, Section};
+use wavestorm_core::outlets::{DeviceKind, OpeningShape, OutletDevice, Plane, Routing};
+use wavestorm_core::project::*;
+use wavestorm_core::storage::{CustomKind, PondStorage, StorageVolume, VolumeShape};
+use wavestorm_core::tc::{TcKind, TcSegment};
 
 const AC: f64 = 43_560.0;
 
@@ -29,7 +29,7 @@ fn subcat(p: &mut Project, number: &str, name: &str, pos: [f64; 2], areas: Vec<S
 pub fn sample_project() -> Project {
     let mut p = Project {
         title: "Brookside Commons".into(),
-        prepared_by: "StormWAVES sample".into(),
+        prepared_by: "WAVEStorm sample".into(),
         notes: "Demonstration project: post-development runoff routed through a swale and a detention basin.".into(),
         ..Project::default()
     };
@@ -178,8 +178,8 @@ mod tests {
     #[test]
     fn sample_calculates_cleanly() {
         let p = super::sample_project();
-        let r = stormwaves_core::calc::calculate(&p);
+        let r = wavestorm_core::calc::calculate(&p);
         assert!(!r.has_errors(), "{:?}", r.messages);
-        assert!(r.messages.iter().all(|m| m.severity < stormwaves_core::calc::Severity::Warning), "{:?}", r.messages);
+        assert!(r.messages.iter().all(|m| m.severity < wavestorm_core::calc::Severity::Warning), "{:?}", r.messages);
     }
 }

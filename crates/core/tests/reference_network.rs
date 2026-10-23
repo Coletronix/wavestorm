@@ -2,14 +2,14 @@
 //! a detention pond with a riser (culvert + orifice) and a broad-crested spillway.
 //! Type II 24-hr, 4.30", time span 10-40 h, dt 0.10 h, Stor-Ind+Trans reach, Stor-Ind pond.
 
-use stormwaves_core::calc::{self, Detail};
-use stormwaves_core::cn::SubArea;
-use stormwaves_core::geometry::{PipeShape, Section};
-use stormwaves_core::outlets::{DeviceKind, OpeningShape, OutletDevice, Plane, Routing};
-use stormwaves_core::project::*;
-use stormwaves_core::rainfall::RainEvent;
-use stormwaves_core::storage::{CustomKind, PondStorage, StorageVolume, VolumeShape};
-use stormwaves_core::tc::{TcKind, TcSegment};
+use wavestorm_core::calc::{self, Detail};
+use wavestorm_core::cn::SubArea;
+use wavestorm_core::geometry::{PipeShape, Section};
+use wavestorm_core::outlets::{DeviceKind, OpeningShape, OutletDevice, Plane, Routing};
+use wavestorm_core::project::*;
+use wavestorm_core::rainfall::RainEvent;
+use wavestorm_core::storage::{CustomKind, PondStorage, StorageVolume, VolumeShape};
+use wavestorm_core::tc::{TcKind, TcSegment};
 
 const AC: f64 = 43_560.0;
 

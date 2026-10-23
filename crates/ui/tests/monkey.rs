@@ -1,7 +1,7 @@
 //! Drives the whole UI with pseudo-random input to make sure nothing panics.
 
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, pos2, vec2};
-use stormwaves_ui::{StormwavesApp, script};
+use wavestorm_ui::{WaveStormApp, script};
 
 struct Rng(u64);
 impl Rng {
@@ -16,11 +16,11 @@ impl Rng {
     }
 }
 
-fn harness() -> egui_kittest::Harness<'static, StormwavesApp> {
-    egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), StormwavesApp::headless())
+fn harness() -> egui_kittest::Harness<'static, WaveStormApp> {
+    egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless())
 }
 
-fn press(h: &mut egui_kittest::Harness<'static, StormwavesApp>, pos: Pos2, button: PointerButton, modifiers: Modifiers) {
+fn press(h: &mut egui_kittest::Harness<'static, WaveStormApp>, pos: Pos2, button: PointerButton, modifiers: Modifiers) {
     h.input_mut().events.push(Event::PointerMoved(pos));
     h.input_mut().events.push(Event::PointerButton { pos, button, pressed: true, modifiers });
     h.step();
@@ -28,7 +28,7 @@ fn press(h: &mut egui_kittest::Harness<'static, StormwavesApp>, pos: Pos2, butto
     h.step();
 }
 
-fn drag(h: &mut egui_kittest::Harness<'static, StormwavesApp>, a: Pos2, b: Pos2, modifiers: Modifiers) {
+fn drag(h: &mut egui_kittest::Harness<'static, WaveStormApp>, a: Pos2, b: Pos2, modifiers: Modifiers) {
     h.input_mut().events.push(Event::PointerMoved(a));
     h.input_mut().events.push(Event::PointerButton { pos: a, button: PointerButton::Primary, pressed: true, modifiers });
     h.step();
@@ -84,7 +84,7 @@ fn random_input_never_panics() {
         // The project must still calculate after all that.
         let app = h.state_mut();
         let doc = app.doc();
-        let _ = stormwaves_core::calc::calculate(&doc.project);
+        let _ = wavestorm_core::calc::calculate(&doc.project);
     }
 }
 

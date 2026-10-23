@@ -8,14 +8,14 @@
 //! not the inflow subcatchment's Tc; the Tc given here reproduces both published inflow peaks
 //! within 0.2 %.
 
-use stormwaves_core::calc::{self, Detail};
-use stormwaves_core::cn::SubArea;
-use stormwaves_core::geometry::PipeShape;
-use stormwaves_core::outlets::{DeviceKind, ExfilMode, OpeningShape, OutletDevice, Plane, Routing};
-use stormwaves_core::project::*;
-use stormwaves_core::rainfall::RainEvent;
-use stormwaves_core::storage::{CustomKind, PondStorage, StorageVolume, VolumeShape};
-use stormwaves_core::tc::{TcKind, TcSegment};
+use wavestorm_core::calc::{self, Detail};
+use wavestorm_core::cn::SubArea;
+use wavestorm_core::geometry::PipeShape;
+use wavestorm_core::outlets::{DeviceKind, ExfilMode, OpeningShape, OutletDevice, Plane, Routing};
+use wavestorm_core::project::*;
+use wavestorm_core::rainfall::RainEvent;
+use wavestorm_core::storage::{CustomKind, PondStorage, StorageVolume, VolumeShape};
+use wavestorm_core::tc::{TcKind, TcSegment};
 
 const AC: f64 = 43_560.0;
 
@@ -276,7 +276,7 @@ fn wet_basin_with_orifice_and_overflow_grate() {
         p.settings.current_event = 0;
         p.settings.span_end = 360.0;
         p.settings.dt = 0.01;
-        p.settings.cn_weighting = stormwaves_core::cn::CnWeighting::WeightedQ;
+        p.settings.cn_weighting = wavestorm_core::cn::CnWeighting::WeightedQ;
         let pid = p.add_node(NodeType::Pond, [0.0, 0.0]);
         let sub = p.add_node(NodeType::Subcat, [0.0, 0.0]);
         if let Some(n) = p.node_mut(sub) {

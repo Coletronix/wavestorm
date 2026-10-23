@@ -165,7 +165,7 @@ impl HelpState {
 
 pub fn show(ctx: &egui::Context, st: &mut HelpState) -> bool {
     let mut open = true;
-    crate::frame::Win::new("StormWAVES Help").open(&mut open).resizable(true).default_size(vec2(720.0, 460.0)).show(ctx, |ui| {
+    crate::frame::Win::new("WAVEStorm Help").open(&mut open).resizable(true).default_size(vec2(720.0, 460.0)).show(ctx, |ui| {
         let t = Tokens::get(ui.ctx());
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {

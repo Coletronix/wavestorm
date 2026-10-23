@@ -46,7 +46,7 @@ impl Ctx<'_> {
         if !p.prepared_by.is_empty() {
             page.text(MARGIN, 57.0, 9.5, Font::Sans, Align::Left, Rgb::BLACK, &format!("Prepared by {}", p.prepared_by));
         }
-        page.text(MARGIN, 69.0, 8.0, Font::Sans, Align::Left, Rgb::BLACK, &format!("StormWAVES {}", env!("CARGO_PKG_VERSION")));
+        page.text(MARGIN, 69.0, 8.0, Font::Sans, Align::Left, Rgb::BLACK, &format!("WAVEStorm {}", env!("CARGO_PKG_VERSION")));
         page.text(right, 44.0, 10.0, Font::SansItalic, Align::Right, Rgb::BLACK, &self.results.event_heading);
         page.text(right, 57.0, 9.5, Font::Sans, Align::Right, Rgb::BLACK, &format!("Page {number}"));
         page.text(right, 69.0, 8.0, Font::Sans, Align::Right, Rgb::BLACK, &self.opts.date);
@@ -203,7 +203,7 @@ fn diagram_draw(c: &mut Ctx) -> Page {
     } else {
         page.text(bx + 150.0, h - MARGIN - 23.0, 9.0, Font::Sans, Align::Center, Rgb::BLACK, &format!("Printed {}", c.opts.date));
     }
-    page.text(bx + 150.0, h - MARGIN - 11.0, 8.0, Font::Sans, Align::Center, Rgb::BLACK, &format!("StormWAVES {}", env!("CARGO_PKG_VERSION")));
+    page.text(bx + 150.0, h - MARGIN - 11.0, 8.0, Font::Sans, Align::Center, Rgb::BLACK, &format!("WAVEStorm {}", env!("CARGO_PKG_VERSION")));
     page
 }
 

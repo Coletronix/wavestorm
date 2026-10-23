@@ -2,9 +2,9 @@
 
 use crate::windows::Window;
 use egui::{TextureHandle, Vec2};
-use stormwaves_core::calc::{self, Results};
-use stormwaves_core::project::{NodeId, Project};
-use stormwaves_core::resize;
+use wavestorm_core::calc::{self, Results};
+use wavestorm_core::project::{NodeId, Project};
+use wavestorm_core::resize;
 
 /// Whether a calculation resized anything (message 59).
 fn resized(r: &Results) -> bool {

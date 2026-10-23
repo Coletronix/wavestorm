@@ -1,13 +1,13 @@
 [package]
-name = "stormwaves-ui"
-description = "egui application shell for StormWAVES"
+name = "wavestorm-ui"
+description = "egui application shell for WAVEStorm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-stormwaves-core.workspace = true
+wavestorm-core.workspace = true
 egui = { workspace = true, features = ["default_fonts"] }
 eframe = { workspace = true, features = ["default_fonts"] }
 serde.workspace = true

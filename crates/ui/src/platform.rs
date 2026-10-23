@@ -60,7 +60,7 @@ impl Platform {
     fn filters(purpose: Purpose) -> (&'static str, &'static [&'static str]) {
         match purpose {
             Purpose::OpenProject => ("Project (.waves or .hcp)", &["waves", "json", "hcp"]),
-            Purpose::MergeProject => ("StormWAVES project", &["waves", "json"]),
+            Purpose::MergeProject => ("WAVEStorm project", &["waves", "json"]),
             Purpose::ImportSubareas => ("Sub-area table", &["csv", "txt"]),
             Purpose::Underlay => ("Image or PDF", &["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp", "pdf"]),
             Purpose::LinkCsv => ("Hydrograph CSV", &["csv", "txt"]),
@@ -203,7 +203,7 @@ pub mod store {
             .map(std::path::PathBuf::from)
             .or_else(|| std::env::var_os("APPDATA").map(std::path::PathBuf::from))
             .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
-        Some(base.join("stormwaves").join(name))
+        Some(base.join("wavestorm").join(name))
     }
 
     pub fn read(key: &str) -> Option<String> {
@@ -213,7 +213,7 @@ pub mod store {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            web_sys::window()?.local_storage().ok()??.get_item(&format!("stormwaves.{key}")).ok()?
+            web_sys::window()?.local_storage().ok()??.get_item(&format!("wavestorm.{key}")).ok()?
         }
     }
 
@@ -227,7 +227,7 @@ pub mod store {
         }
         #[cfg(target_arch = "wasm32")]
         if let Some(Ok(Some(s))) = web_sys::window().map(|w| w.local_storage()) {
-            let _ = s.set_item(&format!("stormwaves.{key}"), text);
+            let _ = s.set_item(&format!("wavestorm.{key}"), text);
         }
     }
 }

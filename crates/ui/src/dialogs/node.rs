@@ -8,14 +8,14 @@ use crate::theme::Tokens;
 use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{RichText, Ui, vec2};
-use stormwaves_core::cn::SubArea;
-use stormwaves_core::geometry::{PipeShape, RatingPoint, Section, XsPoint};
-use stormwaves_core::link::{LinkElevation, LinkSource, ManualHydrograph, interpolate_blanks};
-use stormwaves_core::outlets::{OutletDevice, Routing};
-use stormwaves_core::project::{Node, NodeData, NodeId, NodeType, Tailwater};
-use stormwaves_core::storage::{CustomKind, StorageVolume, VolumeShape};
-use stormwaves_core::tc::{self, TcKind, TcSegment};
-use stormwaves_core::units::Units;
+use wavestorm_core::cn::SubArea;
+use wavestorm_core::geometry::{PipeShape, RatingPoint, Section, XsPoint};
+use wavestorm_core::link::{LinkElevation, LinkSource, ManualHydrograph, interpolate_blanks};
+use wavestorm_core::outlets::{OutletDevice, Routing};
+use wavestorm_core::project::{Node, NodeData, NodeId, NodeType, Tailwater};
+use wavestorm_core::storage::{CustomKind, StorageVolume, VolumeShape};
+use wavestorm_core::tc::{self, TcKind, TcSegment};
+use wavestorm_core::units::Units;
 
 pub struct EditState {
     pub node: NodeId,
@@ -159,7 +159,7 @@ fn remap_routes(devices: &mut [OutletDevice], f: impl Fn(usize) -> Option<usize>
 
 /// The small "which device?" chooser shown for an empty outlet row. Returns the chosen
 /// device label and template, or Some(None) on Cancel.
-fn device_chooser(ctx: &egui::Context) -> Option<Option<(&'static str, stormwaves_core::outlets::DeviceKind)>> {
+fn device_chooser(ctx: &egui::Context) -> Option<Option<(&'static str, wavestorm_core::outlets::DeviceKind)>> {
     let mut out = None;
     crate::frame::Win::new("Select Outlet Device Type").id(egui::Id::new("device-chooser")).collapsible(false).resizable(false).show(ctx, |ui| {
         ui.label("Choose the type of outlet device:");
@@ -245,7 +245,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
         match st.sel_row {
             Some(i) if i < sc.areas.len() => {
                 sc.areas[i].cn = cn;
-                sc.areas[i].hsg = stormwaves_core::cn::soil_from_description(&desc);
+                sc.areas[i].hsg = wavestorm_core::cn::soil_from_description(&desc);
                 sc.areas[i].description = desc;
             }
             _ => sc.areas.push(SubArea::new(0.0, cn, &desc)),
@@ -328,7 +328,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
     keep
 }
 
-fn general(ui: &mut Ui, st: &mut EditState, project: &stormwaves_core::project::Project) {
+fn general(ui: &mut Ui, st: &mut EditState, project: &wavestorm_core::project::Project) {
     ui.horizontal(|ui| {
         widgets::with_tip(ui, "Identifies the node on the diagram and in reports, with its type letter (S, R, P, L). Numbers must be unique for each type.", |ui| {
             widgets::text_field(ui, "Node Number:", &mut st.draft.number, 90.0);
@@ -378,8 +378,8 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
     let NodeData::Subcat(sc) = &mut st.draft.data else { return };
     let large = sc.large_units;
     let area_unit = if large { u.area_label() } else if u.metric() { "m²" } else { "sq-ft" };
-    let to_area = |v: f64| if large { u.area(v) } else if u.metric() { v / stormwaves_core::units::FT_PER_M.powi(2) } else { v };
-    let from_area = |v: f64| if large { u.area_in(v) } else if u.metric() { v * stormwaves_core::units::FT_PER_M.powi(2) } else { v };
+    let to_area = |v: f64| if large { u.area(v) } else if u.metric() { v / wavestorm_core::units::FT_PER_M.powi(2) } else { v };
+    let from_area = |v: f64| if large { u.area_in(v) } else if u.metric() { v * wavestorm_core::units::FT_PER_M.powi(2) } else { v };
     let t = Tokens::get(ui.ctx());
     if tab == "Area" {
         // Refresh the text buffer when it no longer matches the data (first show, lookups).
@@ -416,18 +416,18 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
             }
             ui.label(RichText::new("Right-click a line number to insert or delete a line.").color(t.text_dim));
         });
-        let comp = stormwaves_core::cn::composite(&sc.areas, doc.project.settings.round_cn, 0);
+        let comp = wavestorm_core::cn::composite(&sc.areas, doc.project.settings.round_cn, 0);
         ui.add_space(6.0);
         ui.label(format!(
             "{} {area_unit}   Weighted Average CN = {:.1} ({})   Impervious = {:.1}%",
-            stormwaves_core::units::group(to_area(comp.total_area), if large { 3 } else { 0 }),
+            wavestorm_core::units::group(to_area(comp.total_area), if large { 3 } else { 0 }),
             comp.cn_raw,
             if doc.project.settings.round_cn { format!("{:.0} used", comp.cn) } else { "full precision".into() },
             if comp.total_area > 0.0 { comp.impervious_area / comp.total_area * 100.0 } else { 0.0 }
         ));
     } else {
         // Tc tab.
-        let cn = stormwaves_core::cn::composite(&sc.areas, true, 0).cn;
+        let cn = wavestorm_core::cn::composite(&sc.areas, true, 0).cn;
         let rows: Vec<Vec<String>> = sc
             .tc
             .iter()
@@ -435,7 +435,7 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
                 let r = s.kind.evaluate(cn);
                 vec![
                     format!("{:.1}", tc::rounded_minutes(r.minutes, 1)),
-                    stormwaves_core::units::group(u.len(r.length), 0),
+                    wavestorm_core::units::group(u.len(r.length), 0),
                     if r.slope > 0.0 { format!("{:.4}", r.slope) } else { String::new() },
                     format!("{:.2}", u.vel(r.velocity)),
                     r.capacity.map(|c| format!("{:.2}", u.flow(c))).unwrap_or_default(),
@@ -711,7 +711,7 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
             inch(ui, "fill", "Inside Fill:", fill);
         }
         Section::AreaPerimeter { area, perimeter } => {
-            conv_field(ui, "a", "Flow Area:", if u.metric() { "m²" } else { "sq-ft" }, area, |x| if u.metric() { x / stormwaves_core::units::FT_PER_M.powi(2) } else { x }, |x| if u.metric() { x * stormwaves_core::units::FT_PER_M.powi(2) } else { x }, 2, 110.0);
+            conv_field(ui, "a", "Flow Area:", if u.metric() { "m²" } else { "sq-ft" }, area, |x| if u.metric() { x / wavestorm_core::units::FT_PER_M.powi(2) } else { x }, |x| if u.metric() { x * wavestorm_core::units::FT_PER_M.powi(2) } else { x }, 2, 110.0);
             lf(ui, "p", "Wetted Perimeter:", perimeter);
         }
         Section::Custom { points } => {
@@ -748,7 +748,7 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
             ui.vertical(|ui| {
                 lf(ui, "bf", "Bank-Full Depth:", bank_full);
                 let area_unit = if u.metric() { "m²" } else { "sf" };
-                let area_k = if u.metric() { stormwaves_core::units::FT_PER_M.powi(2) } else { 1.0 };
+                let area_k = if u.metric() { wavestorm_core::units::FT_PER_M.powi(2) } else { 1.0 };
                 ui.label(RichText::new(format!("{:>3} {:>10} {:>10} {:>10}", "#", format!("Depth ({})", u.len_label()), format!("Flow ({})", u.flow_label()), format!("Area ({area_unit})"))).monospace());
                 let mut del = None;
                 for (i, p) in points.iter_mut().enumerate() {
@@ -832,7 +832,7 @@ fn reach_tab(ui: &mut Ui, st: &mut EditState, u: &Units) {
             opt_field(ui, "flood", "Flood Depth:", u.len_label(), &mut r.flood_depth, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
         });
     });
-    if stormwaves_core::resize::reach_resizable(&r.section) {
+    if wavestorm_core::resize::reach_resizable(&r.section) {
         widgets::with_tip(ui, "Each calculation sets the diameter to the smallest standard size that carries the current event's peak below the crown (or the flood depth). Sizes and the criterion are on Settings > Calculation > Resize.", |ui| {
             widgets::check(ui, &mut r.auto_size, "Size automatically");
         });
@@ -846,7 +846,7 @@ fn reach_tab(ui: &mut Ui, st: &mut EditState, u: &Units) {
 fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
     let NodeData::Pond(p) = &mut st.draft.data else { return };
     let large = p.large_units;
-    let vol = |v: f64| if large { u.fmt_volume(v) } else { format!("{} {}", stormwaves_core::units::group(if u.metric() { v / stormwaves_core::units::CF_PER_M3 } else { v }, 0), if u.metric() { "m³" } else { "cf" }) };
+    let vol = |v: f64| if large { u.fmt_volume(v) } else { format!("{} {}", wavestorm_core::units::group(if u.metric() { v / wavestorm_core::units::CF_PER_M3 } else { v }, 0), if u.metric() { "m³" } else { "cf" }) };
     match tab {
         "Storage" => {
             let rows: Vec<Vec<String>> = p
@@ -1080,9 +1080,9 @@ fn volume_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
                     let is_area = matches!(kind, CustomKind::AreaPrismatic | CustomKind::AreaConic);
                     type Conv<'a> = Box<dyn Fn(f64) -> f64 + 'a>;
                     let (val_label, to, from): (String, Conv, Conv) = if is_area {
-                        (format!("Surf.Area ({})", if u.metric() { "m²" } else { "sq-ft" }), Box::new(|v| if u.metric() { v / stormwaves_core::units::FT_PER_M.powi(2) } else { v }), Box::new(|v| if u.metric() { v * stormwaves_core::units::FT_PER_M.powi(2) } else { v }))
+                        (format!("Surf.Area ({})", if u.metric() { "m²" } else { "sq-ft" }), Box::new(|v| if u.metric() { v / wavestorm_core::units::FT_PER_M.powi(2) } else { v }), Box::new(|v| if u.metric() { v * wavestorm_core::units::FT_PER_M.powi(2) } else { v }))
                     } else {
-                        (format!("Storage ({})", if u.metric() { "m³" } else { "cu-ft" }), Box::new(|v| if u.metric() { v / stormwaves_core::units::CF_PER_M3 } else { v }), Box::new(|v| if u.metric() { v * stormwaves_core::units::CF_PER_M3 } else { v }))
+                        (format!("Storage ({})", if u.metric() { "m³" } else { "cu-ft" }), Box::new(|v| if u.metric() { v / wavestorm_core::units::CF_PER_M3 } else { v }), Box::new(|v| if u.metric() { v * wavestorm_core::units::CF_PER_M3 } else { v }))
                     };
                     ui.label(RichText::new(format!("{:>3} {:>12} {:>16}", "#", format!("Elev ({})", if u.metric() { "m" } else { "ft" }), val_label)).monospace());
                     let mut del = None;

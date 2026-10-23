@@ -1,12 +1,12 @@
-<h1><img src="crates/ui/assets/logo.svg" alt="StormWAVES" width="480"></h1>
+<h1><picture><source media="(prefers-color-scheme: dark)" srcset="crates/ui/assets/logo-dark.png"><img src="crates/ui/assets/logo.png" alt="WAVEStorm" width="480"></picture></h1>
 
 **Open-source stormwater modelling for the desktop and the browser.** Draw a routing diagram of
-subcatchments, reaches, ponds and links. StormWAVES then computes NRCS (SCS) TR-55 / TR-20
+subcatchments, reaches, ponds and links. WAVEStorm then computes NRCS (SCS) TR-55 / TR-20
 runoff hydrographs and routes them through channels, pipes, detention ponds and outlet
 structures. It produces the summaries, graphs and tables an engineer needs for a stormwater
 report.
 
-StormWAVES is written entirely in Rust. The same code runs natively on Linux, Windows and macOS
+WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Windows and macOS
 ([egui](https://github.com/emilk/egui)/eframe) and in any modern browser (WebAssembly).
 
 ![Routing diagram](docs/screenshots/main.png)
@@ -79,7 +79,7 @@ StormWAVES is written entirely in Rust. The same code runs natively on Linux, Wi
 | ![Outlets](docs/screenshots/outlets.png) **Pond outlets**: the outlet device list. | ![Chamber wizard](docs/screenshots/chamber-wizard.png) **Chamber Wizard**: underground storage layout. |
 
 The screenshots are rendered from the built-in sample project
-(`cargo run -p stormwaves-ui --example snapshot`; see [Development](#development)).
+(`cargo run -p wavestorm-ui --example snapshot`; see [Development](#development)).
 
 ## Installation
 
@@ -109,12 +109,12 @@ offers to install the Visual Studio C++ build tools that Rust needs.
 ### 3. Build and run the desktop app
 
 ```sh
-git clone <repository-url> stormwaves
-cd stormwaves
-cargo run --release -p stormwaves
+git clone <repository-url> wavestorm
+cd wavestorm
+cargo run --release -p wavestorm
 ```
 
-The executable is written to `target/release/stormwaves` (`stormwaves.exe` on Windows). Copy it
+The executable is written to `target/release/wavestorm` (`wavestorm.exe` on Windows). Copy it
 anywhere on your `PATH`; it needs no other files.
 
 ### 4. (Optional) Build the web version
@@ -122,7 +122,7 @@ anywhere on your `PATH`; it needs no other files.
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo install trunk
-cd apps/stormwaves-web
+cd apps/wavestorm-web
 trunk serve            # development server at http://127.0.0.1:8777
 trunk build --release  # static site in dist/web, ready for any web server
 ```
@@ -150,8 +150,8 @@ The built-in help (**Help > Contents**) covers the dialogs and the calculation m
 
 | Extension | Read | Write | Notes |
 |---|:---:|:---:|---|
-| `.waves` | ✓ | ✓ | Native StormWAVES project (JSON) |
-| `.hcp` | ✓ | ✓ | Interchange project format of a widely used commercial package. Settings StormWAVES does not model are kept and written back unchanged. English-unit files only for now. |
+| `.waves` | ✓ | ✓ | Native WAVEStorm project (JSON) |
+| `.hcp` | ✓ | ✓ | Interchange project format of a widely used commercial package. Settings WAVEStorm does not model are kept and written back unchanged. English-unit files only for now. |
 | `.hcr` | ✓ | ✓ | Rainfall distribution |
 | `.huh` | ✓ | ✓ | Dimensionless unit hydrograph |
 | `*-Rain.txt` | ✓ | | County rainfall tables for Rainfall Event Lookup |
@@ -162,7 +162,7 @@ The built-in help (**Help > Contents**) covers the dialogs and the calculation m
 | `.pdf` / `.emf` / `.txt` | | ✓ | Reports and vector graphics |
 
 Third-party rainfall libraries and project files are loaded at runtime from files you supply.
-None are bundled with StormWAVES.
+None are bundled with WAVEStorm.
 
 ## Methods and validation
 
@@ -181,16 +181,16 @@ Every algorithm has unit tests. Golden tests reproduce published results:
 
 The calibration choices are described in [AGENTS.md](AGENTS.md#3-methods-confirmed-against-published-reference-results).
 
-StormWAVES is engineering software provided without warranty. Check its results
+WAVEStorm is engineering software provided without warranty. Check its results
 independently before relying on them for design.
 
 ## Project layout
 
 ```text
-crates/core            stormwaves-core: hydrology and hydraulics engine (no UI, compiles to wasm)
-crates/ui              stormwaves-ui: the egui application (diagram, dialogs, reports, charts)
-apps/stormwaves        desktop executable
-apps/stormwaves-web    browser build (trunk)
+crates/core            wavestorm-core: hydrology and hydraulics engine (no UI, compiles to wasm)
+crates/ui              wavestorm-ui: the egui application (diagram, dialogs, reports, charts)
+apps/wavestorm        desktop executable
+apps/wavestorm-web    browser build (trunk)
 docs/screenshots       images used in this README
 ```
 
@@ -198,9 +198,9 @@ docs/screenshots       images used in this README
 
 ```sh
 cargo test                                               # all tests
-cargo test -p stormwaves-core                            # engine tests only (fast)
-cargo check -p stormwaves-core --target wasm32-unknown-unknown
-cargo run -p stormwaves-ui --example snapshot -- --out shot.png --do "report:1P;tab:1"
+cargo test -p wavestorm-core                            # engine tests only (fast)
+cargo check -p wavestorm-core --target wasm32-unknown-unknown
+cargo run -p wavestorm-ui --example snapshot -- --out shot.png --do "report:1P;tab:1"
 ```
 
 The `snapshot` example renders the app headless to a PNG. It runs a small script of actions

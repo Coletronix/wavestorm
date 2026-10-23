@@ -6,11 +6,11 @@ use crate::theme::Tokens;
 use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{Align2, Color32, FontId, RichText, Sense, Stroke, Ui, vec2};
-use stormwaves_core::calc::{Detail, NodeResult, Severity};
-use stormwaves_core::outlets;
-use stormwaves_core::project::{Node, NodeData, NodeId, NodeType, Project};
-use stormwaves_core::report;
-use stormwaves_core::units::group;
+use wavestorm_core::calc::{Detail, NodeResult, Severity};
+use wavestorm_core::outlets;
+use wavestorm_core::project::{Node, NodeData, NodeId, NodeType, Project};
+use wavestorm_core::report;
+use wavestorm_core::units::group;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -94,7 +94,7 @@ pub(crate) const COLORS: [Color32; 6] = [
 
 fn hydro_series(project: &Project, node: &Node, r: &NodeResult) -> Vec<Series> {
     let u = &project.units;
-    let mk = |name: &str, h: &stormwaves_core::hydrograph::Hydrograph, c: Color32| Series {
+    let mk = |name: &str, h: &wavestorm_core::hydrograph::Hydrograph, c: Color32| Series {
         name: name.into(),
         color: c,
         x: (0..h.len()).map(|i| h.time(i)).collect(),
@@ -121,7 +121,7 @@ fn hydro_series(project: &Project, node: &Node, r: &NodeResult) -> Vec<Series> {
 
 fn summary_lines(project: &Project, node: &Node, r: &NodeResult, event_heading: &str) -> Vec<String> {
     let u = &project.units;
-    let f = |h: &stormwaves_core::hydrograph::Hydrograph| format!("{} {}", group(u.flow(h.peak().value), u.flow_dp()), u.flow_label());
+    let f = |h: &wavestorm_core::hydrograph::Hydrograph| format!("{} {}", group(u.flow(h.peak().value), u.flow_dp()), u.flow_label());
     let mut out = Vec::new();
     if r.undefined.is_some() {
         out.push("RESULTS UNDEFINED".to_string());
@@ -205,8 +205,8 @@ fn text_area(ui: &mut Ui, lines: &[String], height: f32) {
 
 /// Draws a node profile (side view) fitted to `size`; the vertical scale is exaggerated
 /// independently of the horizontal one.
-fn profile_view(ui: &mut Ui, prof: &stormwaves_core::profile::Profile, size: egui::Vec2) {
-    use stormwaves_core::profile::{Anchor, Ink};
+fn profile_view(ui: &mut Ui, prof: &wavestorm_core::profile::Profile, size: egui::Vec2) {
+    use wavestorm_core::profile::{Anchor, Ink};
     let t = Tokens::get(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     widgets::sunken(ui.painter(), rect, t.field, &t);
@@ -347,7 +347,7 @@ pub fn show_node_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ReportState
                     st.three_d = !st.three_d;
                 }
                 if widgets::button(ui, "Print", 62.0).on_hover_text("Print this node's report (PDF)").clicked() {
-                    actions.push(WindowAction::PrintPdf(stormwaves_core::printing::PrintOptions {
+                    actions.push(WindowAction::PrintPdf(wavestorm_core::printing::PrintOptions {
                         diagram: false,
                         node_listing: false,
                         area_listing: false,
@@ -369,12 +369,12 @@ pub fn show_node_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ReportState
                         actions.push(WindowAction::SaveFile { name: format!("{}.txt", node.label()), bytes: summary().into_bytes(), ext: "txt" });
                     }
                     if ui.button("Save Graph as EMF...").clicked()
-                        && let Some(bytes) = stormwaves_core::printing::node_graph_emf(&doc.project, &doc.results, node.id)
+                        && let Some(bytes) = wavestorm_core::printing::node_graph_emf(&doc.project, &doc.results, node.id)
                     {
                         actions.push(WindowAction::SaveFile { name: format!("{} graph.emf", node.label()), bytes, ext: "emf" });
                     }
                     if ui.button("Save Summary as EMF...").clicked()
-                        && let Some(bytes) = stormwaves_core::printing::node_summary_emf(&doc.project, &doc.results, node.id)
+                        && let Some(bytes) = wavestorm_core::printing::node_summary_emf(&doc.project, &doc.results, node.id)
                     {
                         actions.push(WindowAction::SaveFile { name: format!("{} summary.emf", node.label()), bytes, ext: "emf" });
                     }
@@ -461,13 +461,13 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
         Tab::Sizing => sizing_tab(ui, project, node, r, st, size),
         Tab::Tr55 => {
             let lines = match &r.detail {
-                Detail::Subcat(d) => stormwaves_core::tr55::worksheet_report(d.composite.total_area, d.composite.cn, d.tc_minutes / 60.0, &project.settings.events),
+                Detail::Subcat(d) => wavestorm_core::tr55::worksheet_report(d.composite.total_area, d.composite.cn, d.tc_minutes / 60.0, &project.settings.events),
                 _ => vec!["Not available.".into()],
             };
             text_area(ui, &lines, size.y);
         }
         Tab::Profile => {
-            let prof = stormwaves_core::profile::chain(project, Some(&doc.results), &[node.id]);
+            let prof = wavestorm_core::profile::chain(project, Some(&doc.results), &[node.id]);
             profile_view(ui, &prof, size);
         }
     }
@@ -481,7 +481,7 @@ fn rating_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
     let mut cols: Vec<Vec<f64>> = Vec::new();
     match &node.data {
         NodeData::Pond(pond) => {
-            let bottom = stormwaves_core::calc::pond_bottom(pond);
+            let bottom = wavestorm_core::calc::pond_bottom(pond);
             let peak = match &r.detail {
                 Detail::Pond(d) => d.peak_elevation,
                 _ => bottom,
@@ -536,7 +536,7 @@ fn rating_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
             let n = 60;
             let depths: Vec<f64> = (0..=n).map(|i| full * 1.25 * i as f64 / n as f64).collect();
             cols.push(depths.iter().map(|y| u.len(reach.inlet_invert + y)).collect());
-            let q: Vec<f64> = depths.iter().map(|y| u.flow(reach.section.manning_q(y.min(if matches!(reach.section, stormwaves_core::geometry::Section::Pipe { .. }) { full } else { f64::INFINITY }), reach.n, reach.slope()))).collect();
+            let q: Vec<f64> = depths.iter().map(|y| u.flow(reach.section.manning_q(y.min(if matches!(reach.section, wavestorm_core::geometry::Section::Pipe { .. }) { full } else { f64::INFINITY }), reach.n, reach.slope()))).collect();
             heads.push(format!("Discharge ({})", u.flow_label()));
             cols.push(q.clone());
             series.push(Series { name: "Discharge".into(), color: COLORS[2], x: q, y: depths.iter().map(|y| u.len(reach.inlet_invert + y)).collect(), peak_label: None });
@@ -560,7 +560,7 @@ fn rating_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
 
 fn sizing_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &mut ReportState, size: egui::Vec2) {
     let u = &project.units;
-    let curve = stormwaves_core::routing::pond_sizing(&r.inflow);
+    let curve = wavestorm_core::routing::pond_sizing(&r.inflow);
     if curve.is_empty() {
         ui.label("No inflow: the sizing estimate needs an inflow hydrograph.");
         return;
@@ -582,9 +582,9 @@ fn sizing_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
     }
 }
 
-fn fixed_tw(t: stormwaves_core::project::Tailwater) -> Option<f64> {
+fn fixed_tw(t: wavestorm_core::project::Tailwater) -> Option<f64> {
     match t {
-        stormwaves_core::project::Tailwater::Fixed(e) => Some(e),
+        wavestorm_core::project::Tailwater::Fixed(e) => Some(e),
         _ => None,
     }
 }
@@ -641,7 +641,7 @@ fn report_table_with(ui: &mut Ui, size: egui::Vec2, heads: &[(String, String)], 
     });
 }
 
-fn events_tab(ui: &mut Ui, project: &Project, node: &Node, all: &[stormwaves_core::calc::Results], size: egui::Vec2) {
+fn events_tab(ui: &mut Ui, project: &Project, node: &Node, all: &[wavestorm_core::calc::Results], size: egui::Vec2) {
     let u = &project.units;
     let h = |a: &str, b: String| (a.to_string(), format!("({b})"));
     let elev_unit = if u.metric() { "meters" } else { "feet" }.to_string();
@@ -704,7 +704,7 @@ const PROJECT_TABS: [&str; 10] = ["Node Listing", "Area Listing", "Soil Listing"
 
 enum Listing {
     Text(Vec<String>),
-    Table(stormwaves_core::listings::Table),
+    Table(wavestorm_core::listings::Table),
 }
 
 impl Listing {
@@ -717,7 +717,7 @@ impl Listing {
 }
 
 pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectReportState, actions: &mut Vec<WindowAction>) -> bool {
-    use stormwaves_core::listings;
+    use wavestorm_core::listings;
     let mut open = true;
     crate::frame::Win::new(format!("Project Reports - {}", doc.project.title)).id(egui::Id::new(("project-report", st.serial))).open(&mut open).default_size(vec2(820.0, 460.0)).resizable(true).min_max().show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
@@ -755,7 +755,7 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
                         e.name,
                         e.storm,
                         match e.duration_mode {
-                            stormwaves_core::rainfall::DurationMode::Default => "Default".to_string(),
+                            wavestorm_core::rainfall::DurationMode::Default => "Default".to_string(),
                             _ => format!("{:.2} hrs", e.duration),
                         },
                         u.fmt_rain(e.depth),
@@ -806,7 +806,7 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
                 widgets::toggle_button(ui, "Table", 62.0, false, false);
                 widgets::toggle_button(ui, "Shrink", 62.0, false, false);
                 if widgets::button(ui, "Print", 62.0).on_hover_text("Print this listing (PDF)").clicked() {
-                    let bytes = stormwaves_core::printing::lines_pdf(&doc.project, &doc.results, name, &listing.lines(), &crate::dialogs::misc::today());
+                    let bytes = wavestorm_core::printing::lines_pdf(&doc.project, &doc.results, name, &listing.lines(), &crate::dialogs::misc::today());
                     actions.push(WindowAction::SaveFile { name: format!("{} - {name}.pdf", doc.project.title), bytes, ext: "pdf" });
                 }
                 let export = widgets::button(ui, "Export", 62.0);
@@ -891,7 +891,7 @@ pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState, a
                     st.three_d = !st.three_d;
                 }
                 if widgets::button(ui, "Print", 62.0).clicked() {
-                    let o = stormwaves_core::printing::PrintOptions {
+                    let o = wavestorm_core::printing::PrintOptions {
                         diagram: false,
                         node_listing: false,
                         area_listing: false,
@@ -926,7 +926,7 @@ pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState, a
 /// Peak values of each compared node (label, inflow, outflow, primary, secondary).
 fn compare_rows(doc: &Doc, st: &CompareState) -> Vec<Vec<String>> {
     let u = doc.project.units;
-    let f = |h: &stormwaves_core::hydrograph::Hydrograph| group(u.flow(h.peak().value), u.flow_dp());
+    let f = |h: &wavestorm_core::hydrograph::Hydrograph| group(u.flow(h.peak().value), u.flow_dp());
     st.nodes
         .iter()
         .filter_map(|id| Some((doc.project.node(*id)?, doc.results.node(*id)?)))
@@ -948,7 +948,7 @@ fn compare_body(ui: &mut Ui, doc: &mut Doc, st: &mut CompareState, size: egui::V
     }
     if st.tab == 2 {
         // Side-by-side profile in the order the nodes were selected.
-        let prof = stormwaves_core::profile::chain(&doc.project, Some(&doc.results), &st.nodes);
+        let prof = wavestorm_core::profile::chain(&doc.project, Some(&doc.results), &st.nodes);
         if prof.shapes.is_empty() {
             ui.label("Select subcatchments, reaches or ponds in flow order, then click Selection.");
         } else {

@@ -177,12 +177,12 @@ impl Tokens {
     }
 
     pub fn get(ctx: &Context) -> Tokens {
-        ctx.data(|d| d.get_temp::<Tokens>(egui::Id::new("stormwaves-tokens"))).unwrap_or_else(|| Tokens::for_kind(ThemeKind::Classic))
+        ctx.data(|d| d.get_temp::<Tokens>(egui::Id::new("wavestorm-tokens"))).unwrap_or_else(|| Tokens::for_kind(ThemeKind::Classic))
     }
 
     /// Installs the tokens and the matching egui visuals.
     pub fn apply(self, ctx: &Context) {
-        ctx.data_mut(|d| d.insert_temp(egui::Id::new("stormwaves-tokens"), self));
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("wavestorm-tokens"), self));
         let mut v = if self.kind == ThemeKind::ModernDark { Visuals::dark() } else { Visuals::light() };
         let r = CornerRadius::same(self.radius);
         v.panel_fill = self.face;

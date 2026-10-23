@@ -7,8 +7,8 @@ use crate::doc::Doc;
 use crate::widgets;
 use crate::windows::{Window, WindowAction};
 use egui::{RichText, Ui, vec2};
-use stormwaves_core::rainfall::Storm;
-use stormwaves_core::uh::UnitHydrograph;
+use wavestorm_core::rainfall::Storm;
+use wavestorm_core::uh::UnitHydrograph;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CurveKind {
@@ -161,7 +161,7 @@ fn build(doc: &Doc, st: &CurveState, table_xs: Option<&dyn Fn(f64) -> Vec<f64>>)
         CurveKind::Uh => {
             for (i, name) in st.checked.iter().enumerate() {
                 if let Some(h) = crate::library::find_uh(&doc.project, name) {
-                    let k = h.peak_factor() / stormwaves_core::uh::CFS_PER_SQMI_INCH_PER_HR;
+                    let k = h.peak_factor() / wavestorm_core::uh::CFS_PER_SQMI_INCH_PER_HR;
                     let end = h.base().min(50.0);
                     let xs = match table_xs {
                         Some(f) => f(end),
@@ -401,7 +401,7 @@ fn buttons(ui: &mut Ui, doc: &Doc, st: &mut CurveState, actions: &mut Vec<Window
             let (heads, cols) = table(doc, st);
             let lines: Vec<String> = table_text(&heads, &cols, "  ").lines().map(str::to_string).collect();
             let name = first.clone().unwrap_or_else(|| "Curves".into());
-            let bytes = stormwaves_core::printing::lines_pdf(&doc.project, &doc.results, &name, &lines, &crate::dialogs::misc::today());
+            let bytes = wavestorm_core::printing::lines_pdf(&doc.project, &doc.results, &name, &lines, &crate::dialogs::misc::today());
             actions.push(WindowAction::SaveFile { name: format!("{name}.pdf"), bytes, ext: "pdf" });
         }
         let export = widgets::button(ui, "Export", 52.0);
@@ -426,18 +426,18 @@ fn buttons(ui: &mut Ui, doc: &Doc, st: &mut CurveState, actions: &mut Vec<Window
                 match st.kind {
                     CurveKind::Storm => {
                         if let Some(s) = first.as_ref().and_then(|n| crate::library::find_storm(&doc.project, n)) {
-                            actions.push(WindowAction::SaveFile { name: format!("{}.hcr", s.name), bytes: stormwaves_core::rainlib::write_hcr(&s).into_bytes(), ext: "hcr" });
+                            actions.push(WindowAction::SaveFile { name: format!("{}.hcr", s.name), bytes: wavestorm_core::rainlib::write_hcr(&s).into_bytes(), ext: "hcr" });
                         }
                     }
                     CurveKind::Uh => {
                         if let Some(u) = first.as_ref().and_then(|n| crate::library::find_uh(&doc.project, n)) {
-                            actions.push(WindowAction::SaveFile { name: format!("{}.huh", u.name), bytes: stormwaves_core::rainlib::write_huh(&u).into_bytes(), ext: "huh" });
+                            actions.push(WindowAction::SaveFile { name: format!("{}.huh", u.name), bytes: wavestorm_core::rainlib::write_huh(&u).into_bytes(), ext: "huh" });
                         }
                     }
                     CurveKind::Idf => {
                         if let Some(c) = &doc.project.settings.idf {
-                            let file = stormwaves_core::rainlib::IdfFile::from_curve(c);
-                            actions.push(WindowAction::SaveFile { name: format!("{}.idf", c.name), bytes: stormwaves_core::rainlib::write_idf(&file).into_bytes(), ext: "idf" });
+                            let file = wavestorm_core::rainlib::IdfFile::from_curve(c);
+                            actions.push(WindowAction::SaveFile { name: format!("{}.idf", c.name), bytes: wavestorm_core::rainlib::write_idf(&file).into_bytes(), ext: "idf" });
                         }
                     }
                 }

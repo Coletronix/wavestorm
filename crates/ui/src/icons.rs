@@ -2,7 +2,7 @@
 
 use crate::theme::Tokens;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
-use stormwaves_core::project::NodeType;
+use wavestorm_core::project::NodeType;
 
 /// Outline points of a node symbol of diameter `d` centred at `c`.
 pub fn node_outline(t: NodeType, c: Pos2, d: f32) -> Vec<Pos2> {

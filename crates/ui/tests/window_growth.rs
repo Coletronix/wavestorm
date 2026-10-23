@@ -2,7 +2,7 @@
 //! it has makes a resizable window creep wider every frame.
 
 use egui::vec2;
-use stormwaves_ui::StormwavesApp;
+use wavestorm_ui::WaveStormApp;
 
 /// Widths of every floating window (area), by layer id.
 fn widths(ctx: &egui::Context) -> Vec<(egui::Id, f32)> {
@@ -45,10 +45,10 @@ fn windows_do_not_creep_wider() {
     ];
     let mut failures = Vec::new();
     for script in scripts {
-        let mut h = egui_kittest::Harness::builder().with_size(vec2(1400.0, 900.0)).build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), StormwavesApp::headless());
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1400.0, 900.0)).build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless());
         h.run_steps(2);
         for cmd in script.split(';') {
-            stormwaves_ui::script(h.state_mut(), cmd);
+            wavestorm_ui::script(h.state_mut(), cmd);
         }
         h.run_steps(4);
         let before = widths(&h.ctx);

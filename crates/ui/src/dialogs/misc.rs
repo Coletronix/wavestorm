@@ -7,9 +7,9 @@ use crate::theme::{ThemeKind, Tokens};
 use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{Pos2, RichText, vec2};
-use stormwaves_core::landuse::ImperviousBasis;
-use stormwaves_core::project::{DiagramSettings, Project};
-use stormwaves_core::units::{UnitSystem, Units};
+use wavestorm_core::landuse::ImperviousBasis;
+use wavestorm_core::project::{DiagramSettings, Project};
+use wavestorm_core::units::{UnitSystem, Units};
 
 pub struct UnitsState {
     pub draft: Units,
@@ -212,7 +212,7 @@ pub fn notes(ctx: &egui::Context, doc: &mut Doc, st: &mut NotesState) -> bool {
 
 pub fn about(ctx: &egui::Context) -> bool {
     let mut open = true;
-    crate::frame::Win::new("About StormWAVES").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+    crate::frame::Win::new("About WAVEStorm").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(4.0);
             crate::logo::show(ui, 320.0);
@@ -386,12 +386,12 @@ pub fn undo_history(ctx: &egui::Context, doc: &mut Doc, st: &mut UndoState) -> b
 }
 
 pub struct PrintState {
-    pub opts: stormwaves_core::printing::PrintOptions,
+    pub opts: wavestorm_core::printing::PrintOptions,
 }
 
 impl Default for PrintState {
     fn default() -> Self {
-        PrintState { opts: stormwaves_core::printing::PrintOptions { date: today(), ..Default::default() } }
+        PrintState { opts: wavestorm_core::printing::PrintOptions { date: today(), ..Default::default() } }
     }
 }
 
@@ -420,7 +420,7 @@ pub fn today() -> String {
 }
 
 /// Returns Some(options) when the user clicks Print.
-pub fn print(ctx: &egui::Context, st: &mut PrintState) -> (bool, Option<stormwaves_core::printing::PrintOptions>) {
+pub fn print(ctx: &egui::Context, st: &mut PrintState) -> (bool, Option<wavestorm_core::printing::PrintOptions>) {
     let mut keep = true;
     let mut go = None;
     crate::frame::Win::new("Print Report").collapsible(false).resizable(false).show(ctx, |ui| {
@@ -449,7 +449,7 @@ pub fn print(ctx: &egui::Context, st: &mut PrintState) -> (bool, Option<stormwav
 }
 
 pub struct LandUseState {
-    pub draft: stormwaves_core::landuse::LandUseSettings,
+    pub draft: wavestorm_core::landuse::LandUseSettings,
     pub tab: usize,
     pub new_pollutant: String,
     /// Rainfall depth remembered while "Use actual runoff" is selected.

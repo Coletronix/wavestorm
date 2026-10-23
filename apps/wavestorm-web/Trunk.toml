@@ -1,4 +1,4 @@
-# Build with: trunk build --release   (from apps/stormwaves-web)
+# Build with: trunk build --release   (from apps/wavestorm-web)
 [build]
 target = "index.html"
 dist = "../../dist/web"

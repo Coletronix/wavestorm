@@ -5,10 +5,10 @@
 
 use crate::platform::store;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
-use stormwaves_core::project::{NodeData, Project};
-use stormwaves_core::rainfall::{Storm, builtin_storms};
-use stormwaves_core::rainlib::RainLibrary;
-use stormwaves_core::uh::{UnitHydrograph, builtin_uhs};
+use wavestorm_core::project::{NodeData, Project};
+use wavestorm_core::rainfall::{Storm, builtin_storms};
+use wavestorm_core::rainlib::RainLibrary;
+use wavestorm_core::uh::{UnitHydrograph, builtin_uhs};
 
 const IMPORT_KEY: &str = "rainfall_imports";
 /// Imported files are kept for later sessions only while they stay below this many bytes.
@@ -276,7 +276,7 @@ pub fn adopt(p: &mut Project) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use stormwaves_core::rainfall::RainEvent;
+    use wavestorm_core::rainfall::RainEvent;
 
     #[test]
     fn imported_storms_are_offered_and_adopted() {

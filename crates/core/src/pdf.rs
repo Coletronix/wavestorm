@@ -298,7 +298,7 @@ impl Document {
         for base in ["Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Courier"] {
             objects.push(format!("<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>").into_bytes());
         }
-        objects.push(format!("<< /Title ({}) /Producer (StormWAVES) >>", escape(&self.title)).into_bytes());
+        objects.push(format!("<< /Title ({}) /Producer (WAVEStorm) >>", escape(&self.title)).into_bytes());
         for (i, p) in self.pages.iter().enumerate() {
             objects.push(
                 format!(

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>WAVEStorm</title>
+  <link data-trunk rel="rust" data-bin="wavestorm-web" data-cargo-profile="wasm-release" data-wasm-opt="z" />
+  <link data-trunk rel="copy-file" href="../../crates/ui/assets/logo.png" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #d4d0c8; }
+    #wavestorm_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #wavestorm_loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #333; font: 15px system-ui, sans-serif; pointer-events: none; }
+    #wavestorm_loading img { width: min(480px, 80vw); height: auto; }
+  </style>
+</head>
+<body>
+  <canvas id="wavestorm_canvas"></canvas>
+  <div id="wavestorm_loading">
+    <img src="logo.png" alt="WAVEStorm">
+    <p>Loading WAVEStorm&hellip;</p>
+  </div>
+</body>
+</html>

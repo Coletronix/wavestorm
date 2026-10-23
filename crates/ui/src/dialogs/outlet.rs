@@ -7,10 +7,10 @@ use crate::theme::Tokens;
 use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{Color32, Rect, RichText, Stroke, Ui, pos2, vec2};
-use stormwaves_core::geometry::{PipeShape, Section};
-use stormwaves_core::outlets::{DeviceKind, ExfilMode, OpeningShape, OutletDevice, Plane, Routing};
-use stormwaves_core::project::Pond;
-use stormwaves_core::units::Units;
+use wavestorm_core::geometry::{PipeShape, Section};
+use wavestorm_core::outlets::{DeviceKind, ExfilMode, OpeningShape, OutletDevice, Plane, Routing};
+use wavestorm_core::project::Pond;
+use wavestorm_core::units::Units;
 
 pub struct DeviceEditor {
     pub index: Option<usize>,
@@ -240,7 +240,7 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         conv_field(ui, "z", "Side Slope Z:", "h:v", side_z, |x| x, |x| x.max(0.0), 2, 110.0);
                         opt_field(ui, "rise", "Weir Rise:", u.len_label(), rise, |x| u.len(x), |x| u.len_in(x), 2, 110.0);
                     });
-                    let t = stormwaves_core::outlets::broad_crested_table(*breadth);
+                    let t = wavestorm_core::outlets::broad_crested_table(*breadth);
                     ui.label(RichText::new(format!("Head: {}", t.iter().map(|p| format!("{:.1}", p.0)).collect::<Vec<_>>().join(" "))).monospace());
                     ui.label(RichText::new(format!("Coef: {}", t.iter().map(|p| format!("{:.2}", p.1)).collect::<Vec<_>>().join(" "))).monospace());
                 }

@@ -1,11 +1,18 @@
 # Changelog
 
-All notable changes to StormWAVES are recorded here. Versions follow
+All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here. Versions follow
 [Semantic Versioning](https://semver.org/): the version lives once in the workspace
 `Cargo.toml` and is shown in the About dialog and on printed pages. Each release is a git tag
 `vX.Y.Z` on `main`.
 
 ## [Unreleased]
+
+### Changed
+- Renamed the application **WAVEStorm** everywhere: window title, About box, printed footers,
+  file headers, crates (`wavestorm-core`, `wavestorm-ui`), binaries (`wavestorm`,
+  `wavestorm-web`), the `WAVESTORM_RAIN_LIB` variable and the saved-settings keys. Settings saved
+  by 0.1.0 under the old name are not carried over.
+- New logo, drawn with a transparent background and a lightened variant for dark themes.
 
 ## [0.1.0] - 2026-10-23
 

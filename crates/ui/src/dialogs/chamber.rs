@@ -5,8 +5,8 @@ use super::{Buttons, conv_field, ok_cancel_apply};
 use crate::theme::Tokens;
 use crate::widgets;
 use egui::{Color32, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
-use stormwaves_core::chamber::{ChamberModel, Field};
-use stormwaves_core::units::Units;
+use wavestorm_core::chamber::{ChamberModel, Field};
+use wavestorm_core::units::Units;
 
 pub struct ChamberWizard {
     pub field: Field,

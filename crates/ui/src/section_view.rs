@@ -2,7 +2,7 @@
 //! outline in `ink`, with the water surface filled up to a given depth.
 
 use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke};
-use stormwaves_core::geometry::Section;
+use wavestorm_core::geometry::Section;
 
 /// Whether `section` has geometry that can be drawn (rating tables and area/perimeter
 /// sections have none).

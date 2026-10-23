@@ -8,11 +8,11 @@ use crate::theme::Tokens;
 use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{RichText, Sense, Ui, vec2};
-use stormwaves_core::cn::{CN_TABLE, Hsg};
-use stormwaves_core::noaa::PfTable;
-use stormwaves_core::rainfall::RainEvent;
-use stormwaves_core::noaa::parse_pfds_csv;
-use stormwaves_core::rainlib::{IdfFile, RainTable, parse_idf, parse_rain_table, storm_for_code};
+use wavestorm_core::cn::{CN_TABLE, Hsg};
+use wavestorm_core::noaa::PfTable;
+use wavestorm_core::rainfall::RainEvent;
+use wavestorm_core::noaa::parse_pfds_csv;
+use wavestorm_core::rainlib::{IdfFile, RainTable, parse_idf, parse_rain_table, storm_for_code};
 
 /// Where the events come from.
 #[derive(Debug, Clone, PartialEq)]
@@ -316,7 +316,7 @@ fn table_pane(ui: &mut Ui, st: &mut EventLookup, table: &RainTable, storm_names:
 /// IDF file: depth = intensity at the storm duration x duration, for every event in the file.
 fn idf_pane(ui: &mut Ui, st: &mut EventLookup, idf: &IdfFile, storm_opts: &[(String, String)]) -> Candidates {
     let t = Tokens::get(ui.ctx());
-    ui.label(RichText::new(format!("PROVISIONAL: {}", stormwaves_core::rainlib::IDF_PROVISIONAL)).color(t.warning));
+    ui.label(RichText::new(format!("PROVISIONAL: {}", wavestorm_core::rainlib::IDF_PROVISIONAL)).color(t.warning));
     ui.label(RichText::new(if idf.comment.is_empty() { idf.name.clone() } else { format!("{}: {}", idf.name, idf.comment) }).color(t.text_dim));
     ui.horizontal(|ui| {
         widgets::num_field(ui, "lk-idf-h", "Storm Duration:", "hours", &mut st.idf_hours, 2, 110.0);
@@ -354,8 +354,8 @@ fn noaa_pane(ui: &mut Ui, table: &PfTable, row: &mut Option<usize>, storm: &mut 
     let h = (ui.available_height() - 150.0).max(100.0);
     widgets::list_table(ui, "noaa-table", &cols_ref, &rows, row, h);
     let all: Vec<usize> = (0..table.aris.len()).collect();
-    let events = stormwaves_core::noaa::events(table, row.unwrap_or(0), &all, storm.as_str());
-    let default_on = events.iter().map(|e| COMMON_ARIS.iter().any(|a| stormwaves_core::noaa::event_name(*a) == e.name)).collect();
+    let events = wavestorm_core::noaa::events(table, row.unwrap_or(0), &all, storm.as_str());
+    let default_on = events.iter().map(|e| COMMON_ARIS.iter().any(|a| wavestorm_core::noaa::event_name(*a) == e.name)).collect();
     Candidates { events, default_on }
 }
 

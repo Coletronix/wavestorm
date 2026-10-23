@@ -2,11 +2,11 @@
 //! made with the current reference version (Type II and Type III 24-hour storms, dt 0.01 and
 //! 0.05 h, weighted-CN and weighted-Q, Tc from 4.8 to 90.6 minutes).
 
-use stormwaves_core::calc;
-use stormwaves_core::cn::{CnWeighting, SubArea};
-use stormwaves_core::project::*;
-use stormwaves_core::rainfall::RainEvent;
-use stormwaves_core::tc::{TcKind, TcSegment};
+use wavestorm_core::calc;
+use wavestorm_core::cn::{CnWeighting, SubArea};
+use wavestorm_core::project::*;
+use wavestorm_core::rainfall::RainEvent;
+use wavestorm_core::tc::{TcKind, TcSegment};
 
 const AC: f64 = 43_560.0;
 

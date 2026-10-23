@@ -1,17 +1,17 @@
 [package]
-name = "stormwaves-web"
-description = "StormWAVES in the browser (eframe web runner)"
+name = "wavestorm-web"
+description = "WAVEStorm in the browser (eframe web runner)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
 
 [[bin]]
-name = "stormwaves-web"
+name = "wavestorm-web"
 path = "src/main.rs"
 
 [dependencies]
-stormwaves-ui.workspace = true
+wavestorm-ui.workspace = true
 log.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

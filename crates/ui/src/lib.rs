@@ -1,4 +1,4 @@
-//! StormWAVES user interface (egui). The same code runs on the desktop and in the browser.
+//! WAVEStorm user interface (egui). The same code runs on the desktop and in the browser.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -27,12 +27,12 @@ use egui::{Align2, Color32, FontId, Key, Pos2, Rect, Sense, Stroke, Ui, pos2, ve
 use icons::Glyph;
 use platform::{Incoming, Platform, Purpose};
 use prefs::Prefs;
-use stormwaves_core::project::{Node, NodeData, NodeId, NodeType, Project};
+use wavestorm_core::project::{Node, NodeData, NodeId, NodeType, Project};
 use theme::{ThemeKind, Tokens};
 use windows::{Window, WindowAction};
 
 /// The application.
-pub struct StormwavesApp {
+pub struct WaveStormApp {
     pub docs: Vec<Doc>,
     pub active: usize,
     pub theme: ThemeKind,
@@ -53,13 +53,13 @@ pub struct StormwavesApp {
     last_backup: f64,
 }
 
-impl Default for StormwavesApp {
+impl Default for WaveStormApp {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl StormwavesApp {
+impl WaveStormApp {
     /// The app for automated runs (tests, snapshots): it never opens native file dialogs and
     /// neither reads nor writes the user's preferences.
     pub fn headless() -> Self {
@@ -74,7 +74,7 @@ impl StormwavesApp {
         let mut doc = Doc::new(samples::sample_project(), None);
         doc.dirty = false;
         library::init(&prefs.rainfall_folder, persist_prefs);
-        StormwavesApp {
+        WaveStormApp {
             docs: vec![doc],
             active: 0,
             theme: prefs.theme,
@@ -121,11 +121,11 @@ impl StormwavesApp {
     fn handle_incoming(&mut self, _ctx: &egui::Context, item: Incoming) -> Result<(), String> {
         match item.purpose {
             Purpose::OpenProject => {
-                let is_hcp = item.name.to_ascii_lowercase().ends_with(".hcp") || stormwaves_core::hcp::looks_like_hcp(&item.bytes);
+                let is_hcp = item.name.to_ascii_lowercase().ends_with(".hcp") || wavestorm_core::hcp::looks_like_hcp(&item.bytes);
                 let (project, warnings) = if is_hcp {
-                    stormwaves_core::hcp::import_bytes(&item.bytes)?
+                    wavestorm_core::hcp::import_bytes(&item.bytes)?
                 } else {
-                    let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a StormWAVES project (not text).".to_string())?;
+                    let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a WAVEStorm project (not text).".to_string())?;
                     (Project::from_json(&text)?, Vec::new())
                 };
                 // Replace an untouched empty first project.
@@ -146,15 +146,15 @@ impl StormwavesApp {
                 }
             }
             Purpose::MergeProject => {
-                let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a StormWAVES project (not text).".to_string())?;
+                let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a WAVEStorm project (not text).".to_string())?;
                 let other = Project::from_json(&text)?;
                 let mut added = 0;
-                self.doc().edit("Project Merge", |p| added = stormwaves_core::exchange::merge(p, &other));
+                self.doc().edit("Project Merge", |p| added = wavestorm_core::exchange::merge(p, &other));
                 self.status = format!("[3] Added {added} nodes from {}", item.name);
             }
             Purpose::ImportTr20 => {
                 let text = String::from_utf8_lossy(&item.bytes).into_owned();
-                let imp = stormwaves_core::tr20::import(&text)?;
+                let imp = wavestorm_core::tr20::import(&text)?;
                 let nodes = imp.project.nodes.len();
                 let notes = imp.notes.len();
                 let mut doc = Doc::new(imp.project, None);
@@ -184,7 +184,7 @@ impl StormwavesApp {
             Purpose::ImportSubareas => {
                 let text = String::from_utf8_lossy(&item.bytes).into_owned();
                 let mut result = Ok((0, 0));
-                self.doc().edit("Import Sub-Areas", |p| result = stormwaves_core::exchange::import_subareas(p, &text));
+                self.doc().edit("Import Sub-Areas", |p| result = wavestorm_core::exchange::import_subareas(p, &text));
                 let (created, updated) = result?;
                 self.status = format!("Imported sub-areas: {created} subcatchments added, {updated} updated");
             }
@@ -198,7 +198,7 @@ impl StormwavesApp {
                 let width = raster.width.max(1) as f64;
                 let scale = 1200.0 / width;
                 doc.edit("Load Background", |p| {
-                    p.diagram.underlay = Some(stormwaves_core::project::Underlay {
+                    p.diagram.underlay = Some(wavestorm_core::project::Underlay {
                         file_name: item.name.clone(),
                         bytes: item.bytes.clone(),
                         page: 0,
@@ -228,13 +228,13 @@ impl StormwavesApp {
             }
             Purpose::LinkCsv => {
                 let text = String::from_utf8_lossy(&item.bytes).into_owned();
-                let (times, columns) = stormwaves_core::link::parse_csv(&text)?;
+                let (times, columns) = wavestorm_core::link::parse_csv(&text)?;
                 let sel = self.doc().selection.first().copied();
                 let doc = self.doc();
                 if let Some(id) = sel {
                     doc.edit("Link Import", |p| {
                         if let Some(Node { data: NodeData::Link(l), .. }) = p.node_mut(id) {
-                            l.source = stormwaves_core::link::LinkSource::Table { name: item.name.clone(), times, columns, selected: None };
+                            l.source = wavestorm_core::link::LinkSource::Table { name: item.name.clone(), times, columns, selected: None };
                         }
                     });
                 }
@@ -274,7 +274,7 @@ impl StormwavesApp {
         let platform = self.platform.clone();
         let doc = self.doc();
         let (bytes, ext) = if hcp {
-            (stormwaves_core::hcp::export_bytes(&doc.project), "hcp")
+            (wavestorm_core::hcp::export_bytes(&doc.project), "hcp")
         } else {
             match doc.project.to_json() {
                 Ok(j) => (j.into_bytes(), "waves"),
@@ -307,9 +307,9 @@ impl StormwavesApp {
 
     /// Replaces the rainfall events, or adds them (an event with the same name is updated).
     /// Open Calculation Settings drafts get the same change so their OK does not undo it.
-    pub fn set_events(&mut self, events: Vec<stormwaves_core::rainfall::RainEvent>, replace: bool) {
+    pub fn set_events(&mut self, events: Vec<wavestorm_core::rainfall::RainEvent>, replace: bool) {
         let n = events.len();
-        let merge = |list: &mut Vec<stormwaves_core::rainfall::RainEvent>, current: &mut usize| {
+        let merge = |list: &mut Vec<wavestorm_core::rainfall::RainEvent>, current: &mut usize| {
             if replace {
                 *list = events.clone();
                 *current = 0;
@@ -399,14 +399,14 @@ impl StormwavesApp {
     /// After each recalculation: summarise it in the status bar and, when it produced messages
     /// that were not there before, open the Messages window (as the reference does).
     fn announce_calculation(&mut self) {
-        use stormwaves_core::calc::Severity;
+        use wavestorm_core::calc::Severity;
         let auto = self.prefs.show_messages;
         let doc = self.doc();
         if doc.calc_serial == doc.announced {
             return;
         }
         doc.announced = doc.calc_serial;
-        let lines = stormwaves_core::report::message_lines(&doc.project, &doc.results);
+        let lines = wavestorm_core::report::message_lines(&doc.project, &doc.results);
         let count = |s: Severity| lines.iter().filter(|(v, _)| *v == s).count();
         let (e, w, h) = (count(Severity::Error), count(Severity::Warning), count(Severity::Hint));
         let fresh = lines.iter().any(|(s, l)| *s >= Severity::Hint && !doc.seen_messages.contains(l));
@@ -590,7 +590,7 @@ impl StormwavesApp {
                 ui.menu_button("Export", |ui| {
                     if ui.button("Sub-Areas (CSV)...").clicked() {
                         let doc = self.doc();
-                        let text = stormwaves_core::exchange::export_subareas(&doc.project);
+                        let text = wavestorm_core::exchange::export_subareas(&doc.project);
                         let name = format!("{} subareas.csv", sanitize(&doc.project.title));
                         if let Err(e) = self.platform.save(&name, None, text.as_bytes(), "csv") {
                             self.error = Some(e);
@@ -599,7 +599,7 @@ impl StormwavesApp {
                     }
                     if ui.button("Diagram (EMF)...").clicked() {
                         let doc = self.doc();
-                        let bytes = stormwaves_core::printing::diagram_emf(&doc.project, &doc.results, &dialogs::misc::today());
+                        let bytes = wavestorm_core::printing::diagram_emf(&doc.project, &doc.results, &dialogs::misc::today());
                         let name = format!("{} diagram.emf", sanitize(&doc.project.title));
                         if let Err(e) = self.platform.save(&name, None, &bytes, "emf") {
                             self.error = Some(e);
@@ -779,7 +779,7 @@ impl StormwavesApp {
                     ui.close();
                 }
                 if ui.button("Diagram (PDF)...").clicked() {
-                    let o = stormwaves_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new() };
+                    let o = wavestorm_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new() };
                     self.print_pdf(&o);
                     ui.close();
                 }
@@ -834,7 +834,7 @@ impl StormwavesApp {
                     self.open_window(Window::Help(help::HelpState::topic("runoff")));
                 }
                 ui.separator();
-                if ui.button("About StormWAVES").clicked() {
+                if ui.button("About WAVEStorm").clicked() {
                     self.open_window(Window::About);
                 }
             });
@@ -894,9 +894,9 @@ impl StormwavesApp {
         diagram::fit_view(doc, canvas, if selected && !sel.is_empty() { Some(&sel) } else { None });
     }
 
-    fn print_pdf(&mut self, opts: &stormwaves_core::printing::PrintOptions) {
+    fn print_pdf(&mut self, opts: &wavestorm_core::printing::PrintOptions) {
         let doc = self.doc();
-        let bytes = stormwaves_core::printing::report_pdf(&doc.project, &doc.results, opts);
+        let bytes = wavestorm_core::printing::report_pdf(&doc.project, &doc.results, opts);
         let name = format!("{} report.pdf", sanitize(&doc.project.title));
         match self.platform.save(&name, None, &bytes, "pdf") {
             Ok(Some(p)) => self.status = format!("Report saved to {p}"),
@@ -908,7 +908,7 @@ impl StormwavesApp {
     fn export_text(&mut self) {
         let doc = self.doc();
         let mut lines = vec![doc.project.title.clone(), doc.results.event_heading.clone(), String::new()];
-        lines.extend(stormwaves_core::report::node_listing(&doc.project, &doc.results));
+        lines.extend(wavestorm_core::report::node_listing(&doc.project, &doc.results));
         let ids: Vec<NodeId> = doc.project.nodes.iter().map(|n| n.id).collect();
         for id in ids {
             if let Some(n) = doc.project.node(id) {
@@ -917,7 +917,7 @@ impl StormwavesApp {
                 }
                 lines.push(String::new());
                 lines.push("-".repeat(100));
-                lines.extend(stormwaves_core::report::node_summary(&doc.project, &doc.results, n));
+                lines.extend(wavestorm_core::report::node_summary(&doc.project, &doc.results, n));
             }
         }
         let name = format!("{} report.txt", sanitize(&doc.project.title));
@@ -1006,7 +1006,7 @@ impl StormwavesApp {
                 self.open_window(Window::Print(dialogs::misc::PrintState::default()));
             }
             if tb(ui, Glyph::PrintDiagram, "Print routing diagram (PDF)") {
-                let o = stormwaves_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new() };
+                let o = wavestorm_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new() };
                 self.print_pdf(&o);
             }
             separator(ui);
@@ -1148,7 +1148,7 @@ impl StormwavesApp {
             (Some(w), None) => (format!("X={:.2}", w.x / 100.0), format!("Y={:.2}", w.y / 100.0)),
             _ => (String::new(), String::new()),
         };
-        let errors = doc.results.messages.iter().filter(|m| m.severity >= stormwaves_core::calc::Severity::Warning).count();
+        let errors = doc.results.messages.iter().filter(|m| m.severity >= wavestorm_core::calc::Severity::Warning).count();
         let tool = self.tool.name();
         ui.horizontal(|ui| {
             let cell = |ui: &mut Ui, text: &str, w: f32| {
@@ -1237,7 +1237,7 @@ impl StormwavesApp {
             if let Some(n) = p.node_mut(id) {
                 n.outline = Some(outline.clone());
                 if let NodeData::Subcat(sc) = &mut n.data {
-                    sc.areas.push(stormwaves_core::cn::SubArea::new(area_sf, 61.0, "Open Space, Good, HSG B"));
+                    sc.areas.push(wavestorm_core::cn::SubArea::new(area_sf, 61.0, "Open Space, Good, HSG B"));
                 }
             }
         });
@@ -1329,7 +1329,7 @@ impl StormwavesApp {
                 if let NodeData::Subcat(sc) = &mut n.data {
                     let current: f64 = sc.areas.iter().map(|a| a.area).sum();
                     if sc.areas.is_empty() {
-                        sc.areas.push(stormwaves_core::cn::SubArea::new(area, 61.0, "Open Space, Good, HSG B"));
+                        sc.areas.push(wavestorm_core::cn::SubArea::new(area, 61.0, "Open Space, Good, HSG B"));
                     } else if current > 0.0 {
                         // Scale existing sub-areas proportionally to the outline area.
                         for a in &mut sc.areas {
@@ -1369,7 +1369,7 @@ impl StormwavesApp {
     fn error_dialog(&mut self, ctx: &egui::Context) {
         let Some(msg) = self.error.clone() else { return };
         let mut open = true;
-        crate::frame::Win::new("StormWAVES").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
+        crate::frame::Win::new("WAVEStorm").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
             ui.set_max_width(420.0);
             ui.label(&msg);
             ui.add_space(8.0);
@@ -1439,7 +1439,7 @@ impl StormwavesApp {
             self.open_window(Window::Help(help::HelpState::topic(topic)));
         }
         self.error_dialog(&ctx);
-        let title = format!("{} - StormWAVES", self.doc().title());
+        let title = format!("{} - WAVEStorm", self.doc().title());
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         let _ = Stroke::NONE;
         let _ = Color32::BLACK;
@@ -1461,7 +1461,7 @@ fn sanitize(s: &str) -> String {
     if s.trim().is_empty() { "project".into() } else { s.trim().to_string() }
 }
 
-impl eframe::App for StormwavesApp {
+impl eframe::App for WaveStormApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
     }
@@ -1472,9 +1472,9 @@ impl eframe::App for StormwavesApp {
 /// `project-report`, `storms`, `uhs`, `units`, `theme:<classic|modern|dark>`, `compare`, `new`,
 /// `table`, `inflows` (tabular hydrograph with inflow columns), `general`,
 /// `profile:<labels,…>`, `import-tr20:<path>` and `lookup:<NOAA csv path>` (desktop).
-pub fn script(app: &mut StormwavesApp, cmd: &str) {
+pub fn script(app: &mut WaveStormApp, cmd: &str) {
     let (verb, arg) = cmd.split_once(':').unwrap_or((cmd, ""));
-    let find = |app: &mut StormwavesApp, label: &str| app.doc().project.by_label(label).map(|n| n.id);
+    let find = |app: &mut WaveStormApp, label: &str| app.doc().project.by_label(label).map(|n| n.id);
     match verb.trim() {
         "report" => {
             if let Some(id) = find(app, arg) {
@@ -1489,7 +1489,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         // Opens the chamber wizard of the pond whose edit dialog is open last.
         "chamber" => {
             if let Some(Window::Edit(e)) = app.doc().windows.last_mut()
-                && let stormwaves_core::project::NodeData::Pond(p) = &e.draft.data
+                && let wavestorm_core::project::NodeData::Pond(p) = &e.draft.data
             {
                 e.chamber = Some(dialogs::chamber::ChamberWizard::new(p.chamber.as_ref(), p.storage.bottom().unwrap_or(100.0)));
             }
@@ -1522,7 +1522,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
                 if let Some(name) = arg.trim().strip_prefix("new ") {
                     if let Some((label, kind)) = dialogs::outlet::templates().into_iter().find(|(l, _)| *l == name.trim()) {
                         let base = p.storage.bottom().unwrap_or(100.0);
-                        let dev = stormwaves_core::outlets::OutletDevice::new(label, base, stormwaves_core::outlets::Routing::Primary, kind);
+                        let dev = wavestorm_core::outlets::OutletDevice::new(label, base, wavestorm_core::outlets::Routing::Primary, kind);
                         e.device_edit = Some(dialogs::outlet::DeviceEditor::new(None, dev));
                     }
                 } else if let Some(i) = arg.trim().parse::<usize>().ok().and_then(|n| n.checked_sub(1))
@@ -1556,9 +1556,9 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         "linkmanual" => {
             if let Some(id) = find(app, arg) {
                 let events: Vec<String> = app.doc().project.settings.events.iter().take(3).map(|e| e.name.clone()).collect();
-                if let Some(stormwaves_core::project::NodeData::Link(l)) = app.doc().project.node_mut(id).map(|n| &mut n.data) {
+                if let Some(wavestorm_core::project::NodeData::Link(l)) = app.doc().project.node_mut(id).map(|n| &mut n.data) {
                     let col = |k: f64| (0..8).map(|i| if i % 2 == 0 { k * i as f64 } else { f64::NAN }).filter(|q| q.is_finite()).collect::<Vec<f64>>();
-                    l.source = stormwaves_core::link::LinkSource::Manual(stormwaves_core::link::ManualHydrograph {
+                    l.source = wavestorm_core::link::LinkSource::Manual(wavestorm_core::link::ManualHydrograph {
                         t0: 10.0,
                         dt: 0.5,
                         flows: col(1.0),
@@ -1606,7 +1606,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             // Test hook: give a project without an IDF curve a sample one first.
             if app.doc().project.settings.idf.is_none() {
                 let events = vec![("2-Year".to_string(), 60.0, 10.0, 0.80), ("10-Year".to_string(), 90.0, 11.0, 0.80), ("100-Year".to_string(), 130.0, 12.0, 0.80)];
-                app.doc().project.settings.idf = Some(stormwaves_core::project::IdfCurve { name: "Sample IDF".into(), events, tables: Vec::new() });
+                app.doc().project.settings.idf = Some(wavestorm_core::project::IdfCurve { name: "Sample IDF".into(), events, tables: Vec::new() });
             }
             app.open_window(Window::Storms(reports::CurveState::idf()));
         }

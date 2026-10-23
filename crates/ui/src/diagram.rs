@@ -4,7 +4,7 @@ use crate::doc::{Doc, View};
 use crate::icons;
 use crate::theme::Tokens;
 use egui::{Align2, Color32, FontId, Key, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
-use stormwaves_core::project::{NodeData, NodeId, NodeType, Project};
+use wavestorm_core::project::{NodeData, NodeId, NodeType, Project};
 
 /// The active diagram tool.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -450,10 +450,10 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
                 p.galley(r.min + vec2(4.0, 3.0), galley, t.label_text);
             }
             data => {
-                let external = matches!(data, NodeData::Link(l) if !matches!(l.source, stormwaves_core::link::LinkSource::Inflows)
-                    || !matches!(l.elevation, stormwaves_core::link::LinkElevation::None));
+                let external = matches!(data, NodeData::Link(l) if !matches!(l.source, wavestorm_core::link::LinkSource::Inflows)
+                    || !matches!(l.elevation, wavestorm_core::link::LinkElevation::None));
                 let problem = doc.results.nodes.get(&n.id).is_some_and(|r| r.undefined.is_some())
-                    || doc.results.messages.iter().any(|m| m.node == Some(n.id) && m.severity >= stormwaves_core::calc::Severity::Error);
+                    || doc.results.messages.iter().any(|m| m.node == Some(n.id) && m.severity >= wavestorm_core::calc::Severity::Error);
                 icons::draw_node_ex(p, n.node_type(), c, d, &n.label(), sel, external, problem, t);
                 if !n.name.is_empty() {
                     let galley = p.layout(n.name.clone(), FontId::proportional(font * 0.85), t.label_text, d * 3.2);

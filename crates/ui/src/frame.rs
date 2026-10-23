@@ -3,7 +3,7 @@
 use crate::theme::Tokens;
 use egui::{Align2, Context, FontId, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
-const CANVAS_KEY: &str = "stormwaves-canvas-rect";
+const CANVAS_KEY: &str = "wavestorm-canvas-rect";
 
 /// Records the diagram rectangle that windows are kept inside.
 pub fn set_canvas(ctx: &Context, rect: Rect) {
