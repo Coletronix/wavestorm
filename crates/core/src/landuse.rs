@@ -80,6 +80,31 @@ pub fn loading(project: &Project, results: &Results) -> Vec<LoadRow> {
 /// As [`loading`], for the subcatchments `keep` accepts.
 pub fn loading_where(project: &Project, results: &Results, keep: &dyn Fn(crate::project::NodeId) -> bool) -> Vec<LoadRow> {
     let s = &project.land_use;
+    // Imperviousness is averaged over the scope the settings choose (the whole project, each
+    // land use, each subcatchment, or each land use within a subcatchment), then Rv = 0.05 +
+    // 0.9 I is applied to every sub-area in that scope.
+    let use_name = |a: &crate::cn::SubArea| a.land_use.clone().filter(|u| !u.is_empty()).unwrap_or_else(|| "(unassigned)".into());
+    let scope = |id: crate::project::NodeId, name: &str| -> String {
+        match s.imperviousness {
+            ImperviousBasis::EntireProject => String::new(),
+            ImperviousBasis::ProjectLandUse => name.to_string(),
+            ImperviousBasis::EachSubcatchment => format!("{id:?}"),
+            ImperviousBasis::SubcatchmentLandUse | ImperviousBasis::ActualRunoff => format!("{id:?}/{name}"),
+        }
+    };
+    let mut scopes: std::collections::HashMap<String, (f64, f64)> = std::collections::HashMap::new();
+    for n in &project.nodes {
+        let NodeData::Subcat(sc) = &n.data else { continue };
+        for a in &sc.areas {
+            let e = scopes.entry(scope(n.id, &use_name(a))).or_insert((0.0, 0.0));
+            e.0 += a.impervious_fraction() * a.area;
+            e.1 += a.area;
+        }
+    }
+    let imp_of = |id: crate::project::NodeId, a: &crate::cn::SubArea| match scopes.get(&scope(id, &use_name(a))) {
+        Some((i, t)) if *t > 0.0 => i / t,
+        _ => a.impervious_fraction(),
+    };
     let mut rows: Vec<LoadRow> = Vec::new();
     for n in project.nodes.iter().filter(|n| keep(n.id)) {
         let NodeData::Subcat(sc) = &n.data else { continue };
@@ -97,8 +122,7 @@ pub fn loading_where(project: &Project, results: &Results, keep: &dyn Fn(crate::
                     &mut rows[last]
                 }
             };
-            let imp = a.impervious_fraction();
-            // Runoff depth weighted by area.
+            let imp = imp_of(n.id, a);
             let rv = 0.05 + 0.9 * imp;
             let depth = match s.annual_rainfall {
                 Some(p) => p * s.correction * rv,
@@ -168,6 +192,29 @@ mod tests {
         let s: LandUseSettings = serde_json::from_str(r#"{"pollutants":[],"uses":[],"annual_rainfall":null,"correction":0.9}"#).unwrap();
         assert!(s.report_land_use && s.report_loading);
         assert_eq!(s.imperviousness, ImperviousBasis::EntireProject);
+    }
+
+    #[test]
+    fn imperviousness_scope_changes_loads() {
+        let mut p = Project::default();
+        p.land_use.uses = vec![("Parking".into(), vec![100.0, 0.0, 0.0]), ("Woods".into(), vec![10.0, 0.0, 0.0])];
+        let id = p.add_node(NodeType::Subcat, [0.0, 0.0]);
+        let mut lot = SubArea::new(43_560.0, 98.0, "Paved parking, HSG B");
+        lot.land_use = Some("Parking".into());
+        let mut wood = SubArea::new(43_560.0, 55.0, "Woods, Good, HSG B");
+        wood.land_use = Some("Woods".into());
+        p.node_mut(id).unwrap().data = NodeData::Subcat(Subcatchment { areas: vec![lot, wood], tc: vec![], uh: None, large_units: true });
+        let r = crate::calc::calculate(&p);
+        let total = |p: &Project| loading(p, &r).iter().map(|x| x.loads[0]).sum::<f64>();
+        let rv = |p: &Project| loading(p, &r).iter().map(|x| x.rv * x.area).sum::<f64>();
+        p.land_use.imperviousness = ImperviousBasis::SubcatchmentLandUse;
+        let (by_use, rv_use) = (total(&p), rv(&p));
+        p.land_use.imperviousness = ImperviousBasis::EntireProject;
+        let (whole, rv_whole) = (total(&p), rv(&p));
+        // Per land use the paved half carries Rv 0.95; averaged over the project both halves
+        // get Rv 0.5, which moves load from the high-concentration use to the low one.
+        assert!(whole < by_use, "{whole} vs {by_use}");
+        assert!((rv_use - rv_whole).abs() < 1e-6);
     }
 
     #[test]
