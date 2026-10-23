@@ -450,11 +450,14 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
                 p.galley(r.min + vec2(4.0, 3.0), galley, t.label_text);
             }
             data => {
-                let external = matches!(data, NodeData::Link(l) if !matches!(l.source, stormwaves_core::link::LinkSource::Inflows));
-                icons::draw_node(p, n.node_type(), c, d, &n.label(), sel, external, t);
+                let external = matches!(data, NodeData::Link(l) if !matches!(l.source, stormwaves_core::link::LinkSource::Inflows)
+                    || !matches!(l.elevation, stormwaves_core::link::LinkElevation::None));
+                let problem = doc.results.nodes.get(&n.id).is_some_and(|r| r.undefined.is_some())
+                    || doc.results.messages.iter().any(|m| m.node == Some(n.id) && m.severity >= stormwaves_core::calc::Severity::Error);
+                icons::draw_node_ex(p, n.node_type(), c, d, &n.label(), sel, external, problem, t);
                 if !n.name.is_empty() {
                     let galley = p.layout(n.name.clone(), FontId::proportional(font * 0.85), t.label_text, d * 3.2);
-                    let top = c.y + d * 0.5 + 3.0;
+                    let top = c.y + d * 0.5 + 3.0 + if external { d * 0.24 } else { 0.0 };
                     p.galley(pos2(c.x - galley.size().x / 2.0, top), galley, t.label_text);
                 }
             }
