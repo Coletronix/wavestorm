@@ -151,6 +151,15 @@ pub enum DeviceKind {
         max_elevation: Option<f64>,
         #[serde(default)]
         priority_group: u32,
+        /// Discharge pipe length (ft) and diameter (ft). When both are positive the friction
+        /// head of the pipe (Hazen-Williams) is added to the lift the pump works against.
+        #[serde(default)]
+        discharge_length: f64,
+        #[serde(default)]
+        discharge_diameter: f64,
+        /// Hazen-Williams roughness coefficient C of the discharge pipe.
+        #[serde(default = "default_hazen_c")]
+        hazen_c: f64,
     },
     /// Tube, siphon or float valve: full-pipe flow once primed at `prime_elevation`, until the
     /// water falls to `break_elevation`. The device invert is the intake.
@@ -558,6 +567,40 @@ fn section_strip(section: &Section, cd: f64, head: f64, rise: f64) -> f64 {
     q
 }
 
+fn default_hazen_c() -> f64 {
+    120.0
+}
+
+/// Hazen-Williams friction head (ft) in a pipe: `hf = 4.73 L Q^1.852 / (C^1.852 D^4.87)` with
+/// Q in cfs and L, D in feet (standard US form of the public Hazen-Williams equation).
+pub fn hazen_williams_head(q: f64, length: f64, diameter: f64, c: f64) -> f64 {
+    if q <= 0.0 || length <= 0.0 || diameter <= 0.0 || c <= 0.0 {
+        return 0.0;
+    }
+    4.73 * length * q.powf(1.852) / (c.powf(1.852) * diameter.powf(4.87))
+}
+
+/// Pump flow at a static `lift`: the rating curve (sorted by head) read at the lift plus the
+/// friction head of the discharge pipe, found by bisection because the friction depends on Q.
+fn pump_flow(sorted: &[(f64, f64)], lift: f64, length: f64, diameter: f64, c: f64) -> f64 {
+    let q0 = table_lookup(sorted, lift, false);
+    if length <= 0.0 || diameter <= 0.0 || q0 <= 0.0 {
+        return q0;
+    }
+    // f(q) = curve(lift + hf(q)) - q falls with q; the root lies in [0, q0].
+    let f = |q: f64| table_lookup(sorted, lift + hazen_williams_head(q, length, diameter, c), false) - q;
+    let (mut lo, mut hi) = (0.0, q0);
+    for _ in 0..40 {
+        let mid = 0.5 * (lo + hi);
+        if f(mid) > 0.0 {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
+}
+
 /// Linear interpolation in a (x, y) table, optionally extrapolating past the last pair.
 fn table_lookup(table: &[(f64, f64)], x: f64, extrapolate: bool) -> f64 {
     if table.is_empty() {
@@ -695,7 +738,7 @@ impl OutletDevice {
                 let a = section.props(depth).area;
                 DeviceFlow { flow: q, control: Control::Barrel, velocity: if a > 0.0 { q / a } else { 0.0 } }
             }
-            DeviceKind::Pump { rating, discharge_elevation, .. } => {
+            DeviceKind::Pump { rating, discharge_elevation, discharge_length, discharge_diameter, hazen_c, .. } => {
                 if !c.state.active || head <= 0.0 {
                     return DeviceFlow::ZERO;
                 }
@@ -703,7 +746,7 @@ impl OutletDevice {
                 // Rating table is (head, flow): flow falls as the lift rises.
                 let mut sorted = rating.clone();
                 sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
-                let q = table_lookup(&sorted, lift, false);
+                let q = pump_flow(&sorted, lift, *discharge_length, *discharge_diameter, *hazen_c);
                 DeviceFlow { flow: q, control: Control::Pump, velocity: 0.0 }
             }
         }
@@ -975,8 +1018,25 @@ mod tests {
     use crate::storage::PondStorage;
 
     fn pump(on: f64, off: f64, max: Option<f64>, group: u32) -> OutletDevice {
-        let kind = DeviceKind::Pump { rating: vec![(0.0, 1.0), (20.0, 0.5)], on_elevation: on, off_elevation: off, discharge_elevation: 110.0, max_elevation: max, priority_group: group };
+        let kind = DeviceKind::Pump { rating: vec![(0.0, 1.0), (20.0, 0.5)], on_elevation: on, off_elevation: off, discharge_elevation: 110.0, max_elevation: max, priority_group: group, discharge_length: 0.0, discharge_diameter: 0.0, hazen_c: 120.0 };
         OutletDevice::new("Pump", 99.0, Routing::Primary, kind)
+    }
+
+    #[test]
+    fn pump_discharge_pipe_friction_reduces_flow() {
+        let curve = [(0.0, 1.0), (20.0, 0.5)];
+        let free = pump_flow(&curve, 10.0, 0.0, 0.0, 120.0);
+        assert!((free - 0.75).abs() < 1e-9);
+        let piped = pump_flow(&curve, 10.0, 1000.0, 0.5, 120.0);
+        assert!(piped < free && piped > 0.5, "{piped}");
+        let hf = hazen_williams_head(piped, 1000.0, 0.5, 120.0);
+        assert!((table_lookup(&curve, 10.0 + hf, false) - piped).abs() < 1e-6);
+    }
+
+    #[test]
+    fn old_pump_json_gets_default_discharge_pipe() {
+        let k: DeviceKind = serde_json::from_str(r#"{"Pump":{"rating":[[0.0,1.0]],"on_elevation":1.0,"off_elevation":0.5,"discharge_elevation":5.0}}"#).unwrap_or_else(|e| panic!("{e}"));
+        assert!(matches!(k, DeviceKind::Pump { hazen_c, discharge_length, .. } if hazen_c == 120.0 && discharge_length == 0.0));
     }
 
     #[test]

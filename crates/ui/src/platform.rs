@@ -13,6 +13,8 @@ pub enum Purpose {
     ImportSubareas,
     ImportTr20,
     NoaaCsv,
+    /// A pump or special-outlet rating table (two columns).
+    RatingCsv,
 }
 
 /// A file delivered to the app.
@@ -61,6 +63,7 @@ impl Platform {
             Purpose::LinkCsv => ("Hydrograph CSV", &["csv", "txt"]),
             Purpose::ImportTr20 => ("TR-20 input file", &["inp", "dat", "tr2", "txt"]),
             Purpose::NoaaCsv => ("NOAA Atlas 14 table", &["csv", "txt"]),
+            Purpose::RatingCsv => ("Rating table", &["csv", "txt"]),
         }
     }
 
