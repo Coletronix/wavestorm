@@ -30,6 +30,7 @@ pub struct EditState {
     pub manual_grid: Option<ManualGrid>,
     /// Device-type chooser open: the outlet number the new device will take.
     pub device_pick: Option<usize>,
+    pub chamber: Option<super::chamber::ChamberWizard>,
     /// Text of the Area grid while editing (area, CN, description).
     pub area_rows: Vec<Vec<String>>,
     pub add_kind: usize,
@@ -130,6 +131,7 @@ impl EditState {
             device_edit: None,
             manual_grid: None,
             device_pick: None,
+            chamber: None,
             area_rows: Vec::new(),
             add_kind: 0,
         }
@@ -251,6 +253,20 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
     }
     tc_editor(ctx, st, &units, doc);
     volume_editor(ctx, st, &units);
+    if let Some(w) = &mut st.chamber {
+        match super::chamber::show(ctx, &st.draft.title(), w, &units) {
+            Buttons::Ok => {
+                let field = w.field.clone();
+                if let NodeData::Pond(p) = &mut st.draft.data {
+                    p.storage.volumes = field.volumes();
+                    p.chamber = Some(field);
+                }
+                st.chamber = None;
+            }
+            Buttons::Cancel => st.chamber = None,
+            _ => {}
+        }
+    }
     if let (Some(at), None) = (st.device_pick, &st.device_edit) {
         match device_chooser(ctx) {
             Some(Some((label, kind))) => {
@@ -876,6 +892,9 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
                     if widgets::button(ui, label, 0.0).clicked() {
                         st.volume_edit = Some((None, StorageVolume::new(label, base, shape)));
                     }
+                }
+                if widgets::button(ui, "Chamber Wizard...", 0.0).on_hover_text("Lay out an underground chamber field in a stone bed").clicked() {
+                    st.chamber = Some(super::chamber::ChamberWizard::new(p.chamber.as_ref(), base));
                 }
             });
             if let (Some(b), Some(top)) = (p.storage.bottom(), p.storage.top()) {

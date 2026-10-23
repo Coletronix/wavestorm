@@ -1,5 +1,6 @@
 //! Edit dialogs and settings windows.
 
+pub mod chamber;
 pub mod lookup;
 pub mod misc;
 pub mod node;

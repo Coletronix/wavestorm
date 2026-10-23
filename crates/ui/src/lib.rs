@@ -1431,6 +1431,14 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
                 app.open_edit(id);
             }
         }
+        // Opens the chamber wizard of the pond whose edit dialog is open last.
+        "chamber" => {
+            if let Some(Window::Edit(e)) = app.doc().windows.last_mut() {
+                if let stormwaves_core::project::NodeData::Pond(p) = &e.draft.data {
+                    e.chamber = Some(dialogs::chamber::ChamberWizard::new(p.chamber.as_ref(), p.storage.bottom().unwrap_or(100.0)));
+                }
+            }
+        }
         "select" => {
             if let Some(id) = find(app, arg) {
                 app.doc().selection = vec![id];

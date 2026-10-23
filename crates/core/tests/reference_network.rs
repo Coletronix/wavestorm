@@ -101,6 +101,7 @@ fn network() -> (Project, NodeId, NodeId) {
         flood_elevation: Some(55.0),
         tailwater: [Tailwater::Fixed(49.0), Tailwater::Free, Tailwater::Free],
         large_units: true,
+        chamber: None,
     });
     (p, reach, pond)
 }

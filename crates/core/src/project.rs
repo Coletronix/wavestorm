@@ -187,6 +187,9 @@ pub struct Pond {
     pub tailwater: [Tailwater; 3],
     #[serde(default = "yes")]
     pub large_units: bool,
+    /// The chamber wizard's field, when the storage was laid out with it.
+    #[serde(default)]
+    pub chamber: Option<crate::chamber::Field>,
 }
 
 /// A free-text (and optional image) annotation on the diagram.

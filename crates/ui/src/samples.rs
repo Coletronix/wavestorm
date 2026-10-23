@@ -122,6 +122,7 @@ pub fn sample_project() -> Project {
             flood_elevation: Some(105.0),
             tailwater: [Tailwater::Free; 3],
             large_units: false,
+            chamber: None,
         });
     }
 
