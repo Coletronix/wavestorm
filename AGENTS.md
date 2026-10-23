@@ -223,7 +223,7 @@ Keep this section updated at the end of every session.
   1. (done) Project Reports: reference tab set, All/Selected Nodes, Show Totals, button
      column; tables from `core::listings` (script `project-report:N`).
   2. (done) Storm / UH / IDF viewers (`reports/curves.rs`; IDF graph on a log duration axis,
-     `ChartSpec::log_x`). Open: "Event Depth(s)" option not implemented. `.idf` support is
+     `ChartSpec::log_x`) and the Event Depth(s) option (script `storms-events`). `.idf` support is
      marked PROVISIONAL in the UI and in written files (`rainlib::IDF_PROVISIONAL`) until a
      real `.idf` sample is available; remove the marker once the layout is verified.
   3. (done) Calculation Settings Rainfall tab. Open: Resize tab (contents unknown).

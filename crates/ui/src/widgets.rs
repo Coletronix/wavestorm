@@ -110,7 +110,11 @@ pub fn set_tips_enabled(ctx: &egui::Context, on: bool) {
 /// field; it can be turned off in the General settings.
 pub fn with_tip<R>(ui: &mut Ui, tip: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
     const DELAY: f32 = 0.5;
+    // Fields inside an explicit tip don't add their own generic one.
+    let outer = in_tip(ui.ctx());
+    ui.ctx().data_mut(|d| d.insert_temp(in_tip_id(), true));
     let inner = ui.scope(add);
+    ui.ctx().data_mut(|d| d.insert_temp(in_tip_id(), outer));
     let enabled = ui.ctx().data(|d| d.get_temp::<bool>(tips_id())).unwrap_or(true);
     if enabled && inner.response.contains_pointer() && !ui.ctx().input(|i| i.pointer.any_down()) {
         let still = ui.ctx().input(|i| i.pointer.time_since_last_movement());
@@ -121,6 +125,15 @@ pub fn with_tip<R>(ui: &mut Ui, tip: &str, add: impl FnOnce(&mut Ui) -> R) -> R 
         }
     }
     inner.inner
+}
+
+fn in_tip_id() -> egui::Id {
+    egui::Id::new("inside-tip")
+}
+
+/// True while the fields of a [`with_tip`] are being added.
+pub fn in_tip(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(in_tip_id())).unwrap_or(false)
 }
 
 fn help_request_id() -> egui::Id {
