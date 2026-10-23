@@ -237,10 +237,27 @@ Keep this section updated at the end of every session.
      Open: right toolbar set/order vs v10scrn1.gif.
   9. (done) Chamber Wizard (Storage tab button; script `edit:1P;tab:1;chamber`).
   Next: reach routing attenuation/avg velocity vs the `.hcp` example (item 8 above), metric
-  `.hcp` files, Delayed Gate editor restyle (s5), right toolbar order, Resize tab.
+  `.hcp` files (need a sample), right toolbar order, Resize tab. Done 2026-10-23: Delayed Gate
+  editor layout (model has no Opening Step / Vertical Range / Rotary Weir yet), land-use and
+  loading lines in subcatchment summaries driven by the Report flags.
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
-## 6. Commands
+## 6. README
+
+`README.md` is maintained with the code (user request, 2026-10-23): update its feature list,
+file-format table and installation steps whenever those change, and regenerate the
+screenshots in `docs/screenshots/` after visible UI changes, from the built-in sample project
+only (never the user's private files or rainfall library):
+
+```sh
+for s in "main select:1P" "hydrograph report:1P;tab:1" "reach-summary report:1R;tab:0" \
+         "project-reports project-report:6" "storms storms" "chamber-wizard edit:1P;tab:1;chamber" \
+         "outlets edit:1P;tab:2"; do
+  set -- $s; cargo run -q -p stormwaves-ui --example snapshot -- --out docs/screenshots/$1.png --size 1200x720 --do "$2"
+done
+```
+
+## 7. Commands
 
 ```sh
 cargo test -p stormwaves-core          # engine tests (fast)
