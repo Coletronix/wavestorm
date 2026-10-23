@@ -358,6 +358,16 @@ pub fn show_node_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ReportState
                     if ui.button("Save Summary as Text...").clicked() {
                         actions.push(WindowAction::SaveFile { name: format!("{}.txt", node.label()), bytes: summary().into_bytes(), ext: "txt" });
                     }
+                    if ui.button("Save Graph as EMF...").clicked() {
+                        if let Some(bytes) = stormwaves_core::printing::node_graph_emf(&doc.project, &doc.results, node.id) {
+                            actions.push(WindowAction::SaveFile { name: format!("{} graph.emf", node.label()), bytes, ext: "emf" });
+                        }
+                    }
+                    if ui.button("Save Summary as EMF...").clicked() {
+                        if let Some(bytes) = stormwaves_core::printing::node_summary_emf(&doc.project, &doc.results, node.id) {
+                            actions.push(WindowAction::SaveFile { name: format!("{} summary.emf", node.label()), bytes, ext: "emf" });
+                        }
+                    }
                     if ui.button("Save Hydrograph as CSV...").clicked() {
                         let (heads, cols) = report::hydrograph_table(&doc.project, &doc.results, &node, false, st.inflows);
                         let mut csv = heads.join(",");
