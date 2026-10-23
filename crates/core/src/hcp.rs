@@ -1604,6 +1604,9 @@ mod tests {
         assert!((100.0 * nr.impervious_area / nr.inflow_area - 13.65).abs() < 0.05);
         let summary = crate::report::node_summary(&p, &r, p.by_label("2R").unwrap()).join("\n");
         assert!(summary.contains("Defined Flood Depth= 1.50' Flow Area= 6.0 sf, Capacity= 22.22 cfs"), "{summary}");
+        // Published: Max. Velocity= 3.60 fps, Min. Travel Time= 2.1 min; Avg. 1.42 fps, 5.3 min.
+        assert!(summary.contains("Min. Travel Time= 2.1 min"), "{summary}");
+        assert!(summary.contains("Avg. Velocity = 1.42 fps, Avg. Travel Time= 5.3 min"), "{summary}");
         // Round trip of the real file.
         let (q, _) = import(&export(&p)).unwrap();
         assert_eq!(p, q);

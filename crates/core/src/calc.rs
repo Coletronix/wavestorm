@@ -585,20 +585,21 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
             let v_at = |y: f64| reach.section.velocity(y.min(if is_pipe { full } else { f64::INFINITY }), reach.n, slope);
             detail.max_velocity = v_at(peak_depth);
             detail.min_travel_min = if detail.max_velocity > 0.0 { len / detail.max_velocity / 60.0 } else { 0.0 };
-            // Flow-weighted mean velocity.
-            let (mut qv, mut qs) = (0.0, 0.0);
-            for (q, y) in res.outflow.q.iter().zip(&res.elevation) {
-                qv += q * v_at(*y);
-                qs += q;
-            }
-            detail.avg_velocity = if qs > 0.0 { qv / qs } else { 0.0 };
-            detail.avg_travel_min = if detail.avg_velocity > 0.0 { len / detail.avg_velocity / 60.0 } else { 0.0 };
-            if method == ReachMethod::StorIndTrans && detail.max_velocity > 0.0 {
+            let out = if method == ReachMethod::StorIndTrans && detail.max_velocity > 0.0 {
                 detail.translation_hr = len / detail.max_velocity / 3600.0;
                 routing::translate(&res.outflow, detail.translation_hr)
             } else {
                 res.outflow
-            }
+            };
+            // Average velocity: the velocity at the mean outflow of the steps that carry flow
+            // (matches the published 1.42 fps / 5.3 min of the user's example reach exactly and
+            // three published reaches within ~2 %). "Carrying flow" means above 1e-6 cfs: the
+            // unit-hydrograph tail has many vanishing values that would otherwise dilute the mean.
+            let flowing: Vec<f64> = out.q.iter().copied().filter(|q| *q > 1e-6).collect();
+            let q_avg = if flowing.is_empty() { 0.0 } else { flowing.iter().sum::<f64>() / flowing.len() as f64 };
+            detail.avg_velocity = if q_avg > 0.0 { v_at(reach.section.normal_depth(q_avg, reach.n, slope)) } else { 0.0 };
+            detail.avg_travel_min = if detail.avg_velocity > 0.0 { len / detail.avg_velocity / 60.0 } else { 0.0 };
+            out
         }
         ReachMethod::MuskingumCunge => {
             let q_ref = peak_in.max(1e-6);

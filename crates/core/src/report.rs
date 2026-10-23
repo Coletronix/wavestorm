@@ -131,8 +131,8 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
         (NodeData::Reach(reach), Detail::Reach(d)) => {
             reach_header(&mut out, project, r, &results.event);
             out.push(format!("{}, {span}", format_args!("Routing by {} method", s.reach_method.label())));
-            out.push(format!("Max. Velocity= {:.1} {}, Min. Travel Time= {:.1} min", u.vel(d.max_velocity), u.vel_label(), d.min_travel_min));
-            out.push(format!("Avg. Velocity = {:.1} {}, Avg. Travel Time= {:.1} min", u.vel(d.avg_velocity), u.vel_label(), d.avg_travel_min));
+            out.push(format!("Max. Velocity= {:.2} {}, Min. Travel Time= {:.1} min", u.vel(d.max_velocity), u.vel_label(), d.min_travel_min));
+            out.push(format!("Avg. Velocity = {:.2} {}, Avg. Travel Time= {:.1} min", u.vel(d.avg_velocity), u.vel_label(), d.avg_travel_min));
             out.push(String::new());
             out.push(format!("Peak Storage= {} @ {:.2} hrs", u.fmt_volume(d.storage.iter().copied().fold(0.0, f64::max)), d.peak_depth_time));
             out.push(format!("Average Depth at Peak Storage= {:.2}{}", u.len(d.peak_depth), u.len_suffix()));
