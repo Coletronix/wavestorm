@@ -626,40 +626,9 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
 fn sketch_section(ui: &mut Ui, section: &Section) {
     let t = Tokens::get(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(vec2(220.0, 90.0), egui::Sense::hover());
-    let full = section.full_depth().max(0.01);
-    let pts: Vec<(f64, f64)> = match section {
-        Section::Custom { points } => points.iter().map(|p| (p.offset, p.elev)).collect(),
-        _ => {
-            let n = 40;
-            let mut left = Vec::new();
-            let mut right = Vec::new();
-            for i in 0..=n {
-                let y = full * i as f64 / n as f64;
-                let w = section.props(y).top_width.max(if i == n { section.props(y * 0.999).top_width } else { 0.0 });
-                left.push((-w / 2.0, y));
-                right.push((w / 2.0, y));
-            }
-            left.reverse();
-            left.into_iter().chain(right).collect()
-        }
-    };
-    if pts.len() < 2 {
-        return;
-    }
-    let (minx, maxx) = pts.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| (a.0.min(p.0), a.1.max(p.0)));
-    let (miny, maxy) = pts.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| (a.0.min(p.1), a.1.max(p.1)));
-    let sx = (rect.width() as f64 - 10.0) / (maxx - minx).max(1e-6);
-    let sy = (rect.height() as f64 - 10.0) / (maxy - miny).max(1e-6);
-    let s = sx.min(sy);
-    let cx = rect.center().x as f64 - (minx + maxx) / 2.0 * s;
-    let to = |p: &(f64, f64)| egui::pos2((cx + p.0 * s) as f32, (rect.max.y as f64 - 5.0 - (p.1 - miny) * s) as f32);
-    let screen: Vec<egui::Pos2> = pts.iter().map(to).collect();
-    let water = matches!(section, Section::Pipe { .. });
-    if water {
-        ui.painter().add(egui::Shape::convex_polygon(screen.clone(), egui::Color32::from_rgb(0, 230, 240), egui::Stroke::new(1.5, t.text)));
-    } else {
-        ui.painter().add(egui::Shape::line(screen, egui::Stroke::new(2.0, t.text)));
-    }
+    // Pipes are shown full (as before); channels as an outline only.
+    let depth = matches!(section, Section::Pipe { .. }).then(|| section.full_depth());
+    crate::section_view::draw(ui.painter(), rect, section, depth, t.text, egui::Color32::from_rgb(0, 230, 240), 2.0);
 }
 
 // ------------------------------------------------------------------ reach

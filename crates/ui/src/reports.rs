@@ -395,7 +395,23 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
     match st.tab {
         Tab::Summary => {
             let lines = report::node_summary(project, &doc.results, node);
-            text_area(ui, &lines, size.y);
+            let section = match (&node.data, &r.detail) {
+                (NodeData::Reach(reach), Detail::Reach(d)) if crate::section_view::drawable(&reach.section) => Some((&reach.section, d.peak_depth)),
+                _ => None,
+            };
+            match section {
+                Some((sec, depth)) => {
+                    let t = Tokens::get(ui.ctx());
+                    let sec_h = (size.y / 3.0).min(170.0).max(60.0);
+                    text_area(ui, &lines, (size.y - sec_h - 4.0).max(40.0));
+                    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), sec_h), Sense::hover());
+                    widgets::sunken(ui.painter(), rect, t.field, &t);
+                    let water = if t.kind == crate::theme::ThemeKind::ModernDark { Color32::from_rgb(0, 150, 170) } else { Color32::from_rgb(95, 215, 230) };
+                    let painter = ui.painter().with_clip_rect(rect.shrink(2.0));
+                    crate::section_view::draw(&painter, rect.shrink(4.0), sec, Some(depth), t.text, water, 1.5);
+                }
+                None => text_area(ui, &lines, size.y),
+            }
         }
         Tab::Hydrograph => {
             if st.table {
