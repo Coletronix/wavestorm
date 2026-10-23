@@ -120,6 +120,9 @@ pub struct NodeResult {
     pub inflow_area: f64,
     pub impervious_area: f64,
     pub detail: Detail,
+    /// Why this node's results are physically undefined (e.g. a pond that overtops its defined
+    /// storage, or anything downstream of one). Reports print "UNDEFINED" instead of numbers.
+    pub undefined: Option<String>,
 }
 
 impl NodeResult {
@@ -341,6 +344,7 @@ fn run_nodes(project: &Project, event: &RainEvent, order: &[NodeId], rain: Optio
                     inflow_area: area,
                     impervious_area: imp,
                     detail: Detail::Link(link.describe()),
+                    undefined: None,
                 };
                 if !matches!(link.source, LinkSource::Inflows) {
                     res.inflow_area += link.inflow_area;
@@ -350,6 +354,15 @@ fn run_nodes(project: &Project, event: &RainEvent, order: &[NodeId], rain: Optio
             }
             NodeData::Text(_) => NodeResult::default(),
         };
+        let mut result = result;
+        // Anything fed by an undefined node is undefined too.
+        if result.undefined.is_none() {
+            if let Some(up) = project.inflows(id).into_iter().find(|(up, _)| r.nodes.get(up).is_some_and(|u| u.undefined.is_some())) {
+                let label = project.node(up.0).map(|n| n.label()).unwrap_or_default();
+                r.messages.push(Message::new(95, Severity::Error, Some(id), format!("{} Inflow from {label} is undefined", node.label())));
+                result.undefined = Some(format!("inflow from {label} is undefined"));
+            }
+        }
         r.nodes.insert(id, result);
     }
 }
@@ -503,6 +516,7 @@ fn subcat(
         inflow_area: area,
         impervious_area: comp.impervious_area,
         detail: Detail::Subcat(detail),
+        undefined: None,
     }
 }
 
@@ -683,6 +697,7 @@ fn route_pond(
     let initial = vec![outlets::DeviceState::default(); nd];
     let start = pond.start_elevation.unwrap_or(bottom).max(bottom);
     let mut pump_states: Vec<Vec<outlets::DeviceState>> = Vec::with_capacity(n);
+    let mut undefined = None;
     let elevation: Vec<f64>;
     let storage: Vec<f64>;
     if pond.storage.is_empty() {
@@ -719,8 +734,18 @@ fn route_pond(
             }
             q
         });
-        if let Some(ex) = res.exceeded_by {
-            msgs.push(Message::new(93, Severity::Warning, Some(node.id), format!("{} Storage range exceeded by {:.2}'", node.label(), ex)));
+        // Above the top of the defined storage the pond has no volume to hold water, so the
+        // routed elevation and outflow are not physically meaningful.
+        let peak = res.elevation.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let ex = res.exceeded_by.map_or(peak - top_store, |v| v + (top - top_store));
+        if ex > 0.005 {
+            msgs.push(Message::new(
+                93,
+                Severity::Error,
+                Some(node.id),
+                format!("{} Storage range exceeded by {:.2}' - results undefined (extend the storage or add outlet capacity)", node.label(), ex),
+            ));
+            undefined = Some(format!("peak elevation exceeds the defined storage (top {:.2}') by {:.2}'", top_store, ex));
         }
         elevation = res.elevation;
         storage = res.storage;
@@ -776,7 +801,7 @@ fn route_pond(
         elevation,
         storage,
     };
-    NodeResult { inflow: inflow.clone(), outflow, routes, detail: Detail::Pond(detail), ..Default::default() }
+    NodeResult { inflow: inflow.clone(), outflow, routes, detail: Detail::Pond(detail), undefined, ..Default::default() }
 }
 
 #[cfg(test)]
@@ -836,6 +861,31 @@ mod tests {
             });
         }
         (p, s, pond)
+    }
+
+    #[test]
+    fn overtopping_the_defined_storage_is_undefined() {
+        let (mut p, _, pond) = project_with_pond();
+        let link = p.add_node(NodeType::Link, [200.0, 0.0]);
+        if let Some(n) = p.node_mut(pond) {
+            n.outflows[0] = Some(link);
+            if let NodeData::Pond(pd) = &mut n.data {
+                // A tiny basin, 1 ft deep, cannot hold 25 acres of runoff behind a 1 ft orifice.
+                pd.storage.volumes[0].shape = VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations: vec![50.0, 51.0], values: vec![1000.0, 1000.0] };
+            }
+        }
+        let r = calculate(&p);
+        let pr = r.node(pond).expect("pond result");
+        assert!(pr.undefined.is_some());
+        assert!(r.messages.iter().any(|m| m.code == 93 && m.severity == Severity::Error && m.node == Some(pond)));
+        assert!(r.node(link).is_some_and(|l| l.undefined.is_some()));
+        assert!(r.messages.iter().any(|m| m.code == 95 && m.node == Some(link)));
+        let node = p.node(pond).expect("pond");
+        let text = crate::report::node_summary(&p, &r, node).join("\n");
+        assert!(text.contains("UNDEFINED"), "{text}");
+        // The original pond stays well inside its storage.
+        let (p, _, pond) = project_with_pond();
+        assert!(calculate(&p).node(pond).is_some_and(|r| r.undefined.is_none()));
     }
 
     #[test]

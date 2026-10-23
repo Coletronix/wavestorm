@@ -353,6 +353,34 @@ impl StormwavesApp {
         doc.windows.push(w);
     }
 
+    /// After each recalculation: summarise it in the status bar and, when it produced messages
+    /// that were not there before, open the Messages window (as the reference does).
+    fn announce_calculation(&mut self) {
+        use stormwaves_core::calc::Severity;
+        let auto = self.prefs.show_messages;
+        let doc = self.doc();
+        if doc.calc_serial == doc.announced {
+            return;
+        }
+        doc.announced = doc.calc_serial;
+        let lines = stormwaves_core::report::message_lines(&doc.project, &doc.results);
+        let count = |s: Severity| lines.iter().filter(|(v, _)| *v == s).count();
+        let (e, w, h) = (count(Severity::Error), count(Severity::Warning), count(Severity::Hint));
+        let fresh = lines.iter().any(|(s, l)| *s >= Severity::Hint && !doc.seen_messages.contains(l));
+        doc.seen_messages = lines.into_iter().map(|(_, l)| l).collect();
+        let nodes = doc.results.nodes.len();
+        let event = doc.results.event.clone();
+        let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
+        self.status = if e + w + h == 0 {
+            format!("Calculated {} for {event}: no messages", plural(nodes, "node"))
+        } else {
+            format!("Calculated {} for {event}: {}, {}, {}", plural(nodes, "node"), plural(e, "error"), plural(w, "warning"), plural(h, "hint"))
+        };
+        if fresh && auto && !self.doc().windows.iter().any(|w| matches!(w, Window::Messages)) {
+            self.doc().windows.push(Window::Messages);
+        }
+    }
+
     fn open_report(&mut self, id: NodeId) {
         let Some(n) = self.doc().project.node(id).cloned() else { return };
         if n.node_type() == NodeType::Text {
@@ -1331,6 +1359,7 @@ impl StormwavesApp {
             None => Vec::new(),
         };
         self.window_actions(wactions);
+        self.announce_calculation();
         if let Some(topic) = widgets::take_help_request(&ctx) {
             self.open_window(Window::Help(help::HelpState::topic(topic)));
         }

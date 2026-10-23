@@ -55,6 +55,11 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
         out.push("(not calculated)".into());
         return out;
     };
+    if let Some(why) = &r.undefined {
+        out.push(format!("RESULTS UNDEFINED: {why}."));
+        out.push("The flows, elevations and volumes below are not physically valid.".into());
+        out.push(String::new());
+    }
     let span = format!("Time Span= {:.2}-{:.2} hrs, dt= {:.2} hrs", s.span_start, s.span_end, s.dt);
     match (&node.data, &r.detail) {
         (NodeData::Subcat(sc), Detail::Subcat(d)) => {
@@ -131,7 +136,12 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
                 out.push(format!("Starting Elev= {} Surf.Area= {} Storage= {}", u.fmt_elev(d.start_elevation), pond.storage.surface_area(d.start_elevation).map(|a| u.fmt_area(a)).unwrap_or_default(), u.fmt_volume(pond.storage.storage(d.start_elevation))));
             }
             let area = d.peak_area.map(|a| format!(" Surf.Area= {}", u.fmt_area(a))).unwrap_or_default();
-            out.push(format!("Peak Elev= {} @ {:.2} hrs{area} Storage= {}", u.fmt_elev(d.peak_elevation), d.peak_time, u.fmt_volume(d.peak_storage)));
+            if r.undefined.is_some() {
+                let top = pond.storage.top().unwrap_or(d.start_elevation);
+                out.push(format!("Peak Elev= UNDEFINED (above the defined storage, top {} Storage= {})", u.fmt_elev(top), u.fmt_volume(pond.storage.storage(top))));
+            } else {
+                out.push(format!("Peak Elev= {} @ {:.2} hrs{area} Storage= {}", u.fmt_elev(d.peak_elevation), d.peak_time, u.fmt_volume(d.peak_storage)));
+            }
             if let Some(f) = pond.flood_elevation {
                 let a = pond.storage.surface_area(f).map(|a| format!(" Surf.Area= {}", u.fmt_area(a))).unwrap_or_default();
                 out.push(format!("Flood Elev= {}{a} Storage= {}", u.fmt_elev(f), u.fmt_volume(pond.storage.storage(f))));
@@ -459,6 +469,7 @@ pub fn node_listing(project: &Project, results: &Results) -> Vec<String> {
             }
             _ => continue,
         };
+        let (a, b) = if r.undefined.is_some() { ("RESULTS UNDEFINED (see messages)".to_string(), String::new()) } else { (a, b) };
         out.push(format!("{:<46}{:>70}", n.title(), a));
         out.push(format!("{:>116}", b));
         out.push(String::new());
@@ -649,6 +660,11 @@ pub fn events_table(project: &Project, all: &[Results], id: NodeId) -> Vec<[Stri
             _ => (String::new(), String::new()),
         };
         let f = |h: &Hydrograph| group(u.flow(h.peak().value), u.flow_dp());
+        if n.undefined.is_some() {
+            let x = || "UNDEFINED".to_string();
+            rows.push([r.event.clone(), if n.undefined.as_deref().is_some_and(|w| !w.starts_with("inflow")) { f(&n.inflow) } else { x() }, x(), x(), x(), x(), x()]);
+            continue;
+        }
         rows.push([r.event.clone(), f(&n.inflow), f(&n.outflow), f(&n.routes[0]), f(&n.routes[1]), elev, stor]);
     }
     rows

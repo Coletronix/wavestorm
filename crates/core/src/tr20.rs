@@ -632,7 +632,10 @@ JOB TR-20
         assert_eq!(pd.storage.bottom(), Some(99.0));
         let sub = p.nodes.iter().find(|n| n.node_type() == NodeType::Subcat).unwrap();
         assert_eq!(sub.outflows[0], Some(pond.id));
-        assert!(!calculate(p).has_errors());
+        // 0.5 sq mi of CN 80 runoff overtops the 4 af structure table: results are undefined.
+        let r = calculate(p);
+        assert!(r.messages.iter().filter(|m| m.severity == crate::calc::Severity::Error).all(|m| m.code == 93));
+        assert!(r.node(pond.id).is_some_and(|n| n.undefined.is_some()));
     }
 
     #[test]

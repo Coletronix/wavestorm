@@ -120,6 +120,9 @@ fn summary_lines(project: &Project, node: &Node, r: &NodeResult, event_heading: 
     let u = &project.units;
     let f = |h: &stormwaves_core::hydrograph::Hydrograph| format!("{} {}", group(u.flow(h.peak().value), u.flow_dp()), u.flow_label());
     let mut out = Vec::new();
+    if r.undefined.is_some() {
+        out.push("RESULTS UNDEFINED".to_string());
+    }
     match (&node.data, &r.detail) {
         (NodeData::Subcat(_), Detail::Subcat(d)) => {
             out.push(format!("Runoff={}", f(&r.outflow)));
@@ -164,8 +167,12 @@ fn summary_lines(project: &Project, node: &Node, r: &NodeResult, event_heading: 
                     }
                 }
             }
-            out.push(format!("Peak Elev={}", u.fmt_elev(d.peak_elevation)));
-            out.push(format!("Storage={}", u.fmt_volume(d.peak_storage)));
+            if r.undefined.is_some() {
+                out.push("Peak Elev=above defined storage".to_string());
+            } else {
+                out.push(format!("Peak Elev={}", u.fmt_elev(d.peak_elevation)));
+                out.push(format!("Storage={}", u.fmt_volume(d.peak_storage)));
+            }
         }
         (NodeData::Link(_), Detail::Link(desc)) => {
             out.push(format!("Inflow={}", f(&r.inflow)));

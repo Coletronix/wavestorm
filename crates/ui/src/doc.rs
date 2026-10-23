@@ -42,6 +42,11 @@ pub struct Doc {
     /// Bytes length + page the texture was made from (to detect changes).
     pub underlay_key: Option<(usize, usize)>,
     pub fit_pending: bool,
+    /// Bumped by every recalculation; the app compares it with `announced` to report results.
+    pub calc_serial: u64,
+    pub announced: u64,
+    /// Message lines of the last announced calculation (to detect new ones).
+    pub seen_messages: Vec<String>,
 }
 
 impl Doc {
@@ -62,6 +67,9 @@ impl Doc {
             underlay_tex: None,
             underlay_key: None,
             fit_pending: true,
+            calc_serial: 1,
+            announced: 0,
+            seen_messages: Vec::new(),
         }
     }
 
@@ -106,6 +114,7 @@ impl Doc {
     pub fn recalc(&mut self) {
         self.results = calc::calculate(&self.project);
         self.all_results = None;
+        self.calc_serial += 1;
     }
 
     pub fn all_results(&mut self) -> &[Results] {

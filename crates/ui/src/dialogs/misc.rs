@@ -123,6 +123,7 @@ pub fn general(ctx: &egui::Context, st: &mut GeneralState, actions: &mut Vec<Win
         });
         widgets::check(ui, &mut st.draft.multiple_project_reports, "Allow multiple Project Reports windows");
         widgets::check(ui, &mut st.draft.show_tips, "Show pop-up tips on node editing screens");
+        widgets::check(ui, &mut st.draft.show_messages, "Show new calculation messages automatically");
         match ok_cancel_apply(ui, true, "start") {
             Buttons::Ok => {
                 actions.push(WindowAction::SetPrefs(st.draft.clone()));
