@@ -43,7 +43,7 @@ pub struct Message {
 }
 
 impl Message {
-    fn new(code: u16, severity: Severity, node: Option<NodeId>, text: impl Into<String>) -> Self {
+    pub(crate) fn new(code: u16, severity: Severity, node: Option<NodeId>, text: impl Into<String>) -> Self {
         Message { code, severity, node, text: text.into() }
     }
 }

@@ -44,6 +44,7 @@ fn network() -> (Project, NodeId, NodeId) {
         outlet_invert: 100.0 - 0.0169 * 1475.0,
         exfiltration: 0.0,
         flood_depth: None,
+        auto_size: false,
     });
     for (a, cn, tc) in [(20.0, 71.0, 91.9), (43.5, 55.0, 31.1), (27.0, 55.0, 24.8), (12.0, 60.0, 25.0)] {
         subcat(&mut p, a, cn, tc, reach);

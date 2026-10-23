@@ -137,6 +137,9 @@ pub struct Reach {
     /// Defined flood depth above the invert (reported with its flow area and capacity).
     #[serde(default)]
     pub flood_depth: Option<f64>,
+    /// Sized automatically (round pipes only; see `resize`).
+    #[serde(default)]
+    pub auto_size: bool,
 }
 
 impl Default for Reach {
@@ -149,6 +152,7 @@ impl Default for Reach {
             outlet_invert: 0.0,
             exfiltration: 0.0,
             flood_depth: None,
+            auto_size: false,
         }
     }
 }
@@ -392,6 +396,9 @@ pub struct CalcSettings {
     /// Report impervious/pervious areas separately.
     #[serde(default = "yes")]
     pub report_impervious: bool,
+    /// Automatic pipe and culvert sizing.
+    #[serde(default)]
+    pub resize: crate::resize::ResizeSettings,
 }
 
 impl Default for CalcSettings {
@@ -421,6 +428,7 @@ impl Default for CalcSettings {
             idf: None,
             table_step: 0.0,
             report_impervious: true,
+            resize: crate::resize::ResizeSettings::default(),
         }
     }
 }

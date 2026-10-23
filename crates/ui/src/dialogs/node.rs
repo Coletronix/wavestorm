@@ -832,6 +832,11 @@ fn reach_tab(ui: &mut Ui, st: &mut EditState, u: &Units) {
             opt_field(ui, "flood", "Flood Depth:", u.len_label(), &mut r.flood_depth, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
         });
     });
+    if stormwaves_core::resize::reach_resizable(&r.section) {
+        widgets::with_tip(ui, "Each calculation sets the diameter to the smallest standard size that carries the current event's peak below the crown (or the flood depth). Sizes and the criterion are on Settings > Calculation > Resize.", |ui| {
+            widgets::check(ui, &mut r.auto_size, "Size automatically");
+        });
+    }
     let cap = r.section.manning_q(r.section.full_depth(), r.n, r.slope());
     ui.label(RichText::new(format!("Capacity at bank full = {}", u.fmt_flow(cap))).strong());
 }

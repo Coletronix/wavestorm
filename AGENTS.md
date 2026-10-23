@@ -227,7 +227,13 @@ Keep this section updated at the end of every session.
      `ChartSpec::log_x`) and the Event Depth(s) option (script `storms-events`). `.idf` support is
      marked PROVISIONAL in the UI and in written files (`rainlib::IDF_PROVISIONAL`) until a
      real `.idf` sample is available; remove the marker once the layout is verified.
-  3. (done) Calculation Settings Rainfall tab. Open: Resize tab (contents unknown).
+  3. (done) Calculation Settings Rainfall tab. (done) Resize tab: automatic sizing
+     (`core::resize`) of round pipe reaches and round culverts marked `auto_size`, smallest
+     listed diameter keeping the current event's peak depth ≤ 0.98 D (reach) or pond peak ≤
+     culvert crown (outlet crown if reverse slope), or ≤ the flood level with that criterion.
+     Bisection over sizes in flow order; `Doc::recalc` writes sizes into the project (message
+     59). Behaviour follows the reference's public "pipe sizing" page; its finer options are
+     unknown.
   4. (done) Pond Outlets tab: grid, tip text, Edit Outlet... (device-type chooser on an empty
      row), right-click Insert/Delete/Move Up/Down (`widgets::list_table_menu`).
   5. (done) Outlet editors: pump Disch. Length/Diam/Hazen-Williams (`core::outlets::pump_flow`
@@ -242,7 +248,7 @@ Keep this section updated at the end of every session.
      Open: right toolbar set/order vs v10scrn1.gif.
   9. (done) Chamber Wizard (Storage tab button; script `edit:1P;tab:1;chamber`).
   Next: reach routing attenuation/avg velocity vs the `.hcp` example (item 8 above), metric
-  `.hcp` files (need a sample), right toolbar order, Resize tab. Done 2026-10-23: Delayed Gate
+  `.hcp` files (need a sample), right toolbar order. Done 2026-10-23: Delayed Gate
   editor layout (model has no Opening Step / Vertical Range / Rotary Weir yet), land-use and
   loading lines in subcatchment summaries driven by the Report flags.
 - Name and logo (2026-10-23): the product is written **StormWAVES** in all user-facing text.

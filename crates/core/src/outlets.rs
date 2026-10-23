@@ -221,11 +221,14 @@ pub struct OutletDevice {
     /// Number of identical devices (or a fraction to derate one).
     pub multiplier: f64,
     pub kind: DeviceKind,
+    /// Sized automatically (round culverts only; see `resize`).
+    #[serde(default)]
+    pub auto_size: bool,
 }
 
 impl OutletDevice {
     pub fn new(description: &str, invert: f64, routing: Routing, kind: DeviceKind) -> Self {
-        OutletDevice { description: description.into(), invert, routing, multiplier: 1.0, kind }
+        OutletDevice { description: description.into(), invert, routing, multiplier: 1.0, kind, auto_size: false }
     }
 }
 

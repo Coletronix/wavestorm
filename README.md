@@ -46,6 +46,8 @@ StormWAVES is written entirely in Rust. The same code runs natively on Linux, Wi
 - Outlets: culverts (inlet/outlet control), orifices and grates, broad- and sharp-crested
   weirs, custom weirs, exfiltration, pumps, siphons, delayed gates and rating tables.
   Devices can be compounded.
+- Automatic sizing of round pipe reaches and culverts to standard diameters (Settings >
+  Calculation > Resize).
 - Fixed, differential and dynamic tailwater.
 - Calculation messages with severity levels. A pond that overtops its defined storage is
   reported as an error and its results as **undefined**, never silently extrapolated.

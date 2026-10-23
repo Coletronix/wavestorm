@@ -4,6 +4,12 @@ use crate::windows::Window;
 use egui::{TextureHandle, Vec2};
 use stormwaves_core::calc::{self, Results};
 use stormwaves_core::project::{NodeId, Project};
+use stormwaves_core::resize;
+
+/// Whether a calculation resized anything (message 59).
+fn resized(r: &Results) -> bool {
+    r.messages.iter().any(|m| m.code == 59)
+}
 
 /// Diagram view: world → screen is `canvas.min + offset + world * zoom`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -53,12 +59,12 @@ pub struct Doc {
 }
 
 impl Doc {
-    pub fn new(project: Project, path: Option<String>) -> Doc {
-        let results = calc::calculate(&project);
+    pub fn new(mut project: Project, path: Option<String>) -> Doc {
+        let results = resize::calculate(&mut project);
         Doc {
             project,
             path,
-            dirty: false,
+            dirty: resized(&results),
             undo: Vec::new(),
             redo: Vec::new(),
             max_undo: 50,
@@ -115,8 +121,13 @@ impl Doc {
         self.recalc();
     }
 
+    /// Recalculates the current event, first resizing the pipes and culverts marked for
+    /// automatic sizing (the new sizes are written into the project).
     pub fn recalc(&mut self) {
-        self.results = calc::calculate(&self.project);
+        self.results = resize::calculate(&mut self.project);
+        if resized(&self.results) {
+            self.dirty = true;
+        }
         self.all_results = None;
         self.calc_serial += 1;
     }

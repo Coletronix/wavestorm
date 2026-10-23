@@ -43,6 +43,17 @@ Reported peaks are interpolated with a parabola through the three highest values
 The time span must cover the whole storm for the volume to equal the runoff equation's depth.",
     },
     Topic {
+        id: "resize",
+        title: "Automatic pipe and culvert sizing",
+        body: "Mark a round pipe reach (reach editor) or a round culvert outlet (outlet editor) with \"Size automatically\". \
+Every calculation then sets its diameter to the smallest size in the list on Settings > Calculation > Resize that meets the criterion for the current event, and writes it into the project (Undo restores the previous size).\n\n\
+Pipe reach: the peak flow depth may not exceed 98% of the diameter, so the pipe is sized for pipe-full Manning flow. A reach assumes normal flow and ignores inlet control and tailwater; where those matter, model a pond with a culvert outlet instead.\n\
+Culvert: the pond's peak water level may not exceed the culvert crown (the outlet crown when the barrel slopes backwards). Several marked culverts in one pond get the same size.\n\n\
+With the Flood elevation criterion a reach's flood depth or a pond's flood elevation is the limit instead, where one is defined. \
+Nodes are sized in flow order, so each size accounts for the sizes chosen upstream. Message 59 reports each change; if even the largest size fails, it is used and the message is a warning. \
+Clear \"Allow sizes smaller\" to only ever increase the sizes entered.",
+    },
+    Topic {
         id: "cn",
         title: "Curve numbers",
         body: "Each sub-area has an area, a curve number and a description. Use Lookup CN to choose a cover and hydrologic soil group from TR-55 Table 2-2.\n\n\

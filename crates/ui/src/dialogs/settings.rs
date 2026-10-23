@@ -8,7 +8,8 @@ use crate::widgets;
 use crate::windows::{Window, WindowAction};
 use egui::{RichText, Ui, vec2};
 use stormwaves_core::cn::CnWeighting;
-use stormwaves_core::project::{CalcSettings, PondMethod, Project, ReachMethod, RunoffMethod};
+use stormwaves_core::project::{CalcSettings, NodeData, PondMethod, Project, ReachMethod, RunoffMethod};
+use stormwaves_core::resize::{ResizeCriterion, ResizeSettings};
 use stormwaves_core::rainfall::{Amc, DurationMode, RainEvent};
 use stormwaves_core::units::Units;
 
@@ -19,11 +20,13 @@ pub struct SettingsState {
     /// Draft of the Rainfall Event name box and the event name it was taken from.
     pub name: String,
     pub name_src: String,
+    /// Draft of the Resize tab's size list while it is being typed.
+    pub sizes_text: Option<String>,
 }
 
 impl SettingsState {
     pub fn new(p: &Project) -> Self {
-        SettingsState { draft: p.settings.clone(), tab: 1, sort: 0, name: String::new(), name_src: String::new() }
+        SettingsState { draft: p.settings.clone(), tab: 1, sort: 0, name: String::new(), name_src: String::new(), sizes_text: None }
     }
 }
 
@@ -33,7 +36,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut SettingsState, actions:
     let units = doc.project.units;
     let storms: Vec<String> = crate::library::storm_names(&doc.project);
     crate::frame::Win::new("Calculation Settings").id(egui::Id::new("calc-settings")).collapsible(false).resizable(false).default_width(560.0).show(ctx, |ui| {
-        widgets::tabs(ui, &["General", "Rainfall", "Time Span", "Reports", "Unit Hydro", "Advanced"], &mut st.tab);
+        widgets::tabs(ui, &["General", "Rainfall", "Time Span", "Reports", "Unit Hydro", "Advanced", "Resize"], &mut st.tab);
         widgets::tab_body(ui, |ui| {
             ui.set_min_size(vec2(530.0, 280.0));
             match st.tab {
@@ -42,13 +45,15 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut SettingsState, actions:
                 2 => time_span(ui, &mut st.draft),
                 3 => reports_tab(ui, &mut st.draft),
                 4 => uh_tab(ui, &mut st.draft, &doc.project, actions),
-                _ => advanced(ui, &mut st.draft),
+                5 => advanced(ui, &mut st.draft),
+                _ => resize_tab(ui, &mut st.draft, &mut st.sizes_text, &units, &doc.project),
             }
         });
         let help = match st.tab {
             1 => "rainfall",
             2 | 3 => "start",
             4 | 0 => "runoff",
+            6 => "resize",
             _ => "cn",
         };
         match ok_cancel_apply(ui, true, help) {
@@ -303,6 +308,43 @@ fn uh_tab(ui: &mut Ui, s: &mut CalcSettings, project: &Project, actions: &mut Ve
     if let Some(u) = crate::library::find_uh(project, &s.uh) {
         ui.label(RichText::new(u.comment).color(Tokens::get(ui.ctx()).text_dim));
     }
+}
+
+fn resize_tab(ui: &mut Ui, s: &mut CalcSettings, sizes_text: &mut Option<String>, u: &Units, project: &Project) {
+    let t = Tokens::get(ui.ctx());
+    ui.label("Pipe reaches and culvert outlets marked \"Size automatically\" (round only) are set to the smallest size below that keeps the current event within the criterion. Nodes are sized in flow order.");
+    ui.add_space(4.0);
+    widgets::group(ui, "Size For", |ui| {
+        for c in ResizeCriterion::ALL {
+            if widgets::radio(ui, s.resize.criterion == c, c.label()).clicked() {
+                s.resize.criterion = c;
+            }
+        }
+    });
+    widgets::check(ui, &mut s.resize.allow_smaller, "Allow sizes smaller than the one entered");
+    ui.add_space(4.0);
+    // The size list is edited as text in the display's small length unit (inches or cm).
+    let text = sizes_text.get_or_insert_with(|| s.resize.sizes.iter().map(|d| format!("{}", (u.small_len(*d) * 100.0).round() / 100.0)).collect::<Vec<_>>().join(" "));
+    ui.label(format!("Available diameters ({}), separated by spaces:", u.small_len_label()));
+    if ui.add(egui::TextEdit::multiline(text).desired_rows(2).desired_width(500.0)).changed() {
+        let parsed: Vec<f64> = text.split([' ', ',', ';', '\n', '\t']).filter_map(|w| w.trim().parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0).map(|v| u.small_len_in(v)).collect();
+        if !parsed.is_empty() {
+            s.resize.sizes = parsed;
+        }
+    }
+    if widgets::button(ui, "Standard Sizes", 120.0).on_hover_text("Common round storm-drain diameters, 12\" to 144\"").clicked() {
+        s.resize.sizes = ResizeSettings::default().sizes;
+        *sizes_text = None;
+    }
+    let marked = project.nodes.iter().filter(|n| match &n.data {
+        NodeData::Reach(r) => r.auto_size,
+        NodeData::Pond(p) => p.devices.iter().any(|d| d.auto_size),
+        _ => false,
+    });
+    let names: Vec<String> = marked.map(|n| n.label()).collect();
+    ui.add_space(4.0);
+    let line = if names.is_empty() { "No pipes or culverts are marked for automatic sizing.".to_string() } else { format!("Marked for sizing: {}", names.join(", ")) };
+    ui.label(RichText::new(line).color(t.text_dim));
 }
 
 fn advanced(ui: &mut Ui, s: &mut CalcSettings) {

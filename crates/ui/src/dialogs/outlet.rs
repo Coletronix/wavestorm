@@ -118,6 +118,11 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                             inch(ui, "h", "Height:", height);
                         }
                     });
+                    if *shape == PipeShape::Round {
+                        widgets::with_tip(ui, "Each calculation sets the diameter to the smallest standard size that keeps the pond's peak for the current event at or below the culvert crown (or the pond's flood elevation). Sizes and the criterion are on Settings > Calculation > Resize.", |ui| {
+                            widgets::check(ui, &mut d.auto_size, "Size automatically");
+                        });
+                    }
                     ui.horizontal(|ui| {
                         let mut s = if *length > 0.0 { (d.invert - *outlet_invert) / *length } else { 0.0 };
                         if conv_field(ui, "slope", "Slope:", "ft/ft", &mut s, |x| x, |x| x, 4, 130.0) && s.is_finite() {

@@ -25,6 +25,7 @@ pub mod printing;
 pub mod profile;
 pub mod project;
 pub mod report;
+pub mod resize;
 pub mod rainfall;
 mod rainfall_data;
 pub mod rainlib;
