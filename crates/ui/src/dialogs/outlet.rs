@@ -435,18 +435,25 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                     });
                 }
                 DeviceKind::DelayedGate { trigger_elevation, delay, opening, width, height, cd } => {
-                    ui.horizontal(|ui| {
-                        len(ui, "inv", "Gate Invert:", &mut d.invert);
-                        len(ui, "trig", "Trigger Elevation:", trigger_elevation);
-                    });
-                    ui.horizontal(|ui| {
-                        conv_field(ui, "delay", "Time Delay:", "hours", delay, |x| x, |x| x.max(0.0), 2, 110.0);
-                        conv_field(ui, "open", "Opening Time:", "hours", opening, |x| x, |x| x.max(0.0), 2, 110.0);
-                    });
-                    ui.horizontal(|ui| {
-                        inch(ui, "w", "Width:", width);
-                        inch(ui, "h", "Height:", height);
-                        conv_field(ui, "cd", "Coefficient:", "", cd, |x| x, |x| x.clamp(0.0, 1.0), 3, 100.0);
+                    // Reference layout: timing column, invert column, inlet-size group.
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            len(ui, "trig", "Trigger Elevation:", trigger_elevation);
+                            conv_field(ui, "delay", "Time Delay:", "hours", delay, |x| x, |x| x.max(0.0), 2, 130.0);
+                            conv_field(ui, "open", "Opening Time:", "hours", opening, |x| x, |x| x.max(0.0), 2, 130.0);
+                        });
+                        ui.add_space(8.0);
+                        ui.vertical(|ui| {
+                            len(ui, "inv", "Invert Elevation:", &mut d.invert);
+                        });
+                        ui.add_space(8.0);
+                        ui.vertical(|ui| {
+                            widgets::group(ui, "Inlet Size:", |ui| {
+                                inch(ui, "w", "Width:", width);
+                                inch(ui, "h", "Height:", height);
+                            });
+                            conv_field(ui, "cd", "Orifice Coefficient:", "", cd, |x| x, |x| x.clamp(0.0, 1.0), 3, 130.0);
+                        });
                     });
                 }
                 DeviceKind::Channel { section, n, slope } => {
