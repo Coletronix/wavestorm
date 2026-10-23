@@ -172,6 +172,49 @@ impl PeakWorksheet {
     }
 }
 
+/// Worksheet 4 for every event of a subcatchment (`area_sf`, composite `cn`, `tc` hours), one
+/// column per event as on the printed worksheet. Events whose storm is not an NRCS type I, IA,
+/// II or III distribution are listed as not applicable.
+pub fn worksheet_report(area_sf: f64, cn: f64, tc: f64, events: &[crate::rainfall::RainEvent]) -> Vec<String> {
+    let mut out = vec!["TR-55 Graphical Peak Discharge (worksheet 4)".to_string(), String::new()];
+    out.push(format!("Drainage area, Am = {:.4} sq mi ({:.2} ac)", area_sf / 27_878_400.0, area_sf / 43_560.0));
+    out.push(format!("Runoff curve number, CN = {cn:.0}"));
+    out.push(format!("Time of concentration, Tc = {tc:.2} hr"));
+    out.push("Pond and swamp areas = 0.0 % of Am (Fp = 1.00)".into());
+    out.push(String::new());
+    let sheets: Vec<(String, Option<PeakWorksheet>)> =
+        events.iter().map(|e| (e.name.clone(), Distribution::from_storm(&e.storm).map(|d| graphical_peak(area_sf, cn, tc, d, e.depth, 0.0)))).collect();
+    let row = |label: &str, f: &dyn Fn(&PeakWorksheet) -> String| {
+        let mut s = format!("{label:<34}");
+        for (_, w) in &sheets {
+            s.push_str(&format!("{:>12}", w.as_ref().map_or("n/a".to_string(), f)));
+        }
+        s
+    };
+    let mut head = format!("{:<34}", "");
+    for (name, _) in &sheets {
+        head.push_str(&format!("{name:>12}"));
+    }
+    out.push(head);
+    out.push(row("Rainfall distribution", &|w| format!("Type {}", w.dist.label())));
+    out.push(row("Rainfall, P (24-hour), in", &|w| format!("{:.2}", w.rainfall)));
+    out.push(row("Initial abstraction, Ia, in", &|w| format!("{:.3}", w.ia)));
+    out.push(row("Ia/P", &|w| format!("{:.2}", w.ia_p)));
+    out.push(row("Unit peak discharge, qu, csm/in", &|w| format!("{:.0}", w.qu)));
+    out.push(row("Runoff, Q, in", &|w| format!("{:.2}", w.runoff)));
+    out.push(row("Pond and swamp factor, Fp", &|w| format!("{:.2}", w.fp)));
+    out.push(row("Peak discharge, qp, cfs", &|w| format!("{:.2}", w.qp)));
+    out.push(String::new());
+    if sheets.iter().any(|(_, w)| w.is_some_and(|w| w.out_of_range)) {
+        out.push("Note: Tc or Ia/P is outside the method's range (Tc 0.1-10 hr, Ia/P 0.1-0.5) and was limited to it.".into());
+    }
+    if sheets.iter().any(|(_, w)| w.is_none()) {
+        out.push("n/a: the graphical method applies only to the NRCS 24-hour type I, IA, II and III storms.".into());
+    }
+    out.push("The graphical method is a check on peak discharge only; the hydrographs use the unit-hydrograph method.".into());
+    out
+}
+
 /// Storage ratio Vs/Vr for an outflow/inflow peak ratio (figure 6-1, valid 0.1-0.8).
 pub fn storage_ratio(dist: Distribution, qo_qi: f64) -> f64 {
     let (c0, c1, c2, c3) = dist.storage_coefs();

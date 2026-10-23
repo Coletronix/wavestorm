@@ -6,6 +6,14 @@ use stormwaves_ui::StormwavesApp;
 use stormwaves_ui::platform::{Incoming, Purpose};
 use stormwaves_ui::windows::Window;
 
+/// The rainfall library is process-wide (one app per process); every app created here resets
+/// it, so the tests in this file run one at a time.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 const DECK: &str = "\
 JOB TR-20
 TITLE    SMALL TEST JOB
@@ -38,6 +46,7 @@ by duration for ARI (years):, 1,2,5,10,25,50,100,200,500,1000
 
 #[test]
 fn noaa_lookup_creates_events() {
+    let _serial = serial();
     let mut h = egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), StormwavesApp::headless());
     h.run_steps(2);
     stormwaves_ui::script(h.state_mut(), "settings");
@@ -62,6 +71,7 @@ fn noaa_lookup_creates_events() {
 
 #[test]
 fn tr20_import_opens_a_new_project() {
+    let _serial = serial();
     let mut h = egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), StormwavesApp::headless());
     h.run_steps(2);
     let before = h.state().docs.len();
@@ -82,6 +92,7 @@ const COUNTY_TABLE: &str = "ID,State,County,Storm,1-Year,2-Year,10-Year\r\n\"1\"
 
 #[test]
 fn county_lookup_and_library_storms_join_the_project() {
+    let _serial = serial();
     let mut h = egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), StormwavesApp::headless());
     h.run_steps(2);
     // A library storm imported as a file, then a county table loaded into the lookup.

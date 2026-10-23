@@ -21,6 +21,8 @@ pub enum Tab {
     Events,
     Sizing,
     Profile,
+    /// TR-55 graphical peak discharge worksheet (subcatchments).
+    Tr55,
 }
 
 impl Tab {
@@ -33,6 +35,7 @@ impl Tab {
             Tab::Events => "Events",
             Tab::Sizing => "Sizing",
             Tab::Profile => "Profile",
+            Tab::Tr55 => "TR-55",
         }
     }
 }
@@ -59,7 +62,7 @@ fn tabs_for(t: NodeType) -> Vec<Tab> {
     match t {
         NodeType::Pond => vec![Tab::Summary, Tab::Hydrograph, Tab::Discharge, Tab::Storage, Tab::Events, Tab::Sizing, Tab::Profile],
         NodeType::Reach => vec![Tab::Summary, Tab::Hydrograph, Tab::Discharge, Tab::Events, Tab::Profile],
-        NodeType::Subcat => vec![Tab::Summary, Tab::Hydrograph, Tab::Events, Tab::Profile],
+        NodeType::Subcat => vec![Tab::Summary, Tab::Hydrograph, Tab::Events, Tab::Profile, Tab::Tr55],
         _ => vec![Tab::Summary, Tab::Hydrograph, Tab::Events],
     }
 }
@@ -456,6 +459,13 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
             events_tab(ui, project, node, all, size);
         }
         Tab::Sizing => sizing_tab(ui, project, node, r, st, size),
+        Tab::Tr55 => {
+            let lines = match &r.detail {
+                Detail::Subcat(d) => stormwaves_core::tr55::worksheet_report(d.composite.total_area, d.composite.cn, d.tc_minutes / 60.0, &project.settings.events),
+                _ => vec!["Not available.".into()],
+            };
+            text_area(ui, &lines, size.y);
+        }
         Tab::Profile => {
             let prof = stormwaves_core::profile::chain(project, Some(&doc.results), &[node.id]);
             profile_view(ui, &prof, size);
