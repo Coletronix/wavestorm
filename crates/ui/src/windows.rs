@@ -75,7 +75,7 @@ pub fn show_all(ctx: &egui::Context, doc: &mut Doc) -> Vec<WindowAction> {
             Window::Units(s) => dialogs::misc::units(ctx, doc, s),
             Window::Diagram(s) => dialogs::misc::diagram(ctx, doc, s),
             Window::Notes(s) => dialogs::misc::notes(ctx, doc, s),
-            Window::ProjectReport(s) => reports::show_project_report(ctx, doc, s),
+            Window::ProjectReport(s) => reports::show_project_report(ctx, doc, s, &mut actions),
             Window::Compare(s) => reports::show_compare(ctx, doc, s, &mut actions),
             Window::Messages => reports::show_messages(ctx, doc, &mut actions),
             Window::About => dialogs::misc::about(ctx),

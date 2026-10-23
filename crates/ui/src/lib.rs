@@ -1460,7 +1460,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             app.open_window(Window::Units(st));
         }
         "messages" => app.open_window(Window::Messages),
-        "project-report" => app.open_window(Window::ProjectReport(reports::ProjectReportState::default())),
+        "project-report" => app.open_window(Window::ProjectReport(reports::ProjectReportState { tab: arg.trim().parse().unwrap_or(0), ..Default::default() })),
         "general" => {
             let st = dialogs::misc::GeneralState { draft: app.prefs.clone() };
             app.open_window(Window::General(st));

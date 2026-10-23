@@ -430,6 +430,19 @@ pub fn report_pdf(project: &Project, results: &Results, opts: &PrintOptions) -> 
     c.doc.finish()
 }
 
+/// A PDF of monospace text lines under the usual page header (Project Reports listings).
+pub fn lines_pdf(project: &Project, results: &Results, title: &str, lines: &[String], date: &str) -> Vec<u8> {
+    let opts = PrintOptions { date: date.to_string(), ..Default::default() };
+    let mut c = Ctx { project, results, opts: &opts, doc: Document::new(&project.title) };
+    let mut page = c.new_page(false);
+    // Shrink wide listings to fit the page width.
+    let widest = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0).max(1) as f32;
+    let size = ((LETTER.0 - 2.0 * MARGIN) / (widest * 0.6)).clamp(5.0, 9.0);
+    c.text_block(&mut page, BODY_TOP, Some(title), lines, size);
+    c.doc.add(page);
+    c.doc.finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

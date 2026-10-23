@@ -43,9 +43,14 @@ pub struct LoadRow {
 
 /// Aggregates every sub-area by land use and computes loads.
 pub fn loading(project: &Project, results: &Results) -> Vec<LoadRow> {
+    loading_where(project, results, &|_| true)
+}
+
+/// As [`loading`], for the subcatchments `keep` accepts.
+pub fn loading_where(project: &Project, results: &Results, keep: &dyn Fn(crate::project::NodeId) -> bool) -> Vec<LoadRow> {
     let s = &project.land_use;
     let mut rows: Vec<LoadRow> = Vec::new();
-    for n in &project.nodes {
+    for n in project.nodes.iter().filter(|n| keep(n.id)) {
         let NodeData::Subcat(sc) = &n.data else { continue };
         let event_depth = match results.node(n.id).map(|r| (&r.detail, r.outflow.volume_cf())) {
             Some((Detail::Subcat(d), vol)) if d.composite.total_area > 0.0 => vol / d.composite.total_area * 12.0,

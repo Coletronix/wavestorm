@@ -583,6 +583,11 @@ fn fixed_tw(t: stormwaves_core::project::Tailwater) -> Option<f64> {
 /// the first `text_cols` columns left-aligned and numbers right-aligned, and an optional bold row
 /// (the largest event, or a total).
 fn report_table(ui: &mut Ui, size: egui::Vec2, heads: &[(String, String)], rows: &[Vec<String>], text_cols: usize, bold: Option<usize>) {
+    report_table_with(ui, size, heads, rows, &|c| c < text_cols, bold);
+}
+
+/// [`report_table`] with any set of text (left-aligned) columns.
+fn report_table_with(ui: &mut Ui, size: egui::Vec2, heads: &[(String, String)], rows: &[Vec<String>], is_text: &dyn Fn(usize) -> bool, bold: Option<usize>) {
     let t = Tokens::get(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     widgets::sunken(ui.painter(), rect, t.field, &t);
@@ -603,7 +608,7 @@ fn report_table(ui: &mut Ui, size: egui::Vec2, heads: &[(String, String)], rows:
         let p = ui.painter();
         let cell = |row_y: f32, c: usize, text: &str, strong: bool| {
             let x0 = area.left() + 8.0 + widths[..c].iter().sum::<f32>();
-            let (pos, align) = if c < text_cols { (egui::pos2(x0 + 4.0, row_y), Align2::LEFT_TOP) } else { (egui::pos2(x0 + widths[c] - 4.0, row_y), Align2::RIGHT_TOP) };
+            let (pos, align) = if is_text(c) { (egui::pos2(x0 + 4.0, row_y), Align2::LEFT_TOP) } else { (egui::pos2(x0 + widths[c] - 4.0, row_y), Align2::RIGHT_TOP) };
             if strong {
                 // Bold by over-striking, as the proportional UI font has no bold face.
                 p.text(pos + vec2(0.6, 0.0), align, text, font.clone(), t.text);
@@ -679,29 +684,58 @@ pub struct ProjectReportState {
     pub tab: usize,
     /// Distinguishes windows when several Project Reports are open at once.
     pub serial: u64,
+    /// List only the selected nodes (otherwise all nodes).
+    pub selected_only: bool,
+    pub hide_totals: bool,
 }
 
-pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectReportState) -> bool {
+const PROJECT_TABS: [&str; 10] = ["Node Listing", "Area Listing", "Soil Listing", "Land-Use", "Pollutants", "Subcat Loading", "Project Loading", "Pipe Listing", "Events", "Notes"];
+
+enum Listing {
+    Text(Vec<String>),
+    Table(stormwaves_core::listings::Table),
+}
+
+impl Listing {
+    fn lines(&self) -> Vec<String> {
+        match self {
+            Listing::Text(l) => l.clone(),
+            Listing::Table(t) => t.text_lines(),
+        }
+    }
+}
+
+pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectReportState, actions: &mut Vec<WindowAction>) -> bool {
+    use stormwaves_core::listings;
     let mut open = true;
-    crate::frame::Win::new(format!("Project Reports - {}", doc.project.title)).id(egui::Id::new(("project-report", st.serial))).open(&mut open).default_size(vec2(760.0, 460.0)).resizable(true).min_max().show(ctx, |ui| {
-        ui.horizontal(|ui| {
+    crate::frame::Win::new(format!("Project Reports - {}", doc.project.title)).id(egui::Id::new(("project-report", st.serial))).open(&mut open).default_size(vec2(820.0, 460.0)).resizable(true).min_max().show(ctx, |ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
-            for (i, name) in ["Node Listing", "Area Listing", "Soil Listing", "Events", "Notes", "Pollutant Loading"].iter().enumerate() {
+            for (i, name) in PROJECT_TABS.iter().enumerate() {
                 if tab_button(ui, name, st.tab == i) {
                     st.tab = i;
                 }
             }
         });
         ui.add_space(4.0);
-        let lines = match st.tab {
+        let selection = doc.selection.clone();
+        let only = st.selected_only.then_some(selection.as_slice());
+        let totals = !st.hide_totals;
+        let (p, r) = (&doc.project, &doc.results);
+        let listing = match st.tab {
             0 => {
                 let mut l = vec![doc.results.event_heading.clone(), String::new()];
                 l.extend(report::node_listing(&doc.project, &doc.results));
-                l
+                Listing::Text(l)
             }
-            1 => report::area_listing(&doc.project),
-            2 => report::soil_listing(&doc.project),
-            3 => {
+            1 => Listing::Table(listings::area_table(p, only, totals)),
+            2 => Listing::Table(listings::soil_table(p, only, totals)),
+            3 => Listing::Table(listings::land_use_table(p, only, totals)),
+            4 => Listing::Table(listings::pollutants_table(p)),
+            5 => Listing::Table(listings::subcat_loading_table(p, r, only, totals)),
+            6 => Listing::Table(listings::project_loading_table(p, r, only, totals)),
+            7 => Listing::Table(listings::pipe_table(p, only)),
+            8 => Listing::Text({
                 let u = doc.project.units;
                 let mut l = vec![format!("{:<16} {:<28} {:>10} {:>10} {:>6} {:>4}", "Event", "Storm Type", "Duration", "Depth", "B/B", "AMC")];
                 for e in &doc.project.settings.events {
@@ -719,9 +753,8 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
                     ));
                 }
                 l
-            }
-            5 => stormwaves_core::landuse::loading_report(&doc.project, &doc.results),
-            _ => {
+            }),
+            _ => Listing::Text({
                 let mut l: Vec<String> = doc.project.notes.lines().map(String::from).collect();
                 for n in &doc.project.nodes {
                     if !n.notes.trim().is_empty() {
@@ -731,10 +764,61 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
                     }
                 }
                 l
-            }
+            }),
         };
-        let h = ui.available_height().max(120.0);
-        text_area(ui, &lines, h);
+        let name = PROJECT_TABS.get(st.tab).copied().unwrap_or("Listing");
+        let avail = ui.available_size();
+        ui.horizontal(|ui| {
+            let body = vec2((avail.x - 112.0).max(200.0), (avail.y - 6.0).max(120.0));
+            ui.vertical(|ui| {
+                ui.set_width(body.x);
+                match &listing {
+                    Listing::Text(lines) => text_area(ui, lines, body.y),
+                    Listing::Table(t) if t.rows.is_empty() => text_area(ui, &t.text_lines(), body.y),
+                    Listing::Table(t) => report_table_with(ui, body, &t.heads, &t.rows, &|c| t.is_text(c), t.total),
+                }
+            });
+            ui.vertical(|ui| {
+                // The reference's options sit above its usual button column.
+                ui.spacing_mut().item_spacing.y = 4.0;
+                if widgets::radio(ui, !st.selected_only, "All Nodes").clicked() {
+                    st.selected_only = false;
+                }
+                if widgets::radio(ui, st.selected_only, "Selected Nodes").clicked() {
+                    st.selected_only = true;
+                }
+                let mut show = !st.hide_totals;
+                if widgets::check(ui, &mut show, "Show Totals").changed() {
+                    st.hide_totals = !show;
+                }
+                ui.add_space(8.0);
+                widgets::toggle_button(ui, "Table", 62.0, false, false);
+                widgets::toggle_button(ui, "Shrink", 62.0, false, false);
+                if widgets::button(ui, "Print", 62.0).on_hover_text("Print this listing (PDF)").clicked() {
+                    let bytes = stormwaves_core::printing::lines_pdf(&doc.project, &doc.results, name, &listing.lines(), &crate::dialogs::misc::today());
+                    actions.push(WindowAction::SaveFile { name: format!("{} - {name}.pdf", doc.project.title), bytes, ext: "pdf" });
+                }
+                let export = widgets::button(ui, "Export", 62.0);
+                egui::Popup::menu(&export).show(|ui| {
+                    if ui.button("Copy to Clipboard").clicked() {
+                        ui.ctx().copy_text(listing.lines().join("\n"));
+                        actions.push(WindowAction::Status(format!("{name} copied to the clipboard")));
+                    }
+                    if ui.button("Save as Text...").clicked() {
+                        actions.push(WindowAction::SaveFile { name: format!("{name}.txt"), bytes: listing.lines().join("\n").into_bytes(), ext: "txt" });
+                    }
+                    if let Listing::Table(t) = &listing {
+                        if ui.button("Save as CSV...").clicked() {
+                            actions.push(WindowAction::SaveFile { name: format!("{name}.csv"), bytes: t.csv().into_bytes(), ext: "csv" });
+                        }
+                    }
+                });
+                widgets::button_enabled(ui, "Edit", 62.0, false);
+                if widgets::button(ui, "Help", 62.0).clicked() {
+                    actions.push(WindowAction::Help("project-reports"));
+                }
+            });
+        });
     });
     open
 }
