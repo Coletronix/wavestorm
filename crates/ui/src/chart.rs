@@ -107,7 +107,7 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
 
     let summary_w = if spec.summary.is_empty() { 0.0 } else { (rect.width() * 0.34).min(260.0) };
     let legend_w: f32 = if spec.series.len() > 1 || !spec.summary.is_empty() { 96.0 } else { 0.0 };
-    let depth = if spec.three_d { vec2(10.0, -7.0) * (spec.series.len().max(1) as f32).sqrt() } else { Vec2::ZERO };
+    let depth = if spec.three_d { vec2(10.0, -7.0) * (spec.series.len().clamp(2, 5) as f32) } else { Vec2::ZERO };
     let plot = Rect::from_min_max(pos2(rect.min.x + 58.0, top + 6.0 - depth.y), pos2(rect.max.x - legend_w.max(16.0) - depth.x, rect.max.y - 40.0));
     if plot.width() < 40.0 || plot.height() < 40.0 {
         return;
@@ -173,18 +173,19 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     let n = spec.series.len();
     let mut peak_boxes: Vec<(Pos2, String, Color32)> = Vec::new();
     for (i, s) in spec.series.iter().enumerate() {
-        let k = if spec.three_d && n > 1 { (n - 1 - i) as f32 / (n - 1) as f32 } else { 0.0 };
-        let off = depth * k;
+        let off = if spec.three_d { depth / (n.max(1) as f32) * (n - 1 - i) as f32 } else { Vec2::ZERO };
         let pts: Vec<Pos2> = s.x.iter().zip(&s.y).filter(|(x, y)| x.is_finite() && y.is_finite()).map(|(x, y)| pos2(sx(*x), sy(*y)) + off).collect();
         if pts.len() < 2 {
             continue;
         }
         if spec.three_d {
             let base = sy(y0.max(0.0).min(y1)) ;
-            let light = Color32::from_rgba_unmultiplied(s.color.r(), s.color.g(), s.color.b(), 70);
-            // Area under the curve in thin vertical strips (works for any shape).
-            // Filled area and ribbon as plain triangle meshes (no feathering, so no spikes on
-            // degenerate quads).
+            // Solid extrusion: front face (area under the curve, light tint), top face (ribbon
+            // swept straight back in depth, series colour) and a darker right end cap. Opaque
+            // triangle meshes only, so steep spikes stay clean.
+            let tint = lerp_color(s.color, Color32::WHITE, 0.45);
+            let top_face = lerp_color(s.color, Color32::WHITE, 0.25);
+            let edge = lerp_color(s.color, Color32::BLACK, 0.45);
             let mut mesh = egui::Mesh::default();
             let quad = |m: &mut egui::Mesh, q: [Pos2; 4], c: Color32| {
                 let i = m.vertices.len() as u32;
@@ -195,31 +196,18 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
                 m.add_triangle(i, i + 2, i + 3);
             };
             let rib = depth / (n.max(1) as f32) * 0.8;
+            let (first, last) = (pts[0], pts[pts.len() - 1]);
             for w in pts.windows(2) {
-                quad(&mut mesh, [w[0], w[1], pos2(w[1].x, base + off.y), pos2(w[0].x, base + off.y)], light);
+                quad(&mut mesh, [w[0] + rib, w[1] + rib, w[1], w[0]], top_face);
             }
+            quad(&mut mesh, [last + rib, pos2(last.x, base + off.y) + rib, pos2(last.x, base + off.y), last], edge);
             for w in pts.windows(2) {
-                quad(&mut mesh, [w[0], w[1], w[1] + rib, w[0] + rib], s.color);
+                quad(&mut mesh, [w[0], w[1], pos2(w[1].x, base + off.y), pos2(w[0].x, base + off.y)], tint);
             }
             clip.add(Shape::mesh(mesh));
-            clip.add(Shape::line(pts.clone(), Stroke::new(1.0, s.color.gamma_multiply(0.6))));
-            // Diagonal hatch under the curve.
-            let step = 7.0;
-            let mut hx = plot.min.x;
-            while hx < plot.max.x {
-                let xv = x0 + ((hx - plot.min.x) / plot.width()) as f64 * (x1 - x0);
-                let yv = interp(&s.x, &s.y, xv);
-                if let Some(yv) = yv {
-                    let top = sy(yv) + off.y;
-                    let bottom = base + off.y;
-                    if bottom - top > 4.0 {
-                        let a = pos2(hx + off.x, bottom);
-                        let b = pos2(hx + off.x + (bottom - top).min(step * 1.2), (bottom - (bottom - top).min(step * 1.2)).max(top));
-                        clip.line_segment([a, b], Stroke::new(1.0, s.color.gamma_multiply(0.7)));
-                    }
-                }
-                hx += step;
-            }
+            clip.add(Shape::line(pts.iter().map(|q| *q + rib).collect(), Stroke::new(1.0, edge)));
+            clip.add(Shape::line(pts.clone(), Stroke::new(1.8, s.color)));
+            let _ = first;
         } else {
             clip.add(Shape::line(pts.clone(), Stroke::new(2.0, s.color)));
         }
@@ -235,7 +223,7 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     }
     // Summary text (right-aligned, large, bold).
     if !spec.summary.is_empty() {
-        let size = (plot.height() / (spec.summary.len() as f32 + 1.0)).clamp(11.0, 20.0);
+        let size = (plot.height() / (spec.summary.len() as f32 + 1.0)).clamp(11.0, 16.0);
         let mut sy_ = plot.min.y + 4.0;
         let x = plot.max.x - 6.0;
         for line in spec.summary {
@@ -316,6 +304,12 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     }
 }
 
+fn lerp_color(a: Color32, b: Color32, f: f32) -> Color32 {
+    let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * f).round().clamp(0.0, 255.0) as u8;
+    Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
+}
+
+#[cfg(test)]
 fn interp(xs: &[f64], ys: &[f64], x: f64) -> Option<f64> {
     if xs.len() < 2 {
         return None;
