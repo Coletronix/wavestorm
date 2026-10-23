@@ -1,6 +1,6 @@
 [package]
 name = "stormwaves"
-description = "Stormwaves desktop application"
+description = "StormWAVES desktop application"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

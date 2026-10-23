@@ -1,4 +1,4 @@
-//! Stormwaves in the browser: the same app as the desktop build, through eframe's web runner.
+//! StormWAVES in the browser: the same app as the desktop build, through eframe's web runner.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -21,7 +21,7 @@ fn main() {
         if let Some(el) = document.get_element_by_id("stormwaves_loading") {
             match result {
                 Ok(()) => el.remove(),
-                Err(e) => el.set_inner_html(&format!("<p>Stormwaves failed to start: {e:?}</p><p>A browser with WebGPU or WebGL2 is required.</p>")),
+                Err(e) => el.set_inner_html(&format!("<p>StormWAVES failed to start: {e:?}</p><p>A browser with WebGPU or WebGL2 is required.</p>")),
             }
         }
     });

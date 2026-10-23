@@ -1,12 +1,12 @@
-# Stormwaves
+<h1><img src="crates/ui/assets/logo.svg" alt="StormWAVES" width="480"></h1>
 
 **Open-source stormwater modelling for the desktop and the browser.** Draw a routing diagram of
-subcatchments, reaches, ponds and links. Stormwaves then computes NRCS (SCS) TR-55 / TR-20
+subcatchments, reaches, ponds and links. StormWAVES then computes NRCS (SCS) TR-55 / TR-20
 runoff hydrographs and routes them through channels, pipes, detention ponds and outlet
 structures. It produces the summaries, graphs and tables an engineer needs for a stormwater
 report.
 
-Stormwaves is written entirely in Rust. The same code runs natively on Linux, Windows and macOS
+StormWAVES is written entirely in Rust. The same code runs natively on Linux, Windows and macOS
 ([egui](https://github.com/emilk/egui)/eframe) and in any modern browser (WebAssembly).
 
 ![Routing diagram](docs/screenshots/main.png)
@@ -148,8 +148,8 @@ The built-in help (**Help > Contents**) covers the dialogs and the calculation m
 
 | Extension | Read | Write | Notes |
 |---|:---:|:---:|---|
-| `.waves` | ✓ | ✓ | Native Stormwaves project (JSON) |
-| `.hcp` | ✓ | ✓ | Interchange project format of a widely used commercial package. Settings Stormwaves does not model are kept and written back unchanged. English-unit files only for now. |
+| `.waves` | ✓ | ✓ | Native StormWAVES project (JSON) |
+| `.hcp` | ✓ | ✓ | Interchange project format of a widely used commercial package. Settings StormWAVES does not model are kept and written back unchanged. English-unit files only for now. |
 | `.hcr` | ✓ | ✓ | Rainfall distribution |
 | `.huh` | ✓ | ✓ | Dimensionless unit hydrograph |
 | `*-Rain.txt` | ✓ | | County rainfall tables for Rainfall Event Lookup |
@@ -160,7 +160,7 @@ The built-in help (**Help > Contents**) covers the dialogs and the calculation m
 | `.pdf` / `.emf` / `.txt` | | ✓ | Reports and vector graphics |
 
 Third-party rainfall libraries and project files are loaded at runtime from files you supply.
-None are bundled with Stormwaves.
+None are bundled with StormWAVES.
 
 ## Methods and validation
 
@@ -179,7 +179,7 @@ Every algorithm has unit tests. Golden tests reproduce published results:
 
 The calibration choices are described in [AGENTS.md](AGENTS.md#3-methods-confirmed-against-published-reference-results).
 
-Stormwaves is engineering software provided without warranty. Check its results
+StormWAVES is engineering software provided without warranty. Check its results
 independently before relying on them for design.
 
 ## Project layout

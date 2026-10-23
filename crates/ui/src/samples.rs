@@ -29,7 +29,7 @@ fn subcat(p: &mut Project, number: &str, name: &str, pos: [f64; 2], areas: Vec<S
 pub fn sample_project() -> Project {
     let mut p = Project::default();
     p.title = "Brookside Commons".into();
-    p.prepared_by = "Stormwaves sample".into();
+    p.prepared_by = "StormWAVES sample".into();
     p.notes = "Demonstration project: post-development runoff routed through a swale and a detention basin.".into();
     p.settings.current_event = 2;
 

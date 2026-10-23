@@ -443,7 +443,7 @@ fn build_storm(name: &str, c: &Curve, tu: f64, du: f64) -> Result<Storm, String>
 /// Writes a storm as a rainfall file (mass curve points, or time/depth pairs for uneven times).
 pub fn write_hcr(storm: &Storm) -> String {
     let clean = |s: &str| s.replace(['\r', '\n'], " ");
-    let mut out = String::from("// Stormwaves rainfall table\n\n");
+    let mut out = String::from("// StormWAVES rainfall table\n\n");
     out.push_str(&format!("name={}\n", clean(&storm.name)));
     if !storm.comment.is_empty() {
         out.push_str(&format!("comment={}\n", clean(&storm.comment)));
@@ -520,7 +520,7 @@ pub fn parse_huh(text: &str) -> Result<UnitHydrograph, String> {
 /// Writes a unit hydrograph at an even t/Tp spacing that places the peak on an ordinate.
 pub fn write_huh(uh: &UnitHydrograph) -> String {
     let clean = |s: &str| s.replace(['\r', '\n'], " ");
-    let mut out = String::from("// Stormwaves unit hydrograph table\n\n");
+    let mut out = String::from("// StormWAVES unit hydrograph table\n\n");
     out.push_str(&format!("name={}\n", clean(&uh.name)));
     if !uh.comment.is_empty() {
         out.push_str(&format!("comment={}\n", clean(&uh.comment)));
@@ -725,11 +725,11 @@ pub fn parse_idf(text: &str) -> Result<IdfFile, String> {
 /// Shown wherever `.idf` files are read or written: no real `.idf` file has been available to
 /// check against, so the layout is our own guess and may not match other programs' files.
 pub const IDF_PROVISIONAL: &str =
-    "IDF (.idf) support is provisional: the file layout is Stormwaves' own and has not been verified against real .idf files from other programs.";
+    "IDF (.idf) support is provisional: the file layout is StormWAVES' own and has not been verified against real .idf files from other programs.";
 
 pub fn write_idf(idf: &IdfFile) -> String {
     let clean = |s: &str| s.replace(['\r', '\n'], " ");
-    let mut out = format!("// Stormwaves IDF curve file (PROVISIONAL FORMAT)\n// {IDF_PROVISIONAL}\n\n");
+    let mut out = format!("// StormWAVES IDF curve file (PROVISIONAL FORMAT)\n// {IDF_PROVISIONAL}\n\n");
     out.push_str(&format!("name={}\n", clean(&idf.name)));
     if !idf.comment.is_empty() {
         out.push_str(&format!("comment={}\n", clean(&idf.comment)));

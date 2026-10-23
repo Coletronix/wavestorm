@@ -1,6 +1,6 @@
 [package]
 name = "stormwaves-ui"
-description = "egui application shell for Stormwaves"
+description = "egui application shell for StormWAVES"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

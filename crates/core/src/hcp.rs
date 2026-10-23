@@ -5,7 +5,7 @@
 //! `[TC]`, `[STORAGE]`, `[STAGE]`, `[DEVICE]`). Lengths are feet, areas square feet, times
 //! seconds and rain depths feet. Keys and sections this model does not represent are kept
 //! verbatim in `foreign` fields (project, node and per-record scopes) and written back on export,
-//! so a file survives a round trip through Stormwaves.
+//! so a file survives a round trip through StormWAVES.
 //!
 //! Importing never panics: unknown or malformed data produces warnings and defaults.
 
@@ -1277,7 +1277,7 @@ fn export_device(o: &mut Out, d: &OutletDevice, f: &[ForeignEntry], scope: &str)
             o.num("C", *cv);
         }
         other => {
-            // No known counterpart in the interchange format: written by its Stormwaves name.
+            // No known counterpart in the interchange format: written by its StormWAVES name.
             o.kv("Type", other.label());
             o.kv("Desc", &d.description);
             o.num("Invert", d.invert);

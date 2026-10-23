@@ -1,4 +1,4 @@
-//! Stormwaves user interface (egui). The same code runs on the desktop and in the browser.
+//! StormWAVES user interface (egui). The same code runs on the desktop and in the browser.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -10,6 +10,7 @@ pub mod frame;
 pub mod help;
 pub mod icons;
 pub mod library;
+pub mod logo;
 pub mod platform;
 pub mod prefs;
 pub mod reports;
@@ -125,7 +126,7 @@ impl StormwavesApp {
                 let (project, warnings) = if is_hcp {
                     stormwaves_core::hcp::import_bytes(&item.bytes)?
                 } else {
-                    let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a Stormwaves project (not text).".to_string())?;
+                    let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a StormWAVES project (not text).".to_string())?;
                     (Project::from_json(&text)?, Vec::new())
                 };
                 // Replace an untouched empty first project.
@@ -146,7 +147,7 @@ impl StormwavesApp {
                 }
             }
             Purpose::MergeProject => {
-                let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a Stormwaves project (not text).".to_string())?;
+                let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a StormWAVES project (not text).".to_string())?;
                 let other = Project::from_json(&text)?;
                 let mut added = 0;
                 self.doc().edit("Project Merge", |p| added = stormwaves_core::exchange::merge(p, &other));
@@ -834,7 +835,7 @@ impl StormwavesApp {
                     self.open_window(Window::Help(help::HelpState::topic("runoff")));
                 }
                 ui.separator();
-                if ui.button("About Stormwaves").clicked() {
+                if ui.button("About StormWAVES").clicked() {
                     self.open_window(Window::About);
                 }
             });
@@ -1352,7 +1353,7 @@ impl StormwavesApp {
     fn error_dialog(&mut self, ctx: &egui::Context) {
         let Some(msg) = self.error.clone() else { return };
         let mut open = true;
-        crate::frame::Win::new("Stormwaves").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
+        crate::frame::Win::new("StormWAVES").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
             ui.set_max_width(420.0);
             ui.label(&msg);
             ui.add_space(8.0);
@@ -1422,7 +1423,7 @@ impl StormwavesApp {
             self.open_window(Window::Help(help::HelpState::topic(topic)));
         }
         self.error_dialog(&ctx);
-        let title = format!("{} - Stormwaves", self.doc().title());
+        let title = format!("{} - StormWAVES", self.doc().title());
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         let _ = Stroke::NONE;
         let _ = Color32::BLACK;
@@ -1615,6 +1616,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         "new" => app.new_project(),
         "trace" => app.start_trace(),
         "help" => app.open_window(Window::Help(help::HelpState::topic(if arg.is_empty() { "start" } else { arg }))),
+        "about" => app.open_window(Window::About),
         "print" => app.open_window(Window::Print(dialogs::misc::PrintState::default())),
         "calibrate" => app.tool = Tool::Calibrate { points: Vec::new() },
         "measure" => app.tool = Tool::Measure { points: Vec::new() },

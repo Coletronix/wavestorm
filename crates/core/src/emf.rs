@@ -398,7 +398,7 @@ pub fn page_to_emf(page: &Page) -> Vec<u8> {
         bnd = [0, 0, 0, 0];
     }
     let bnd = [bnd[0].max(0), bnd[1].max(0), bnd[2].min(fw - 1).max(0), bnd[3].min(fh - 1).max(0)];
-    let description: Vec<u16> = "Stormwaves\0\0".encode_utf16().collect();
+    let description: Vec<u16> = "StormWAVES\0\0".encode_utf16().collect();
     let header_size = 100 + description.len() * 2;
     let total = header_size + s.w.bytes.len();
     let mut h = Vec::new();
@@ -495,7 +495,7 @@ mod tests {
         assert_eq!(rd(&b, 36), 11430);
         // Bounds are inside the frame.
         assert!(rd(&b, 16) <= 19050 && rd(&b, 20) <= 11430);
-        // Description is UTF-16 "Stormwaves".
+        // Description is UTF-16 "StormWAVES".
         let off = rd(&b, 64) as usize;
         assert_eq!(&b[off..off + 4], &[b'S', 0, b't', 0]);
     }

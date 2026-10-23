@@ -212,9 +212,11 @@ pub fn notes(ctx: &egui::Context, doc: &mut Doc, st: &mut NotesState) -> bool {
 
 pub fn about(ctx: &egui::Context) -> bool {
     let mut open = true;
-    crate::frame::Win::new("About Stormwaves").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+    crate::frame::Win::new("About StormWAVES").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
         ui.vertical_centered(|ui| {
-            ui.label(RichText::new("Stormwaves").size(24.0).strong());
+            ui.add_space(4.0);
+            crate::logo::show(ui, 320.0);
+            ui.add_space(4.0);
             ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
             ui.add_space(6.0);
             ui.label("Stormwater hydrology & hydraulics: TR-55 / TR-20 runoff,");

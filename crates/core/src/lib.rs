@@ -1,4 +1,4 @@
-//! Stormwaves core: a stormwater hydrology and hydraulics engine.
+//! StormWAVES core: a stormwater hydrology and hydraulics engine.
 //!
 //! Everything here is UI-independent and compiles to WebAssembly. Internal units are US
 //! customary: feet, square feet, cubic feet, cfs, hours, and inches of rainfall; conversion to

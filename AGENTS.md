@@ -1,6 +1,6 @@
 # AGENTS.md — guide for AI agents and contributors
 
-Stormwaves is a clean-room, open-source stormwater modelling application (TR-55 / TR-20 hydrology,
+StormWAVES is a clean-room, open-source stormwater modelling application (TR-55 / TR-20 hydrology,
 reach and pond routing) written in **Rust only**. It runs natively on Linux, Windows and macOS
 (egui/eframe) and in the browser (the same Rust compiled to WebAssembly with trunk). The goal is
 close behavioural and visual parity with the established commercial routing-diagram stormwater
@@ -245,6 +245,14 @@ Keep this section updated at the end of every session.
   `.hcp` files (need a sample), right toolbar order, Resize tab. Done 2026-10-23: Delayed Gate
   editor layout (model has no Opening Step / Vertical Range / Rotary Weir yet), land-use and
   loading lines in subcatchment summaries driven by the Report flags.
+- Name and logo (2026-10-23): the product is written **StormWAVES** in all user-facing text.
+  Crate, binary and directory names, Rust identifiers (`StormwavesApp`), the
+  `STORMWAVES_RAIN_LIB` variable and the prefs/localStorage keys stay `stormwaves` (renaming the
+  keys would lose saved settings). `crates/ui/assets/logo.svg` is the vector master ("Storm" in
+  Liberation Sans Bold outlines, SIL OFL, before a vector trace of the WAVES wordmark,
+  `logo_waves.svg`). `logo.png` is it rendered 1024 px wide for egui (`ui::logo`, About
+  dialog; black ink drawn light on dark themes); re-render it after editing the SVG. The web
+  loading screen inlines a copy of the SVG paths in `apps/stormwaves-web/index.html`.
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. README
