@@ -120,64 +120,106 @@ fn link_fill(p: &Painter, pts: &[Pos2], fill: Color32) {
     }
 }
 
-/// A glass node: a tinted translucent body with a vertical gradient, a sheen over its upper
-/// part, a rim in the node colour with an iridescent specular edge, and a soft halo when
-/// selected (rose when the node has a problem).
+/// Lightens (`f` > 0, toward white) or darkens (`f` < 0, toward black) a hue.
+fn shade(hue: Color32, f: f32) -> Color32 {
+    if f >= 0.0 { crate::widgets::lerp_color(hue, Color32::WHITE, f.min(1.0)) } else { crate::widgets::lerp_color(hue, Color32::BLACK, (-f).min(1.0)) }
+}
+
+/// Adds a quad with per-corner colours to a mesh.
+fn mesh_quad(m: &mut egui::Mesh, q: [Pos2; 4], c: [Color32; 4]) {
+    let i = m.vertices.len() as u32;
+    for (v, col) in q.into_iter().zip(c) {
+        m.colored_vertex(v, col);
+    }
+    m.add_triangle(i, i + 1, i + 2);
+    m.add_triangle(i, i + 2, i + 3);
+}
+
+/// The direction of light in the glass theme (from the top-left).
+const LIGHT: egui::Vec2 = egui::Vec2 { x: -0.6, y: -0.8 };
+
+/// A glass node, cut like a gem: a contact shadow, an extruded block whose sides are shaded by
+/// how far they turn from the top-left light (with a rainbow along the base, as in thick
+/// glass), a chamfer around the top face that is lit on the upper-left edges and shaded on
+/// the lower-right, a recessed top face with a sheen and a specular glint, and a halo when
+/// selected (rose when the node has a problem). Faces are one mesh, so there are no seams.
 fn draw_glass_node(p: &Painter, t: NodeType, c: Pos2, d: f32, selected: bool, problem: bool, tok: &Tokens) {
     let (_, hue) = node_colors(t, tok);
     let pts = node_outline(t, c, d);
+    let n = pts.len();
+    if n < 3 {
+        return;
+    }
     if problem {
-        glass::glow(p, c, d * 0.85, glass::alpha(IRIS[3], 0.45));
-        p.add(Shape::closed_line(node_outline(t, c, d * 1.16), Stroke::new((d * 0.04).clamp(1.5, 3.0), IRIS[3])));
+        glass::glow(p, c, d * 0.9, glass::alpha(IRIS[3], 0.45));
+        p.add(Shape::closed_line(node_outline(t, c, d * 1.18), Stroke::new((d * 0.04).clamp(1.5, 3.0), IRIS[3])));
     } else if selected {
-        glass::glow(p, c, d * 0.9, glass::alpha(hue, 0.38));
+        glass::glow(p, c, d * 0.95, glass::alpha(hue, 0.42));
     }
-    // A block of tinted glass: drop shadow, the extruded sides (faces turned toward the viewer
-    // below and right are shaded by how much they face away from the top-left light), the
-    // translucent top face with a sheen, a bevel highlight and a specular glint.
-    let depth = (d * 0.09).clamp(2.0, 7.0);
-    let dy = vec2(depth * 0.35, depth);
-    glass::glow(p, c + vec2(depth * 0.6, d * 0.42 + depth), d * 0.55, glass::alpha(Color32::BLACK, 0.5));
-    let centre = pts.iter().fold(vec2(0.0, 0.0), |s, q| s + q.to_vec2()) / pts.len().max(1) as f32;
-    let dark_hue = crate::widgets::lerp_color(hue, Color32::BLACK, 0.55);
-    for i in 0..pts.len() {
-        let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+    let centre = (pts.iter().fold(vec2(0.0, 0.0), |s, q| s + q.to_vec2()) / n as f32).to_pos2();
+    let outward = |a: Pos2, b: Pos2| {
         let e = b - a;
-        let mut n = vec2(e.y, -e.x).normalized();
-        if n.dot((a + e * 0.5).to_vec2() - centre) < 0.0 {
-            n = -n;
+        let mut v = vec2(e.y, -e.x).normalized();
+        if v.dot((a + e * 0.5) - centre) < 0.0 {
+            v = -v;
         }
-        if n.dot(dy.normalized()) > 0.02 {
-            let shade = 0.35 + 0.45 * n.dot(vec2(-0.6, -0.8)).abs().min(1.0);
-            let side = crate::widgets::lerp_color(dark_hue, Color32::BLACK, 1.0 - shade);
-            p.add(Shape::convex_polygon(vec![a, b, b + dy, a + dy], glass::alpha(side, 0.95), Stroke::new(0.5, glass::alpha(side, 0.95))));
+        v
+    };
+    let depth = (d * 0.15).clamp(3.0, 11.0);
+    let dv = vec2(depth * 0.45, depth);
+    glass::glow(p, c + vec2(depth * 0.9, d * 0.38 + depth), d * 0.62, glass::alpha(Color32::BLACK, 0.6));
+    let mut mesh = egui::Mesh::default();
+    // Sides.
+    let mut base = Vec::new();
+    for i in 0..n {
+        let (a, b) = (pts[i], pts[(i + 1) % n]);
+        if (b - a).length() < 1e-3 {
+            continue;
+        }
+        let nrm = outward(a, b);
+        if nrm.dot(dv) > 0.0 {
+            let facing = nrm.dot(LIGHT);
+            let (upper, lower) = (shade(hue, -0.45 + 0.3 * facing), shade(hue, -0.78 + 0.2 * facing));
+            mesh_quad(&mut mesh, [a, b, b + dv, a + dv], [upper, upper, lower, lower]);
+            base.push([a + dv, b + dv]);
         }
     }
-    // The bottom edge of the block catches a rainbow, as in thick glass.
-    let base: Vec<Pos2> = pts.iter().map(|q| *q + dy).collect();
-    p.add(Shape::Path(PathShape::closed_line(base, glass::iris_stroke(1.0, 0.45))));
-    let (top, bottom) = (glass::alpha(hue, 0.55), glass::alpha(crate::widgets::lerp_color(hue, Color32::BLACK, 0.5), 0.85));
-    if t == NodeType::Link {
-        link_fill(p, &pts, glass::alpha(crate::widgets::lerp_color(hue, Color32::BLACK, 0.35), 0.85));
-    } else {
-        glass::gradient_fill(p, &pts, top, bottom);
-        let cut = c.y - d * 0.08;
-        let sheen: Vec<Pos2> = pts.iter().map(|q| pos2(q.x, q.y.min(cut))).collect();
-        glass::gradient_fill(p, &sheen, white(0.30), white(0.02));
+    // Chamfer around the top face.
+    let bevel = (d * 0.11).clamp(2.0, 8.0);
+    let inset: Vec<Pos2> = pts.iter().map(|q| *q + (centre - *q).normalized() * bevel).collect();
+    for i in 0..n {
+        let j = (i + 1) % n;
+        if (pts[j] - pts[i]).length() < 1e-3 {
+            continue;
+        }
+        let lit = outward(pts[i], pts[j]).dot(LIGHT);
+        let col = shade(hue, if lit > 0.0 { 0.12 + 0.5 * lit } else { -0.2 + 0.5 * lit });
+        mesh_quad(&mut mesh, [pts[i], pts[j], inset[j], inset[i]], [col; 4]);
     }
-    // Bevel: a lit inner edge along the top-left facing sides.
-    let inner: Vec<Pos2> = pts.iter().map(|q| *q + (pos2(centre.x, centre.y) - *q).normalized() * 1.5).collect();
-    p.add(Shape::Path(PathShape::closed_line(
-        inner,
-        PathStroke::new_uv(1.0, move |r, q| {
-            let f = (((q.x - r.min.x) / r.width().max(1.0)) * 0.4 + ((q.y - r.min.y) / r.height().max(1.0)) * 0.6).clamp(0.0, 1.0);
-            white(0.55 * (1.0 - f * 1.6).max(0.0))
-        }),
-    )));
-    glass::glow(p, c + vec2(-d * 0.16, -d * 0.2), d * 0.12, white(0.45));
-    let width = if selected { (d * 0.05).clamp(1.8, 3.2) } else { (d * 0.025).clamp(1.0, 1.8) };
-    p.add(Shape::closed_line(pts.clone(), Stroke::new(width, if selected { lift(hue) } else { hue })));
-    p.add(Shape::Path(PathShape::closed_line(pts, glass::iris_stroke(1.0, if selected { 0.9 } else { 0.55 }))));
+    // Top face: a fan with a vertical gradient.
+    let (y0, y1) = inset.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), q| (a.min(q.y), b.max(q.y)));
+    let face = |y: f32| crate::widgets::lerp_color(shade(hue, -0.25), shade(hue, -0.58), ((y - y0) / (y1 - y0).max(1.0)).clamp(0.0, 1.0));
+    let first = mesh.vertices.len() as u32;
+    mesh.colored_vertex(centre, face(centre.y));
+    for q in &inset {
+        mesh.colored_vertex(*q, face(q.y));
+    }
+    for i in 0..n as u32 {
+        mesh.add_triangle(first, first + 1 + i, first + 1 + (i + 1) % n as u32);
+    }
+    p.add(Shape::mesh(mesh));
+    // The base catches a rainbow, as in thick glass.
+    for [a, b] in base {
+        p.add(Shape::Path(PathShape::line(vec![a, b], glass::iris_stroke(1.0, 0.5))));
+    }
+    // Sheen over the upper half of the face, and a glint.
+    let sheen: Vec<Pos2> = inset.iter().map(|q| pos2(q.x, q.y.min(centre.y))).collect();
+    glass::gradient_fill(p, &sheen, white(0.22), white(0.0));
+    glass::glow(p, centre + vec2(-d * 0.13, -d * 0.16), d * 0.11, white(0.5));
+    p.add(Shape::closed_line(inset, Stroke::new(0.8, white(0.16))));
+    let width = if selected { (d * 0.04).clamp(1.5, 2.6) } else { 1.0 };
+    p.add(Shape::closed_line(pts.clone(), Stroke::new(width, if selected { lift(hue) } else { shade(hue, 0.15) })));
+    p.add(Shape::Path(PathShape::closed_line(pts, glass::iris_stroke(1.0, if selected { 0.9 } else { 0.5 }))));
 }
 
 /// A lighter version of a hue (selected rims).
@@ -668,8 +710,11 @@ pub fn draw_glass_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             // A leaf with its midrib and stem.
             let pi = std::f32::consts::PI;
             let mut leaf = arc(at(0.88, 0.8), s * 0.68, pi, 1.5 * pi, 10);
-            leaf.extend(arc(at(0.2, 0.12), s * 0.68, 0.0, 0.5 * pi, 10).into_iter().skip(1));
-            glass::gradient_fill(p, &leaf, glass::alpha(t.subcat.1, 0.35), white(0.04));
+            // The second arc shares both tips with the first; leave them out.
+            leaf.extend(arc(at(0.2, 0.12), s * 0.68, 0.0, 0.5 * pi, 10).into_iter().skip(1).take(9));
+            // An evenly green-tinted glass body with a sheen at the top.
+            glass::gradient_fill(p, &leaf, glass::alpha(t.subcat.1, 0.55), glass::alpha(t.subcat.1, 0.4));
+            glass::gradient_fill(p, &leaf, white(0.22), white(0.0));
             pen.outline(leaf);
             pen.seg(at(0.2, 0.8), at(0.7, 0.3));
             pen.seg(at(0.2, 0.8), at(0.08, 0.92));
@@ -704,11 +749,12 @@ pub fn draw_glass_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
         }
         Glyph::Help => {
             pen.circle(c, s * 0.42, true);
-            let q = arc(at(0.5, 0.4), s * 0.14, std::f32::consts::PI, 2.4 * std::f32::consts::PI, 10);
-            let mut path = q;
-            path.push(at(0.5, 0.6));
+            // The hook ends well clear of the dot so their shadows don't merge.
+            let mut path = arc(at(0.5, 0.37), s * 0.13, std::f32::consts::PI * 1.05, 2.35 * std::f32::consts::PI, 12);
+            path.push(at(0.5, 0.55));
             pen.line(path);
-            pen.dot(at(0.5, 0.74), s * 0.05);
+            p.circle_filled(at(0.5, 0.75) + vec2(0.3, 0.9), s * 0.05, glass::alpha(Color32::BLACK, 0.5));
+            p.circle_filled(at(0.5, 0.75), s * 0.05, glass::iris(0.6));
         }
         Glyph::Messages => {
             // The speech bubble from the glass references, with an exclamation mark.

@@ -355,13 +355,69 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
     }
 }
 
-/// A routing arrowhead: white with a coloured edge, or solid colour in the glass theme.
+/// A routing arrowhead: white with a coloured edge, or in the glass theme a little glass
+/// pyramid (its two faces lit and shaded from the top-left, with a cast shadow).
 fn arrow_head(p: &egui::Painter, tip: Pos2, dir: Vec2, size: f32, stroke: Stroke, t: &Tokens) {
     let dir = dir.normalized();
     let side = vec2(-dir.y, dir.x);
     let back = tip - dir * size;
-    let fill = if t.glass { stroke.color } else { Color32::WHITE };
-    p.add(Shape::convex_polygon(vec![tip, back + side * size * 0.45, back - side * size * 0.45], fill, stroke));
+    let (l, r) = (back + side * size * 0.45, back - side * size * 0.45);
+    if !t.glass {
+        p.add(Shape::convex_polygon(vec![tip, l, r], Color32::WHITE, stroke));
+        return;
+    }
+    let drop = vec2(1.0, 2.5);
+    p.add(Shape::convex_polygon(vec![tip + drop, l + drop, r + drop], crate::glass::alpha(Color32::BLACK, 0.5), Stroke::NONE));
+    let light = vec2(-0.6, -0.8);
+    let lit = |s: Vec2| if s.dot(light) > 0.0 { crate::widgets::lerp_color(stroke.color, Color32::WHITE, 0.45) } else { crate::widgets::lerp_color(stroke.color, Color32::BLACK, 0.35) };
+    // The ridge runs from the tip back along the axis, slightly raised toward the light.
+    let ridge = back + dir * size * 0.2;
+    let mut mesh = egui::Mesh::default();
+    for (a, s) in [(l, side), (r, -side)] {
+        let i = mesh.vertices.len() as u32;
+        let c = lit(s);
+        mesh.colored_vertex(tip, crate::widgets::lerp_color(c, Color32::WHITE, 0.2));
+        mesh.colored_vertex(a, c);
+        mesh.colored_vertex(ridge, crate::widgets::lerp_color(c, stroke.color, 0.5));
+        mesh.add_triangle(i, i + 1, i + 2);
+    }
+    // The back face between the two wings.
+    let i = mesh.vertices.len() as u32;
+    let back_col = crate::widgets::lerp_color(stroke.color, Color32::BLACK, 0.5);
+    mesh.colored_vertex(l, back_col);
+    mesh.colored_vertex(r, back_col);
+    mesh.colored_vertex(ridge, crate::widgets::lerp_color(stroke.color, Color32::BLACK, 0.2));
+    mesh.add_triangle(i, i + 1, i + 2);
+    p.add(Shape::mesh(mesh));
+    p.add(Shape::closed_line(vec![tip, l, r], Stroke::new(0.8, crate::widgets::lerp_color(stroke.color, Color32::WHITE, 0.3))));
+}
+
+/// A routing line: plain, or in the glass theme a lit glass tube — a soft glow, a cast
+/// shadow, dark edges, the coloured body and a highlight along the side facing the light.
+/// Dashed lines keep their dashes (all layers dash in step).
+fn route_line(p: &egui::Painter, a: Pos2, b: Pos2, s: Stroke, dashed: bool, t: &Tokens) {
+    if !t.glass {
+        line(p, a, b, s, dashed);
+        return;
+    }
+    let dir = (b - a).normalized();
+    let mut up = vec2(-dir.y, dir.x);
+    if up.dot(vec2(-0.6, -0.8)) < 0.0 {
+        up = -up;
+    }
+    let w = s.width;
+    p.line_segment([a, b], Stroke::new(w * 5.0, crate::glass::alpha(s.color, 0.10)));
+    let drop = vec2(1.0, w + 1.5);
+    line(p, a + drop, b + drop, Stroke::new(w + 0.5, crate::glass::alpha(Color32::BLACK, 0.5)), dashed);
+    line(p, a, b, Stroke::new(w + 1.6, crate::widgets::lerp_color(s.color, Color32::BLACK, 0.55)), dashed);
+    line(p, a, b, s, dashed);
+    let hl = up * w * 0.28;
+    line(p, a + hl, b + hl, Stroke::new((w * 0.38).max(0.7), crate::widgets::lerp_color(s.color, Color32::WHITE, 0.75)), dashed);
+}
+
+/// Where a routing line stops so the glass tube ends inside its arrowhead.
+fn line_end(tip: Pos2, from: Pos2, head: f32, t: &Tokens) -> Pos2 {
+    if t.glass { tip - (tip - from).normalized() * head * 0.75 } else { tip }
 }
 
 /// Screen geometry of node `n`'s outflow `k`: (start, end) with `end` at the arrowhead.
@@ -385,7 +441,8 @@ fn arrow_geom(doc: &Doc, canvas: Rect, from: NodeId, k: usize) -> Option<(Pos2, 
 }
 
 fn route_stroke(k: usize, t: &Tokens, zoom: f32) -> (Stroke, bool) {
-    let w = (1.3 * zoom.sqrt()).clamp(1.0, 2.5);
+    // Glass tubes are a little thicker so their shading reads.
+    let w = (1.3 * zoom.sqrt()).clamp(1.0, 2.5) * if t.glass { 1.5 } else { 1.0 };
     match k {
         0 => (Stroke::new(w, t.arrow), false),
         1 => (Stroke::new(w, t.arrow_secondary), true),
@@ -403,25 +460,13 @@ fn draw_arrows(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: 
             {
                 let a = to_screen(&doc.view, canvas, wp(n.pos));
                 let (s, dashed) = route_stroke(k, t, doc.view.zoom);
-                line(p, a, *at, s, dashed);
+                route_line(p, a, line_end(*at, a, head, t), s, dashed, t);
                 arrow_head(p, *at, *at - a, head, s, t);
                 continue;
             }
             if let Some((a, b)) = arrow_geom(doc, canvas, n.id, k) {
                 let (s, dashed) = route_stroke(k, t, doc.view.zoom);
-                if t.glass {
-                    // A glass tube: a glow around it, a shadow cast below, the line, and a
-                    // highlight along its upper edge.
-                    p.line_segment([a, b], Stroke::new(s.width * 5.0, crate::glass::alpha(s.color, 0.12)));
-                    let drop = vec2(0.8, 2.5);
-                    line(p, a + drop, b + drop, Stroke::new(s.width + 1.0, crate::glass::alpha(Color32::BLACK, 0.55)), dashed);
-                    arrow_head(p, b + drop, b - a, head, Stroke::new(1.0, crate::glass::alpha(Color32::BLACK, 0.55)), t);
-                }
-                line(p, a, b, s, dashed);
-                if t.glass && !dashed {
-                    let lift = vec2(-0.3, -0.5);
-                    p.line_segment([a + lift, b + lift], Stroke::new((s.width * 0.4).max(0.6), crate::theme::white(0.6)));
-                }
+                route_line(p, a, line_end(b, a, head, t), s, dashed, t);
                 arrow_head(p, b, b - a, head, s, t);
             }
         }
@@ -498,8 +543,9 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
                 {
                     let (s, dashed) = route_stroke(k, t, doc.view.zoom);
                     let from = boundary_point(n.node_type(), c, d, h);
-                    line(p, from, h, s, dashed);
-                    arrow_head(p, h, h - c, (d * 0.2).clamp(6.0, 14.0), s, t);
+                    let size = (d * 0.2).clamp(6.0, 14.0);
+                    route_line(p, from, line_end(h, from, size, t), s, dashed, t);
+                    arrow_head(p, h, h - c, size, s, t);
                 }
             }
         }

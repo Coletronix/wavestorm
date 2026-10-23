@@ -281,8 +281,11 @@ Keep this section updated at the end of every session.
   tables, charts, the canvas), `bead`/`socket` (checks, radios, status lights), `lip`
   (window thickness), `groove` (engraved dividers), `backdrop` (aurora glows; egui has no blur,
   so glass reads against colour behind it). Icons: `icons::draw_glass_glyph` (Pen = lit glass
-  tubes with shadows; bodies with an offset underside); nodes are extruded glass blocks
-  (`draw_glass_node`); arrows and chart lines are tubes. Layout: `WaveStormApp::glass_chrome`
+  tubes with shadows; bodies with an offset underside); nodes are cut glass gems
+  (`draw_glass_node`: contact shadow, extruded sides, a chamfer lit/shaded per edge against
+  `LIGHT`, recessed top face — all one mesh, since separate polygons show anti-aliasing seams);
+  routing lines are shaded tubes (`diagram::route_line`, stopped short of the head by
+  `line_end`) with pyramid arrowheads; chart lines are tubes too. Layout: `WaveStormApp::glass_chrome`
   (header with logo/menus/tabs/event/undo/help, node tile rail, settings rail, canvas island,
   floating dock `glass_dock` with a zoom readout, `glass_status` with a messages chip,
   overlay scrollbars). Toolbar actions are the shared `Cmd` enum (`run`, `cmd_button`), so
