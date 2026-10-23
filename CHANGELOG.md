@@ -7,6 +7,18 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-23
+
+### Changed
+- Iridescent Glass: nodes are cut like glass gems — deeper extrusion, a chamfer lit from the
+  top-left and shaded on the lower right, a recessed top face — and drawn as one mesh, so the
+  link banner no longer shows faint vertical seams. Routing lines are shaded glass tubes
+  (dark edges, highlight, cast shadow) with faceted pyramid arrowheads.
+
+### Fixed
+- Iridescent Glass: the Help icon's question-mark dot no longer runs into its hook, and the
+  Land-Use leaf is evenly filled.
+
 ## [0.2.0] - 2026-10-23
 
 ### Changed
@@ -81,6 +93,7 @@ First tagged release.
 - Stor-Ind+Trans reach attenuation can differ from the reference application (~2 % vs ~4 % on
   one published example).
 
-[Unreleased]: https://github.com/Coletronix/stormwaves/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Coletronix/stormwaves/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Coletronix/stormwaves/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Coletronix/stormwaves/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Coletronix/stormwaves/releases/tag/v0.1.0
