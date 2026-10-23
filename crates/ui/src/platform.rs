@@ -59,7 +59,8 @@ impl Platform {
 
     fn filters(purpose: Purpose) -> (&'static str, &'static [&'static str]) {
         match purpose {
-            Purpose::OpenProject | Purpose::MergeProject => ("Stormwaves project", &["waves", "json"]),
+            Purpose::OpenProject => ("Project (.waves or .hcp)", &["waves", "json", "hcp"]),
+            Purpose::MergeProject => ("Stormwaves project", &["waves", "json"]),
             Purpose::ImportSubareas => ("Sub-area table", &["csv", "txt"]),
             Purpose::Underlay => ("Image or PDF", &["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp", "pdf"]),
             Purpose::LinkCsv => ("Hydrograph CSV", &["csv", "txt"]),

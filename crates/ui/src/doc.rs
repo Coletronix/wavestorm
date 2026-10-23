@@ -47,6 +47,9 @@ pub struct Doc {
     pub announced: u64,
     /// Message lines of the last announced calculation (to detect new ones).
     pub seen_messages: Vec<String>,
+    /// The project was opened from (or last saved as) an interchange `.hcp` file, so Save writes
+    /// that format again.
+    pub hcp: bool,
 }
 
 impl Doc {
@@ -70,6 +73,7 @@ impl Doc {
             calc_serial: 1,
             announced: 0,
             seen_messages: Vec::new(),
+            hcp: false,
         }
     }
 

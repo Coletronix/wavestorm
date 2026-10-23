@@ -64,6 +64,7 @@ gitignored.
 | `units` | English/metric, large/small display units, formatting |
 | `project` | Project model: nodes, outflows, settings, diagram, background underlay; JSON I/O |
 | `calc` | Calculation engine: topological order, per-node results, calculation messages |
+| `hcp` | Open/save the reference application's `.hcp` interchange files (Latin-1 aware, unmatched keys kept in `foreign` fields and written back) |
 | `base64` | Embedding background files in project JSON |
 
 Internal units are US customary: ft, sq ft, cu ft, cfs, hours, inches of rain. Conversion to

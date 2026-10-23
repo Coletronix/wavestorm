@@ -121,8 +121,13 @@ impl StormwavesApp {
     fn handle_incoming(&mut self, _ctx: &egui::Context, item: Incoming) -> Result<(), String> {
         match item.purpose {
             Purpose::OpenProject => {
-                let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a Stormwaves project (not text).".to_string())?;
-                let project = Project::from_json(&text)?;
+                let is_hcp = item.name.to_ascii_lowercase().ends_with(".hcp") || stormwaves_core::hcp::looks_like_hcp(&item.bytes);
+                let (project, warnings) = if is_hcp {
+                    stormwaves_core::hcp::import_bytes(&item.bytes)?
+                } else {
+                    let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a Stormwaves project (not text).".to_string())?;
+                    (Project::from_json(&text)?, Vec::new())
+                };
                 // Replace an untouched empty first project.
                 if self.docs.len() == 1 && !self.docs[0].dirty && self.docs[0].project.nodes.is_empty() {
                     self.docs.clear();
@@ -131,9 +136,14 @@ impl StormwavesApp {
                 if let Some(p) = &item.path {
                     platform::recent::push(p);
                 }
-                self.docs.push(Doc::new(project, item.path));
+                let mut doc = Doc::new(project, item.path);
+                doc.hcp = is_hcp;
+                self.docs.push(doc);
                 self.active = self.docs.len() - 1;
                 self.status = format!("Opened {}", item.name);
+                if !warnings.is_empty() {
+                    self.status = format!("Opened {} ({} import warnings: {})", item.name, warnings.len(), warnings.join("; "));
+                }
             }
             Purpose::MergeProject => {
                 let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a Stormwaves project (not text).".to_string())?;
@@ -251,19 +261,34 @@ impl StormwavesApp {
     }
 
     pub fn save(&mut self, save_as: bool) {
+        let hcp = self.doc().hcp;
+        self.save_format(save_as, hcp);
+    }
+
+    /// Save As in the reference application's interchange format (`.hcp`).
+    pub fn save_hcp(&mut self) {
+        self.save_format(true, true);
+    }
+
+    fn save_format(&mut self, save_as: bool, hcp: bool) {
         let platform = self.platform.clone();
         let doc = self.doc();
-        let json = match doc.project.to_json() {
-            Ok(j) => j,
-            Err(e) => {
-                self.error = Some(e);
-                return;
+        let (bytes, ext) = if hcp {
+            (stormwaves_core::hcp::export_bytes(&doc.project), "hcp")
+        } else {
+            match doc.project.to_json() {
+                Ok(j) => (j.into_bytes(), "waves"),
+                Err(e) => {
+                    self.error = Some(e);
+                    return;
+                }
             }
         };
-        let name = format!("{}.waves", sanitize(&doc.project.title));
+        let name = format!("{}.{ext}", sanitize(&doc.project.title));
         let path = if save_as { None } else { doc.path.clone() };
-        match platform.save(&name, path.as_deref(), json.as_bytes(), "waves") {
+        match platform.save(&name, path.as_deref(), &bytes, ext) {
             Ok(Some(p)) => {
+                doc.hcp = hcp;
                 doc.path = Some(p.clone());
                 doc.dirty = false;
                 #[cfg(not(target_arch = "wasm32"))]
@@ -528,6 +553,9 @@ impl StormwavesApp {
                 }
                 if ui.button("Save As...").clicked() {
                     self.save(true);
+                }
+                if ui.button("Save as .hcp (interchange)...").clicked() {
+                    self.save_hcp();
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
