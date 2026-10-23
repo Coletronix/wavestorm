@@ -74,11 +74,31 @@ pub fn text_width(text: &str, font: Font, size: f32) -> f32 {
     em as f32 * size / 1000.0
 }
 
+/// Fill and stroke of a closed shape.
+pub type Stroke = Option<(f32, Rgb)>;
+
+/// One recorded drawing operation (coordinates in points, y down). Output formats (PDF, EMF)
+/// are generated from the list.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Op {
+    /// Text with its baseline at `y`, aligned relative to `x`.
+    Text { x: f32, y: f32, size: f32, font: Font, align: Align, color: Rgb, text: String },
+    /// Text rotated 90 degrees counter-clockwise, centred on `y`, baseline at `x`.
+    TextVertical { x: f32, y: f32, size: f32, font: Font, color: Rgb, text: String },
+    Line { x1: f32, y1: f32, x2: f32, y2: f32, width: f32, color: Rgb },
+    /// Sets the dash pattern for later strokes (`None` = solid).
+    Dash(Option<(f32, f32)>),
+    Polyline { pts: Vec<(f32, f32)>, width: f32, color: Rgb },
+    Polygon { pts: Vec<(f32, f32)>, fill: Option<Rgb>, stroke: Stroke },
+    Rect { x: f32, y: f32, w: f32, h: f32, fill: Option<Rgb>, stroke: Stroke },
+    Circle { cx: f32, cy: f32, r: f32, fill: Option<Rgb>, stroke: Stroke },
+}
+
 /// One page being drawn.
 pub struct Page {
     pub width: f32,
     pub height: f32,
-    ops: String,
+    ops: Vec<Op>,
 }
 
 fn num(v: f32) -> String {
@@ -113,106 +133,135 @@ fn escape(text: &str) -> String {
 
 impl Page {
     pub fn new(width: f32, height: f32) -> Page {
-        Page { width, height, ops: String::new() }
+        Page { width, height, ops: Vec::new() }
     }
 
-    fn y(&self, y: f32) -> f32 {
-        self.height - y
+    /// The recorded drawing operations, in order.
+    pub fn ops(&self) -> &[Op] {
+        &self.ops
     }
 
     /// Draws text with its baseline at `y`.
     pub fn text(&mut self, x: f32, y: f32, size: f32, font: Font, align: Align, color: Rgb, text: &str) {
-        let w = text_width(text, font, size);
-        let x = match align {
-            Align::Left => x,
-            Align::Center => x - w / 2.0,
-            Align::Right => x - w,
-        };
-        let _ = writeln!(
-            self.ops,
-            "BT {} {} {} rg /{} {} Tf {} {} Td ({}) Tj ET",
-            num(color.0),
-            num(color.1),
-            num(color.2),
-            font.resource(),
-            num(size),
-            num(x),
-            num(self.y(y)),
-            escape(text)
-        );
+        self.ops.push(Op::Text { x, y, size, font, align, color, text: text.to_string() });
     }
 
     /// Text rotated 90° counter-clockwise (for vertical axis titles), centred on (x, y).
     pub fn text_vertical(&mut self, x: f32, y: f32, size: f32, font: Font, color: Rgb, text: &str) {
-        let w = text_width(text, font, size);
-        let _ = writeln!(
-            self.ops,
-            "BT {} {} {} rg /{} {} Tf 0 1 -1 0 {} {} Tm ({}) Tj ET",
-            num(color.0),
-            num(color.1),
-            num(color.2),
-            font.resource(),
-            num(size),
-            num(x),
-            num(self.y(y) - w / 2.0),
-            escape(text)
-        );
+        self.ops.push(Op::TextVertical { x, y, size, font, color, text: text.to_string() });
     }
 
     pub fn line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, width: f32, color: Rgb) {
-        let _ = writeln!(self.ops, "{} {} {} RG {} w {} {} m {} {} l S", num(color.0), num(color.1), num(color.2), num(width), num(x1), num(self.y(y1)), num(x2), num(self.y(y2)));
+        self.ops.push(Op::Line { x1, y1, x2, y2, width, color });
     }
 
     pub fn dashed(&mut self, on: f32, off: f32) {
-        let _ = writeln!(self.ops, "[{} {}] 0 d", num(on), num(off));
+        self.ops.push(Op::Dash(Some((on, off))));
     }
 
     pub fn solid(&mut self) {
-        self.ops.push_str("[] 0 d\n");
+        self.ops.push(Op::Dash(None));
     }
 
     pub fn polyline(&mut self, pts: &[(f32, f32)], width: f32, color: Rgb) {
-        let Some(first) = pts.first() else { return };
-        let _ = write!(self.ops, "{} {} {} RG {} w 1 j {} {} m", num(color.0), num(color.1), num(color.2), num(width), num(first.0), num(self.y(first.1)));
-        for p in &pts[1..] {
-            let _ = write!(self.ops, " {} {} l", num(p.0), num(self.y(p.1)));
+        if pts.is_empty() {
+            return;
         }
-        self.ops.push_str(" S\n");
+        self.ops.push(Op::Polyline { pts: pts.to_vec(), width, color });
     }
 
     /// Filled (and optionally stroked) polygon.
-    pub fn polygon(&mut self, pts: &[(f32, f32)], fill: Option<Rgb>, stroke: Option<(f32, Rgb)>) {
+    pub fn polygon(&mut self, pts: &[(f32, f32)], fill: Option<Rgb>, stroke: Stroke) {
+        if pts.is_empty() {
+            return;
+        }
+        self.ops.push(Op::Polygon { pts: pts.to_vec(), fill, stroke });
+    }
+
+    pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, fill: Option<Rgb>, stroke: Stroke) {
+        self.ops.push(Op::Rect { x, y, w, h, fill, stroke });
+    }
+
+    pub fn circle(&mut self, cx: f32, cy: f32, r: f32, fill: Option<Rgb>, stroke: Stroke) {
+        self.ops.push(Op::Circle { cx, cy, r, fill, stroke });
+    }
+
+    /// The page content as a PDF content stream.
+    fn pdf_content(&self) -> String {
+        let mut o = String::new();
+        let y = |v: f32| self.height - v;
+        for op in &self.ops {
+            match op {
+                Op::Text { x, y: ty, size, font, align, color, text } => {
+                    let w = text_width(text, *font, *size);
+                    let x = match align {
+                        Align::Left => *x,
+                        Align::Center => x - w / 2.0,
+                        Align::Right => x - w,
+                    };
+                    let _ = writeln!(o, "BT {} {} {} rg /{} {} Tf {} {} Td ({}) Tj ET", num(color.0), num(color.1), num(color.2), font.resource(), num(*size), num(x), num(y(*ty)), escape(text));
+                }
+                Op::TextVertical { x, y: ty, size, font, color, text } => {
+                    let w = text_width(text, *font, *size);
+                    let _ = writeln!(o, "BT {} {} {} rg /{} {} Tf 0 1 -1 0 {} {} Tm ({}) Tj ET", num(color.0), num(color.1), num(color.2), font.resource(), num(*size), num(*x), num(y(*ty) - w / 2.0), escape(text));
+                }
+                Op::Line { x1, y1, x2, y2, width, color } => {
+                    let _ = writeln!(o, "{} {} {} RG {} w {} {} m {} {} l S", num(color.0), num(color.1), num(color.2), num(*width), num(*x1), num(y(*y1)), num(*x2), num(y(*y2)));
+                }
+                Op::Dash(Some((on, off))) => {
+                    let _ = writeln!(o, "[{} {}] 0 d", num(*on), num(*off));
+                }
+                Op::Dash(None) => o.push_str("[] 0 d\n"),
+                Op::Polyline { pts, width, color } => {
+                    let Some(first) = pts.first() else { continue };
+                    let _ = write!(o, "{} {} {} RG {} w 1 j {} {} m", num(color.0), num(color.1), num(color.2), num(*width), num(first.0), num(y(first.1)));
+                    for p in &pts[1..] {
+                        let _ = write!(o, " {} {} l", num(p.0), num(y(p.1)));
+                    }
+                    o.push_str(" S\n");
+                }
+                Op::Polygon { pts, fill, stroke } => self.pdf_polygon(&mut o, pts, *fill, *stroke),
+                Op::Rect { x, y: ry, w, h, fill, stroke } => {
+                    self.pdf_polygon(&mut o, &[(*x, *ry), (x + w, *ry), (x + w, ry + h), (*x, ry + h)], *fill, *stroke);
+                }
+                Op::Circle { cx, cy, r, fill, stroke } => {
+                    self.pdf_polygon(&mut o, &circle_points(*cx, *cy, *r), *fill, *stroke);
+                }
+            }
+        }
+        o
+    }
+
+    fn pdf_polygon(&self, o: &mut String, pts: &[(f32, f32)], fill: Option<Rgb>, stroke: Stroke) {
         let Some(first) = pts.first() else { return };
+        let y = |v: f32| self.height - v;
         if let Some(f) = fill {
-            let _ = write!(self.ops, "{} {} {} rg ", num(f.0), num(f.1), num(f.2));
+            let _ = write!(o, "{} {} {} rg ", num(f.0), num(f.1), num(f.2));
         }
         if let Some((w, c)) = stroke {
-            let _ = write!(self.ops, "{} {} {} RG {} w ", num(c.0), num(c.1), num(c.2), num(w));
+            let _ = write!(o, "{} {} {} RG {} w ", num(c.0), num(c.1), num(c.2), num(w));
         }
-        let _ = write!(self.ops, "{} {} m", num(first.0), num(self.y(first.1)));
+        let _ = write!(o, "{} {} m", num(first.0), num(y(first.1)));
         for p in &pts[1..] {
-            let _ = write!(self.ops, " {} {} l", num(p.0), num(self.y(p.1)));
+            let _ = write!(o, " {} {} l", num(p.0), num(y(p.1)));
         }
-        let op = match (fill.is_some(), stroke.is_some()) {
+        o.push_str(match (fill.is_some(), stroke.is_some()) {
             (true, true) => " b\n",
             (true, false) => " f\n",
             (false, true) => " s\n",
             (false, false) => " n\n",
-        };
-        self.ops.push_str(op);
+        });
     }
+}
 
-    pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, fill: Option<Rgb>, stroke: Option<(f32, Rgb)>) {
-        self.polygon(&[(x, y), (x + w, y), (x + w, y + h), (x, y + h)], fill, stroke);
-    }
-
-    pub fn circle(&mut self, cx: f32, cy: f32, r: f32, fill: Option<Rgb>, stroke: Option<(f32, Rgb)>) {
-        let pts: Vec<(f32, f32)> = (0..32).map(|i| {
+/// The 32-gon used to draw circles in PDF output.
+fn circle_points(cx: f32, cy: f32, r: f32) -> Vec<(f32, f32)> {
+    (0..32)
+        .map(|i| {
             let a = i as f32 / 32.0 * std::f32::consts::TAU;
             (cx + r * a.cos(), cy + r * a.sin())
-        }).collect();
-        self.polygon(&pts, fill, stroke);
-    }
+        })
+        .collect()
 }
 
 /// A multi-page document.
@@ -260,8 +309,9 @@ impl Document {
                 )
                 .into_bytes(),
             );
-            let mut stream = format!("<< /Length {} >>\nstream\n", p.ops.len()).into_bytes();
-            stream.extend_from_slice(p.ops.as_bytes());
+            let content = p.pdf_content();
+            let mut stream = format!("<< /Length {} >>\nstream\n", content.len()).into_bytes();
+            stream.extend_from_slice(content.as_bytes());
             stream.extend_from_slice(b"\nendstream");
             objects.push(stream);
         }

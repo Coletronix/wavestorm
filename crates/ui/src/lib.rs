@@ -552,6 +552,15 @@ impl StormwavesApp {
                         }
                         ui.close();
                     }
+                    if ui.button("Diagram (EMF)...").clicked() {
+                        let doc = self.doc();
+                        let bytes = stormwaves_core::printing::diagram_emf(&doc.project, &doc.results, &dialogs::misc::today());
+                        let name = format!("{} diagram.emf", sanitize(&doc.project.title));
+                        if let Err(e) = self.platform.save(&name, None, &bytes, "emf") {
+                            self.error = Some(e);
+                        }
+                        ui.close();
+                    }
                     if ui.button("Node Listing (text)...").clicked() {
                         self.export_text();
                         ui.close();

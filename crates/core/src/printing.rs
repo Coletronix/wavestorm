@@ -123,13 +123,17 @@ fn symbol(t: NodeType, cx: f32, cy: f32, d: f32) -> Vec<(f32, f32)> {
 }
 
 fn diagram_page(c: &mut Ctx) {
+    let page = diagram_draw(c);
+    c.doc.add(page);
+}
+
+fn diagram_draw(c: &mut Ctx) -> Page {
     let mut page = c.new_page(true);
     let (w, h) = (page.width, page.height);
     page.rect(MARGIN, MARGIN, w - 2.0 * MARGIN, h - 2.0 * MARGIN, None, Some((1.5, Rgb::BLACK)));
     let nodes: Vec<&Node> = c.project.nodes.iter().collect();
     if nodes.is_empty() {
-        c.doc.add(page);
-        return;
+        return page;
     }
     let sym = c.project.diagram.symbol_size as f32;
     let (mut x0, mut y0, mut x1, mut y1) = (f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
@@ -200,7 +204,38 @@ fn diagram_page(c: &mut Ctx) {
         page.text(bx + 150.0, h - MARGIN - 23.0, 9.0, Font::Sans, Align::Center, Rgb::BLACK, &format!("Printed {}", c.opts.date));
     }
     page.text(bx + 150.0, h - MARGIN - 11.0, 8.0, Font::Sans, Align::Center, Rgb::BLACK, &format!("Stormwaves {}", env!("CARGO_PKG_VERSION")));
-    c.doc.add(page);
+    page
+}
+
+/// The routing diagram page as an EMF vector graphic (landscape letter, with title block).
+pub fn diagram_emf(project: &Project, results: &Results, date: &str) -> Vec<u8> {
+    let opts = PrintOptions { date: date.to_string(), ..Default::default() };
+    let mut c = Ctx { project, results, opts: &opts, doc: Document::new(&project.title) };
+    crate::emf::page_to_emf(&diagram_draw(&mut c))
+}
+
+/// A node's hydrograph chart as an EMF vector graphic (7.5 x 4.5 in), or `None` when the node
+/// has no results.
+pub fn node_graph_emf(project: &Project, results: &Results, node_id: crate::project::NodeId) -> Option<Vec<u8>> {
+    let node = project.node(node_id)?;
+    results.node(node_id)?;
+    let mut page = Page::new(540.0, 324.0);
+    page.rect(0.0, 0.0, 540.0, 324.0, Some(Rgb::WHITE), None);
+    node_chart(&mut page, project, results, node, 0.0, 0.0, 540.0, 324.0);
+    Some(crate::emf::page_to_emf(&page))
+}
+
+/// A node's summary listing as EMF vector text (monospace, letter width).
+pub fn node_summary_emf(project: &Project, results: &Results, node_id: crate::project::NodeId) -> Option<Vec<u8>> {
+    let node = project.node(node_id)?;
+    let lines = report::node_summary(project, results, node);
+    let size = 8.0;
+    let lh = size * 1.22;
+    let mut page = Page::new(540.0, (lines.len() as f32 * lh + 2.0 * 8.0).max(40.0));
+    for (i, l) in lines.iter().enumerate() {
+        page.text(8.0, 8.0 + size + i as f32 * lh, size, Font::Mono, Align::Left, Rgb::BLACK, l);
+    }
+    Some(crate::emf::page_to_emf(&page))
 }
 
 /// A 2-D hydrograph chart in a box (x, y, w, h).
@@ -290,55 +325,60 @@ fn trim(v: f64, step: f64) -> String {
     format!("{:.*}", dp.min(3), v)
 }
 
+/// Draws a node's hydrograph chart (series and summary legend) into the box (x, y, w, h).
+#[allow(clippy::too_many_arguments)]
+fn node_chart(page: &mut Page, project: &Project, results: &Results, node: &Node, x: f32, y: f32, w: f32, h: f32) {
+    let Some(r) = results.node(node.id) else { return };
+    let mut series: Vec<(&str, &Hydrograph, Rgb)> = Vec::new();
+    match node.node_type() {
+        NodeType::Subcat => series.push(("Runoff", &r.outflow, Rgb::from_u8(20, 160, 200))),
+        _ => {
+            series.push(("Inflow", &r.inflow, Rgb::from_u8(40, 170, 60)));
+            series.push(("Outflow", &r.outflow, Rgb::from_u8(120, 120, 120)));
+            let names = ["Primary", "Secondary", "Tertiary", "Discarded"];
+            let colors = [Rgb::from_u8(30, 110, 250), Rgb::from_u8(230, 50, 50), Rgb::from_u8(230, 150, 30), Rgb::from_u8(150, 60, 190)];
+            if r.routes.iter().filter(|h| h.has_flow()).count() > 1 {
+                for k in 0..4 {
+                    if r.routes[k].has_flow() {
+                        series.push((names[k], &r.routes[k], colors[k]));
+                    }
+                }
+            }
+        }
+    }
+    let u = &project.units;
+    let mut summary = Vec::new();
+    if let Detail::Subcat(d) = &r.detail {
+        summary.push(format!("Runoff={}", u.fmt_flow(r.outflow.peak().value)));
+        summary.push(format!("Area={}", u.fmt_area(d.composite.total_area)));
+        summary.push(format!("Volume={}", u.fmt_volume(r.outflow.volume_cf())));
+        summary.push(format!("Tc={:.1} min", d.tc_minutes));
+        summary.push(format!("CN={}", d.composite.cn));
+    } else {
+        summary.push(format!("Inflow={}", u.fmt_flow(r.inflow.peak().value)));
+        summary.push(format!("Outflow={}", u.fmt_flow(r.outflow.peak().value)));
+        if let Detail::Pond(d) = &r.detail {
+            summary.push(format!("Peak Elev={}", u.fmt_elev(d.peak_elevation)));
+            summary.push(format!("Storage={}", u.fmt_volume(d.peak_storage)));
+        }
+    }
+    let units = project.units;
+    hydro_chart(page, x, y, w, h, &node.title(), &series, &summary, units.flow_label(), &|q| units.flow(q));
+}
+
 fn node_pages(c: &mut Ctx, node: &Node) {
     let mut page = c.new_page(false);
     let lines = report::node_summary(c.project, c.results, node);
     let mut y = c.text_block(&mut page, BODY_TOP, None, &lines, 7.6);
-    if c.opts.graphs {
-        if let Some(r) = c.results.node(node.id) {
-            let mut series: Vec<(&str, &Hydrograph, Rgb)> = Vec::new();
-            match node.node_type() {
-                NodeType::Subcat => series.push(("Runoff", &r.outflow, Rgb::from_u8(20, 160, 200))),
-                _ => {
-                    series.push(("Inflow", &r.inflow, Rgb::from_u8(40, 170, 60)));
-                    series.push(("Outflow", &r.outflow, Rgb::from_u8(120, 120, 120)));
-                    let names = ["Primary", "Secondary", "Tertiary", "Discarded"];
-                    let colors = [Rgb::from_u8(30, 110, 250), Rgb::from_u8(230, 50, 50), Rgb::from_u8(230, 150, 30), Rgb::from_u8(150, 60, 190)];
-                    if r.routes.iter().filter(|h| h.has_flow()).count() > 1 {
-                        for k in 0..4 {
-                            if r.routes[k].has_flow() {
-                                series.push((names[k], &r.routes[k], colors[k]));
-                            }
-                        }
-                    }
-                }
-            }
-            let u = &c.project.units;
-            let mut summary = Vec::new();
-            if let Detail::Subcat(d) = &r.detail {
-                summary.push(format!("Runoff={}", u.fmt_flow(r.outflow.peak().value)));
-                summary.push(format!("Area={}", u.fmt_area(d.composite.total_area)));
-                summary.push(format!("Volume={}", u.fmt_volume(r.outflow.volume_cf())));
-                summary.push(format!("Tc={:.1} min", d.tc_minutes));
-                summary.push(format!("CN={}", d.composite.cn));
-            } else {
-                summary.push(format!("Inflow={}", u.fmt_flow(r.inflow.peak().value)));
-                summary.push(format!("Outflow={}", u.fmt_flow(r.outflow.peak().value)));
-                if let Detail::Pond(d) = &r.detail {
-                    summary.push(format!("Peak Elev={}", u.fmt_elev(d.peak_elevation)));
-                    summary.push(format!("Storage={}", u.fmt_volume(d.peak_storage)));
-                }
-            }
-            let chart_h = 300.0;
-            if y + chart_h > page.height - MARGIN {
-                let full = std::mem::replace(&mut page, c.new_page(false));
-                c.doc.add(full);
-                y = BODY_TOP;
-            }
-            let units = c.project.units;
-            let pw = page.width;
-            hydro_chart(&mut page, MARGIN, y + 10.0, pw - 2.0 * MARGIN, chart_h, &node.title(), &series, &summary, units.flow_label(), &|q| units.flow(q));
+    if c.opts.graphs && c.results.node(node.id).is_some() {
+        let chart_h = 300.0;
+        if y + chart_h > page.height - MARGIN {
+            let full = std::mem::replace(&mut page, c.new_page(false));
+            c.doc.add(full);
+            y = BODY_TOP;
         }
+        let pw = page.width;
+        node_chart(&mut page, c.project, c.results, node, MARGIN, y + 10.0, pw - 2.0 * MARGIN, chart_h);
     }
     c.doc.add(page);
     if c.opts.tables {
@@ -393,6 +433,25 @@ pub fn report_pdf(project: &Project, results: &Results, opts: &PrintOptions) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn emf_exports_for_nodes_and_diagram() {
+        let mut p = Project::default();
+        let s = p.add_node(NodeType::Subcat, [0.0, 0.0]);
+        let r = p.add_node(NodeType::Reach, [100.0, 0.0]);
+        p.node_mut(s).unwrap().outflows[0] = Some(r);
+        let results = crate::calc::calculate(&p);
+        for id in [s, r] {
+            let g = node_graph_emf(&p, &results, id).unwrap();
+            assert_eq!(&g[40..44], b" EMF");
+            assert_eq!(u32::from_le_bytes([g[48], g[49], g[50], g[51]]) as usize, g.len());
+            let t = node_summary_emf(&p, &results, id).unwrap();
+            assert_eq!(&t[40..44], b" EMF");
+        }
+        let d = diagram_emf(&p, &results, "1/2/2026");
+        assert_eq!(&d[40..44], b" EMF");
+        assert!(node_graph_emf(&p, &results, 9999).is_none());
+    }
 
     #[test]
     fn report_has_pages() {

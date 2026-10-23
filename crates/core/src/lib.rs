@@ -16,6 +16,7 @@ pub mod landuse;
 pub mod link;
 pub mod noaa;
 pub mod outlets;
+pub mod emf;
 pub mod pdf;
 pub mod printing;
 pub mod profile;
