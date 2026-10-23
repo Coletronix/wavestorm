@@ -124,6 +124,10 @@ pub enum Glyph {
     PrintDiagram,
     Calculator,
     Units,
+    LandUse,
+    DiagramSettings,
+    General,
+    Idf,
     Notes,
     Help,
     Messages,
@@ -251,6 +255,31 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
                 }
             }
         }
+        Glyph::LandUse => {
+            let top = pos2(c.x, r.min.y);
+            p.add(Shape::convex_polygon(vec![top, pos2(r.max.x, c.y + s * 0.1), pos2(r.min.x, c.y + s * 0.1)], Color32::from_rgb(40, 140, 50), Stroke::new(1.0, ink)));
+            p.line_segment([pos2(c.x, c.y + s * 0.1), pos2(c.x, r.max.y - 2.0)], Stroke::new(2.0, ink));
+            p.line_segment([pos2(r.min.x, r.max.y - 1.0), pos2(r.max.x, r.max.y - 1.0)], Stroke::new(2.0, Color32::from_rgb(40, 220, 60)));
+        }
+        Glyph::DiagramSettings => {
+            p.rect_filled(r.shrink2(vec2(s * 0.1, 0.0)), 0.0, Color32::WHITE);
+            p.rect_stroke(r.shrink2(vec2(s * 0.1, 0.0)), 0.0, thin, egui::StrokeKind::Inside);
+            p.text(c, Align2::CENTER_CENTER, "A", FontId::proportional(s * 0.8), ink);
+        }
+        Glyph::General => {
+            let grey = Color32::from_rgb(110, 110, 120);
+            p.line_segment([pos2(r.min.x + s * 0.25, r.max.y), pos2(r.min.x + s * 0.25, c.y)], Stroke::new(3.0, grey));
+            p.circle_stroke(pos2(r.min.x + s * 0.25, c.y - s * 0.15), s * 0.2, Stroke::new(2.0, grey));
+            p.line_segment([pos2(r.max.x - s * 0.2, r.max.y), pos2(r.max.x - s * 0.2, r.min.y + 1.0)], Stroke::new(3.0, ink));
+        }
+        Glyph::Idf => {
+            for (k, col) in [Color32::from_rgb(200, 40, 40), Color32::from_rgb(30, 60, 200), Color32::from_rgb(30, 160, 200)].into_iter().enumerate() {
+                let x = r.min.x + 1.0 + k as f32 * s * 0.3;
+                let b = Rect::from_min_max(pos2(x, r.min.y + s * (0.1 + 0.15 * k as f32)), pos2(x + s * 0.26, r.max.y));
+                p.rect_filled(b, 0.0, col);
+                p.rect_stroke(b, 0.0, Stroke::new(1.0, ink), egui::StrokeKind::Inside);
+            }
+        }
         Glyph::Units => {
             p.text(c, Align2::CENTER_CENTER, "12", FontId::proportional(s * 0.75), ink);
             p.line_segment([pos2(r.min.x, r.max.y), pos2(r.max.x, r.max.y)], Stroke::new(1.0, ink));
@@ -302,7 +331,8 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             p.add(Shape::convex_polygon(pts, Color32::WHITE, Stroke::new(1.2, ink)));
         }
         Glyph::Undo | Glyph::Redo => {
-            let dir = if g == Glyph::Undo { -1.0 } else { 1.0 };
+            // The arrowhead sits on the left end for Undo (anticlockwise), the right for Redo.
+            let dir = if g == Glyph::Undo { 1.0 } else { -1.0 };
             let pts: Vec<Pos2> = (0..=10)
                 .map(|i| {
                     let a = std::f32::consts::PI * (0.15 + 0.85 * i as f32 / 10.0);

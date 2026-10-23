@@ -246,14 +246,17 @@ Keep this section updated at the end of every session.
      (`landuse::loading_where`). Open: the Report Land-Use / Report Loading flags are stored
      but not yet used by printing.
   8. (partly) Selected-node bold outline, link circle markers, red ring on problem nodes.
-     Open: right toolbar set/order vs v10scrn1.gif.
+     Right toolbar reordered to the reference settings column (Units, Land-Use, Calculation,
+     Diagram, General, IDF, Print) 2026-10-23. Open: reference buttons for cost, site/house and a
+     disabled back-arrow have no app feature; their exact meaning is a guess.
   9. (done) Chamber Wizard (Storage tab button; script `edit:1P;tab:1;chamber`).
   Next: reach routing attenuation/avg velocity vs the `.hcp` example (item 8 above), metric
-  `.hcp` files (need a sample), right toolbar order. Done 2026-10-23: Delayed Gate
-  editor layout with Opening Step, Vertical Range (moving full-size inlet whose lip drops
-  from invert + range) and Rotary Weir (inlet tilts horizontal → vertical while lowering;
-  from the reference's public batch-detention page — horizontal-state weir uses the generic
-  3.27 grate coefficient, not one derived from Cd), land-use and
+  `.hcp` files (need a sample), rock-fill outlet (needs a verified public equation). Done
+  2026-10-23: Delayed Gate editor layout with Opening Step, Vertical Range (moving full-size
+  inlet whose lip drops from invert + range) and Rotary Weir (inlet tilts horizontal →
+  vertical while lowering; from the reference's public batch-detention page —
+  horizontal-state weir uses the generic 3.27 grate coefficient, not one derived from Cd),
+  land-use and
   loading lines in subcatchment summaries driven by the Report flags.
 - Name and logo (2026-10-23): the product is written **StormWAVES** in all user-facing text.
   Crate, binary and directory names, Rust identifiers (`StormwavesApp`), the
