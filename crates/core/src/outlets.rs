@@ -169,7 +169,17 @@ pub enum DeviceKind {
     DamBreach { start_time: Option<f64>, start_elevation: Option<f64>, formation: f64, final_bottom: f64, final_width: f64, side_z: f64 },
     /// Automated gate (rectangular vertical opening at the invert) that starts opening `delay`
     /// hours after the water first reaches `trigger_elevation` and is fully open after `opening`.
-    DelayedGate { trigger_elevation: f64, delay: f64, opening: f64, width: f64, height: f64, cd: f64 },
+    /// With `step` > 0 (hours) it opens in increments, once per step, instead of continuously.
+    DelayedGate {
+        trigger_elevation: f64,
+        delay: f64,
+        opening: f64,
+        width: f64,
+        height: f64,
+        cd: f64,
+        #[serde(default)]
+        step: f64,
+    },
     /// The pond discharges straight into a channel: normal-depth flow at depth HW − invert.
     Channel { section: crate::geometry::Section, n: f64, slope: f64 },
 }
@@ -718,9 +728,18 @@ impl OutletDevice {
                 let q = (3.1 * width * h.powf(1.5) + 2.45 * side_z.max(0.0) * h.powf(2.5) * f) * submergence(h, c.tw.map(|t| t - bottom).unwrap_or(0.0), 1.5);
                 weir_result(q, h, width + side_z * h)
             }
-            DeviceKind::DelayedGate { delay, opening, width, height, cd, .. } => {
+            DeviceKind::DelayedGate { delay, opening, width, height, cd, step, .. } => {
                 let Some(start) = c.state.since else { return DeviceFlow::ZERO };
-                let f = if *opening > 0.0 { ((c.time - start - delay) / opening).clamp(0.0, 1.0) } else if c.time >= start + delay { 1.0 } else { 0.0 };
+                let elapsed = c.time - start - delay;
+                let f = if *opening > 0.0 {
+                    // Stepped opening: the gate moves at the start of each step.
+                    let e = if *step > 0.0 && elapsed >= 0.0 { ((elapsed / step).floor() + 1.0) * step } else { elapsed };
+                    (e / opening).clamp(0.0, 1.0)
+                } else if elapsed >= 0.0 {
+                    1.0
+                } else {
+                    0.0
+                };
                 if f <= 0.0 || head <= 0.0 {
                     return DeviceFlow::ZERO;
                 }
@@ -1187,7 +1206,7 @@ mod tests {
         let storage = PondStorage::default();
         let siphon = OutletDevice::new("Siphon", 100.0, Routing::Primary, DeviceKind::Siphon { diameter: 1.0, length: 50.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 });
         let breach = OutletDevice::new("Breach", 110.0, Routing::Secondary, DeviceKind::DamBreach { start_time: None, start_elevation: Some(109.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 });
-        let gate = OutletDevice::new("Gate", 100.0, Routing::Primary, DeviceKind::DelayedGate { trigger_elevation: 103.0, delay: 1.0, opening: 2.0, width: 2.0, height: 2.0, cd: 0.6 });
+        let gate = OutletDevice::new("Gate", 100.0, Routing::Primary, DeviceKind::DelayedGate { trigger_elevation: 103.0, delay: 1.0, opening: 2.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0 });
         let devs = vec![siphon, breach, gate];
         let mut st = vec![DeviceState::default(); 3];
         // Below priming: nothing flows.
@@ -1205,6 +1224,13 @@ mod tests {
         let half = evaluate(&devs, 103.0, &|_| None, &storage, &st, 2.0).devices[2];
         let full = evaluate(&devs, 103.0, &|_| None, &storage, &st, 3.0).devices[2];
         assert!(half > 0.0 && full > half);
+        // Opening in 1-hour steps: constant within a step, jumping at the next one.
+        let mut stepped = devs.clone();
+        if let DeviceKind::DelayedGate { step, .. } = &mut stepped[2].kind {
+            *step = 1.0;
+        }
+        let q = |t: f64| evaluate(&stepped, 103.0, &|_| None, &storage, &st, t).devices[2];
+        assert!((q(1.2) - q(1.9)).abs() < 1e-12 && q(2.1) > q(1.9) && (q(1.9) - half).abs() < 1e-9);
         // Breach begins when the water reaches 109 and grows over an hour.
         update_states(&devs, 109.5, 5.0, &mut st);
         let early = evaluate(&devs, 109.5, &|_| None, &storage, &st, 5.1).devices[1];

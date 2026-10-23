@@ -67,7 +67,7 @@ pub fn templates() -> Vec<(&'static str, DeviceKind)> {
         ("Pump", DeviceKind::Pump { rating: vec![(0.0, 2.0), (10.0, 1.5), (20.0, 0.0)], on_elevation: 102.0, off_elevation: 100.5, discharge_elevation: 110.0, max_elevation: None, priority_group: 0, discharge_length: 0.0, discharge_diameter: 0.0, hazen_c: 120.0 }),
         ("Tube/Siphon", DeviceKind::Siphon { diameter: 1.0, length: 40.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 }),
         ("Dam Breach", DeviceKind::DamBreach { start_time: None, start_elevation: Some(105.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 }),
-        ("Delayed Gate", DeviceKind::DelayedGate { trigger_elevation: 102.0, delay: 2.0, opening: 1.0, width: 2.0, height: 2.0, cd: 0.6 }),
+        ("Delayed Gate", DeviceKind::DelayedGate { trigger_elevation: 102.0, delay: 2.0, opening: 1.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0 }),
         ("Channel Outlet", DeviceKind::Channel { section: Section::Trapezoidal { bottom: 4.0, z_left: 2.0, z_right: 2.0, depth: 3.0 }, n: 0.03, slope: 0.01 }),
     ]
 }
@@ -434,13 +434,16 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         conv_field(ui, "z", "Side Slope Z:", "h:v", side_z, |x| x, |x| x.max(0.0), 2, 110.0);
                     });
                 }
-                DeviceKind::DelayedGate { trigger_elevation, delay, opening, width, height, cd } => {
+                DeviceKind::DelayedGate { trigger_elevation, delay, opening, width, height, cd, step } => {
                     // Reference layout: timing column, invert column, inlet-size group.
                     ui.horizontal_top(|ui| {
                         ui.vertical(|ui| {
                             len(ui, "trig", "Trigger Elevation:", trigger_elevation);
                             conv_field(ui, "delay", "Time Delay:", "hours", delay, |x| x, |x| x.max(0.0), 2, 130.0);
                             conv_field(ui, "open", "Opening Time:", "hours", opening, |x| x, |x| x.max(0.0), 2, 130.0);
+                            widgets::with_tip(ui, "Open in increments, once per step (0 = open continuously).", |ui| {
+                                conv_field(ui, "step", "Opening Step:", "hours", step, |x| x, |x| x.max(0.0), 2, 130.0);
+                            });
                         });
                         ui.add_space(8.0);
                         ui.vertical(|ui| {
