@@ -290,3 +290,16 @@ cargo test -p stormwaves-core          # engine tests (fast)
 cargo test                             # everything
 cargo check -p stormwaves-core --target wasm32-unknown-unknown
 ```
+
+## 8. Versioning and releases
+
+Versioning started at **v0.1.0** (2026-10-23), the first version the user signed off on.
+Semantic versioning: the single source of truth is `version` in the workspace `Cargo.toml`
+(shown in the About dialog and on printed pages via `CARGO_PKG_VERSION`).
+
+- Record every user-visible change under `## [Unreleased]` in `CHANGELOG.md` as you commit it.
+- Release only when the user asks: move the Unreleased entries under a new `## [X.Y.Z] - date`
+  heading, bump the workspace version (patch = fixes, minor = features or file-format
+  additions, major = breaking project-file changes), run `cargo test`, clippy and the wasm
+  check, commit "Release vX.Y.Z", then `git tag -a vX.Y.Z`. Pushing tags is the user's call.
+- Project files must stay readable by later versions: new fields get `#[serde(default)]`.
