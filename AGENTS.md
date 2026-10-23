@@ -174,7 +174,8 @@ Keep this section updated at the end of every session.
 - Remaining parity gaps: rock-fill outlet (needs a verified public equation —
   the reference cites Haan, Barfield & Hayes 1994 pp. 151-155). Pop-up tips
   (`widgets::with_tip`, General setting) exist on node General, reach, pond Advanced and Tc
-  segment fields; extend them to the remaining fields (areas/CN grid, storage, outlets, links).
+  segment fields, plus generic label-keyed tips on every numeric field (`dialogs::field_tip`);
+  the areas/CN grid cells still have none.
 - Done later in the session: custom decimal places (Settings > Units), status-bar hints for
   toolbar/palette, "Asymmetrical / Custom Weir" (our crest-profile weir).
 - Also done this session: pump max elevation + priority groups; node Profile tab
