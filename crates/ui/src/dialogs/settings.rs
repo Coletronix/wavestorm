@@ -16,11 +16,14 @@ pub struct SettingsState {
     pub draft: CalcSettings,
     pub tab: usize,
     pub sort: usize,
+    /// Draft of the Rainfall Event name box and the event name it was taken from.
+    pub name: String,
+    pub name_src: String,
 }
 
 impl SettingsState {
     pub fn new(p: &Project) -> Self {
-        SettingsState { draft: p.settings.clone(), tab: 1, sort: 0 }
+        SettingsState { draft: p.settings.clone(), tab: 1, sort: 0, name: String::new(), name_src: String::new() }
     }
 }
 
@@ -110,28 +113,21 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
     let e = &mut ev;
     ui.horizontal(|ui| {
         let opts: Vec<(String, String)> = storms.iter().map(|n| (n.clone(), n.clone())).collect();
-        widgets::combo_field(ui, "storm", "Storm Type:", &mut e.storm, &opts, 210.0);
+        widgets::combo_field(ui, "storm", "Storm Type:", &mut e.storm, &opts, 230.0);
+        // Storm Curve picks one curve of a storm family; the families here are single curves.
+        let mut curve = String::new();
+        ui.add_enabled_ui(false, |ui| {
+            widgets::combo_field(ui, "curve", "Storm Curve:", &mut curve, &[(String::new(), String::new())], 110.0);
+        });
         ui.vertical(|ui| {
-            ui.add_space(14.0);
-            ui.horizontal(|ui| {
-                if widgets::button(ui, "View Storm", 90.0).clicked() {
-                    let mut cs = CurveState::storms();
-                    cs.checked = vec![e.storm.clone()];
-                    actions.push(WindowAction::OpenWindow(Window::Storms(cs)));
-                }
-                if widgets::button(ui, "More Storms...", 100.0).on_hover_text("Create a custom rainfall distribution").clicked() {
-                    actions.push(WindowAction::OpenWindow(Window::StormEdit(crate::dialogs::storm::StormEditor::default())));
-                }
-                if widgets::button(ui, "IDF...", 50.0).on_hover_text("IDF curve for the Rational method").clicked() {
-                    actions.push(WindowAction::OpenWindow(Window::Idf(crate::dialogs::storm::IdfEditor::new(doc))));
-                }
-                if widgets::button(ui, "Lookup...", 70.0).on_hover_text("Create events from a county rainfall table, an IDF file or a NOAA Atlas 14 table").clicked() {
-                    actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
-                }
-            });
-            if widgets::button(ui, "Import Events From IDF File...", 190.0).on_hover_text("Create events (depth = intensity x duration) from an IDF curve file").clicked() {
-                actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
-                actions.push(WindowAction::PickFile(crate::platform::Purpose::NoaaCsv));
+            ui.add_space(2.0);
+            if widgets::button(ui, "View Storm", 96.0).clicked() {
+                let mut cs = CurveState::storms();
+                cs.checked = vec![e.storm.clone()];
+                actions.push(WindowAction::OpenWindow(Window::Storms(cs)));
+            }
+            if widgets::button(ui, "More Storms", 96.0).on_hover_text("Create a custom rainfall distribution").clicked() {
+                actions.push(WindowAction::OpenWindow(Window::StormEdit(crate::dialogs::storm::StormEditor::default())));
             }
         });
     });
@@ -164,53 +160,101 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
         }
         ui.add_space(8.0);
         widgets::group(ui, "Rainfall Event", |ui| {
+            // The name box is a draft: Save renames the current event, picking from the list switches event.
+            let cur_name = s.events.get(s.current_event).map(|e| e.name.clone()).unwrap_or_default();
+            if st.name_src != cur_name {
+                st.name_src = cur_name.clone();
+                st.name = cur_name.clone();
+            }
+            let taken = s.events.iter().enumerate().any(|(i, e)| i != s.current_event && e.name == st.name);
+            let can_save = !st.name.trim().is_empty() && st.name != cur_name && !taken;
             ui.horizontal(|ui| {
-                ui.label("Name: ");
-                if let Some(cur) = s.events.get_mut(s.current_event) {
-                    widgets::text_box(ui, &mut cur.name, 170.0);
+                ui.label("Name:");
+                widgets::text_box(ui, &mut st.name, 96.0);
+                let names: Vec<(usize, String)> = s.events.iter().enumerate().map(|(i, e)| (i, format!("{}  ({:.2})", e.name, u.rain(e.depth)))).collect();
+                let mut pick = usize::MAX;
+                if widgets::combo(ui, "ev", &mut pick, &names, 30.0) && pick < s.events.len() {
+                    s.current_event = pick;
                 }
-            });
-            let names: Vec<(usize, String)> = s.events.iter().enumerate().map(|(i, e)| (i, format!("{}  ({:.2})", e.name, u.rain(e.depth)))).collect();
-            let mut cur = s.current_event;
-            ui.horizontal(|ui| {
-                ui.label("Event:");
-                if widgets::combo(ui, "ev", &mut cur, &names, 170.0) {
-                    s.current_event = cur;
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Sort by:");
-                if widgets::radio(ui, st.sort == 1, "Name").clicked() {
-                    st.sort = 1;
-                    let current = s.events.get(s.current_event).map(|e| e.name.clone());
-                    s.events.sort_by(|a, b| natural(&a.name).cmp(&natural(&b.name)));
-                    s.current_event = current.and_then(|n| s.events.iter().position(|e| e.name == n)).unwrap_or(0);
-                }
-                if widgets::radio(ui, st.sort == 2, "Depth").clicked() {
-                    st.sort = 2;
-                    let current = s.events.get(s.current_event).map(|e| e.name.clone());
-                    s.events.sort_by(|a, b| a.depth.total_cmp(&b.depth));
-                    s.current_event = current.and_then(|n| s.events.iter().position(|e| e.name == n)).unwrap_or(0);
-                }
-            });
-            ui.horizontal(|ui| {
-                if widgets::button(ui, "New", 50.0).clicked() {
-                    let mut ne = s.events.get(s.current_event).cloned().unwrap_or_else(|| RainEvent::new("Event", "Type II 24-hr", 3.0));
-                    ne.name = format!("Event {}", s.events.len() + 1);
-                    s.events.push(ne);
-                    s.current_event = s.events.len() - 1;
+                if widgets::button_enabled(ui, "Save", 56.0, can_save).on_hover_text("Rename this event").clicked() {
+                    if let Some(cur) = s.events.get_mut(s.current_event) {
+                        cur.name = st.name.trim().to_string();
+                    }
                 }
                 if widgets::button_enabled(ui, "Delete", 56.0, s.events.len() > 1).clicked() {
                     s.events.remove(s.current_event);
                     s.current_event = s.current_event.saturating_sub(1);
                 }
-                if widgets::button(ui, "Typical", 60.0).on_hover_text("Replace events with 1, 2, 5, 10, 25, 50, 100-year (edit depths for your site)").clicked() {
-                    let storm = s.events.get(s.current_event).map(|e| e.storm.clone()).unwrap_or_else(|| "Type II 24-hr".into());
-                    s.events = [("1-Year", 2.6), ("2-Year", 3.1), ("5-Year", 3.9), ("10-Year", 4.6), ("25-Year", 5.6), ("50-Year", 6.4), ("100-Year", 7.3)]
-                        .iter()
-                        .map(|(n, d)| RainEvent::new(n, &storm, *d))
-                        .collect();
-                    s.current_event = 3;
+            });
+            ui.horizontal(|ui| {
+                ui.label("Sort by:");
+                let sort_events = |s: &mut CalcSettings, how: usize| {
+                    let current = s.events.get(s.current_event).map(|e| e.name.clone());
+                    match how {
+                        1 => s.events.sort_by(|a, b| natural(&a.name).cmp(&natural(&b.name))),
+                        _ => s.events.sort_by(|a, b| a.depth.total_cmp(&b.depth)),
+                    }
+                    s.current_event = current.and_then(|n| s.events.iter().position(|e| e.name == n)).unwrap_or(0);
+                };
+                if widgets::radio(ui, st.sort == 0, "Manual").clicked() {
+                    st.sort = 0;
+                }
+                if widgets::radio(ui, st.sort == 1, "Name").clicked() {
+                    st.sort = 1;
+                    sort_events(s, 1);
+                }
+                if widgets::radio(ui, st.sort == 2, "Depth").clicked() {
+                    st.sort = 2;
+                    sort_events(s, 2);
+                }
+            });
+            ui.horizontal(|ui| {
+                let import = widgets::button(ui, "Import Events From...", 150.0);
+                egui::Popup::menu(&import).show(|ui| {
+                    if ui.button("County rainfall table / IDF file / NOAA table...").on_hover_text("Create events from a county table, an IDF curve file or a NOAA Atlas 14 table").clicked() {
+                        actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
+                        ui.close();
+                    }
+                    if ui.button("IDF file...").on_hover_text("Create events (depth = intensity x duration) from an IDF curve file").clicked() {
+                        actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
+                        actions.push(WindowAction::PickFile(crate::platform::Purpose::NoaaCsv));
+                        ui.close();
+                    }
+                    if ui.button("Typical 1 to 100-year events").on_hover_text("Replace events with 1, 2, 5, 10, 25, 50, 100-year (edit depths for your site)").clicked() {
+                        let storm = s.events.get(s.current_event).map(|e| e.storm.clone()).unwrap_or_else(|| "Type II 24-hr".into());
+                        s.events = [("1-Year", 2.6), ("2-Year", 3.1), ("5-Year", 3.9), ("10-Year", 4.6), ("25-Year", 5.6), ("50-Year", 6.4), ("100-Year", 7.3)]
+                            .iter()
+                            .map(|(n, d)| RainEvent::new(n, &storm, *d))
+                            .collect();
+                        s.current_event = 3;
+                        ui.close();
+                    }
+                });
+                if widgets::button(ui, "New", 44.0).on_hover_text("Add a copy of the current event").clicked() {
+                    let mut ne = s.events.get(s.current_event).cloned().unwrap_or_else(|| RainEvent::new("Event", "Type II 24-hr", 3.0));
+                    ne.name = format!("Event {}", s.events.len() + 1);
+                    s.events.push(ne);
+                    s.current_event = s.events.len() - 1;
+                }
+            });
+            ui.horizontal(|ui| {
+                if widgets::button_enabled(ui, "Del All", 70.0, s.events.len() > 1).on_hover_text("Delete all events but the current one").clicked() {
+                    if let Some(keep) = s.events.get(s.current_event).cloned() {
+                        s.events = vec![keep];
+                        s.current_event = 0;
+                    }
+                }
+                let view = widgets::button(ui, "View All", 70.0);
+                egui::Popup::menu(&view).show(|ui| {
+                    for (i, ev) in s.events.iter().enumerate() {
+                        if ui.selectable_label(i == s.current_event, format!("{}   {} {}   {}", ev.name, format_args!("{:.2}", u.rain(ev.depth)), u.rain_heading(), ev.storm)).clicked() {
+                            s.current_event = i;
+                            ui.close();
+                        }
+                    }
+                });
+                if widgets::button(ui, "IDF...", 50.0).on_hover_text("IDF curve for the Rational method").clicked() {
+                    actions.push(WindowAction::OpenWindow(Window::Idf(crate::dialogs::storm::IdfEditor::new(doc))));
                 }
             });
         });

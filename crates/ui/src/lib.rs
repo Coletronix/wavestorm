@@ -760,6 +760,9 @@ impl StormwavesApp {
                 if ui.button("Unit Hydrographs...").clicked() {
                     self.open_window(Window::Storms(reports::CurveState::uhs()));
                 }
+                if ui.button("IDF Curves...").clicked() {
+                    self.open_window(Window::Storms(reports::CurveState::idf()));
+                }
                 ui.separator();
                 ui.menu_button("Theme", |ui| {
                     for k in ThemeKind::ALL {
@@ -1577,6 +1580,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         },
         "storms" => app.open_window(Window::Storms(reports::CurveState::storms())),
         "uhs" => app.open_window(Window::Storms(reports::CurveState::uhs())),
+        "idf" => app.open_window(Window::Storms(reports::CurveState::idf())),
         "compare" => {
             let sel: Vec<NodeId> = app.doc().project.nodes.iter().filter(|n| n.node_type() != NodeType::Text).map(|n| n.id).take(3).collect();
             app.open_window(Window::Compare(reports::CompareState::new(sel)));
