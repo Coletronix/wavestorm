@@ -115,6 +115,11 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
             out.push(String::new());
             out.push(format!("Peak Storage= {} @ {:.2} hrs", u.fmt_volume(d.storage.iter().copied().fold(0.0, f64::max)), d.peak_depth_time));
             out.push(format!("Average Depth at Peak Storage= {:.2}{}", u.len(d.peak_depth), u.len_suffix()));
+            let area_text = |a: f64| format!("{:.1} {}", a / if u.metric() { crate::units::FT_PER_M.powi(2) } else { 1.0 }, if u.metric() { "m²" } else { "sf" });
+            if let Some(fd) = reach.flood_depth.filter(|d| *d > 0.0) {
+                let q = reach.section.manning_q(fd, reach.n, reach.slope());
+                out.push(format!("Defined Flood Depth= {:.2}{} Flow Area= {}, Capacity= {}", u.len(fd), u.len_suffix(), area_text(reach.section.props(fd).area), u.fmt_flow(q)));
+            }
             out.push(format!("Bank-Full Depth= {:.2}{} Flow Area= {:.1} {}, Capacity= {}", u.len(reach.section.full_depth()), u.len_suffix(), reach.section.props(reach.section.full_depth()).area / if u.metric() { crate::units::FT_PER_M.powi(2) } else { 1.0 }, if u.metric() { "m²" } else { "sf" }, u.fmt_flow(d.capacity)));
             out.push(String::new());
             out.push(format!("{}, n= {:.3}", section_text(&reach.section, u), reach.n));

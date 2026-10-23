@@ -828,6 +828,9 @@ fn reach_tab(ui: &mut Ui, st: &mut EditState, u: &Units) {
         widgets::with_tip(ui, "A constant loss through the channel bed (e.g. infiltration in a dry swale). It is taken from the inflow first and reported as discarded.", |ui| {
             conv_field(ui, "exf", "Constant Exfiltration:", u.flow_label(), &mut r.exfiltration, |x| u.flow(x), |x| u.flow_in(x), 2, 150.0);
         });
+        widgets::with_tip(ui, "Optional depth above the invert reported as the defined flood depth, with its flow area and capacity.", |ui| {
+            opt_field(ui, "flood", "Flood Depth:", u.len_label(), &mut r.flood_depth, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
+        });
     });
     let cap = r.section.manning_q(r.section.full_depth(), r.n, r.slope());
     ui.label(RichText::new(format!("Capacity at bank full = {}", u.fmt_flow(cap))).strong());

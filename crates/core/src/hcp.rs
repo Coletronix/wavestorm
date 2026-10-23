@@ -486,6 +486,7 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
             }
             reach.inlet_invert = head.num("InletInvert").unwrap_or(0.0);
             reach.outlet_invert = head.num("OutletInvert").unwrap_or(0.0);
+            reach.flood_depth = head.num("FloodDepth");
             let diam = head.num("Diam");
             let botw = head.num("BotWidth");
             let topw = head.num("TopWidth");
@@ -1008,6 +1009,9 @@ fn export_node(o: &mut Out, project: &Project, n: &Node) {
 }
 
 fn export_reach_keys(o: &mut Out, r: &Reach, f: &[ForeignEntry]) {
+    if let Some(d) = r.flood_depth {
+        o.num("FloodDepth", d);
+    }
     match &r.section {
         Section::Rectangular { width, depth } => {
             o.num("BotWidth", *width);
@@ -1596,6 +1600,8 @@ mod tests {
         assert!((po.value / 19.99 - 1.0).abs() < 0.03 && (po.time - 12.30).abs() < 0.06, "outflow {po:?}");
         assert!((nr.inflow_area / 43_560.0 - 48.0).abs() < 0.001);
         assert!((100.0 * nr.impervious_area / nr.inflow_area - 13.65).abs() < 0.05);
+        let summary = crate::report::node_summary(&p, &r, p.by_label("2R").unwrap()).join("\n");
+        assert!(summary.contains("Defined Flood Depth= 1.50' Flow Area= 6.0 sf, Capacity= 22.22 cfs"), "{summary}");
         // Round trip of the real file.
         let (q, _) = import(&export(&p)).unwrap();
         assert_eq!(p, q);

@@ -134,6 +134,9 @@ pub struct Reach {
     /// Constant exfiltration loss (cfs), discarded.
     #[serde(default)]
     pub exfiltration: f64,
+    /// Defined flood depth above the invert (reported with its flow area and capacity).
+    #[serde(default)]
+    pub flood_depth: Option<f64>,
 }
 
 impl Default for Reach {
@@ -145,6 +148,7 @@ impl Default for Reach {
             inlet_invert: 0.0,
             outlet_invert: 0.0,
             exfiltration: 0.0,
+            flood_depth: None,
         }
     }
 }

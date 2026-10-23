@@ -1564,9 +1564,13 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             app.open_window(Window::General(st));
         }
         #[cfg(not(target_arch = "wasm32"))]
-        "import-tr20" | "lookup" => match std::fs::read(arg) {
+        "import-tr20" | "lookup" | "open" => match std::fs::read(arg) {
             Ok(bytes) => {
-                let purpose = if verb.trim() == "lookup" { Purpose::NoaaCsv } else { Purpose::ImportTr20 };
+                let purpose = match verb.trim() {
+                    "lookup" => Purpose::NoaaCsv,
+                    "open" => Purpose::OpenProject,
+                    _ => Purpose::ImportTr20,
+                };
                 app.platform.push(Incoming { purpose, name: arg.to_string(), path: None, bytes });
             }
             Err(e) => app.error = Some(format!("Cannot read {arg}: {e}")),

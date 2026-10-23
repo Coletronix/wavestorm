@@ -496,7 +496,7 @@ fn rating_reach(t: &Table, length: f64) -> Reach {
     let points: Vec<RatingPoint> = rows.iter().map(|&(e, q, a)| RatingPoint { depth: e - invert, flow: q, area: a }).collect();
     // Header: number, drainage area, bank-full elevation.
     let bank_full = t.header.get(2).and_then(|s| num(s)).map_or(0.0, |e| (e - invert).max(0.0));
-    Reach { section: Section::Rating { points, bank_full }, n: 0.0, length, inlet_invert: invert, outlet_invert: invert, exfiltration: 0.0 }
+    Reach { section: Section::Rating { points, bank_full }, n: 0.0, length, inlet_invert: invert, outlet_invert: invert, exfiltration: 0.0, flood_depth: None }
 }
 
 fn struct_pond(t: &Table, start: Option<f64>, notes: &mut Vec<String>, st: u32) -> Pond {

@@ -50,6 +50,7 @@ pub fn sample_project() -> Project {
             inlet_invert: 108.0,
             outlet_invert: 105.5,
             exfiltration: 0.0,
+            flood_depth: Some(1.0),
         });
     }
     if let Some(n) = p.node_mut(basin) {
