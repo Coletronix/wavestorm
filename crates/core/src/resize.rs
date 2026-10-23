@@ -259,7 +259,7 @@ mod tests {
         let r = crate::calc::calculate(&p);
         assert!(meets(&p, id, &r));
         // The next smaller standard size would run fuller than the limit.
-        let smaller = STANDARD_INCHES.iter().map(|x| x / 12.0).filter(|x| *x < d - 1e-9).next_back().unwrap();
+        let smaller = STANDARD_INCHES.iter().map(|x| x / 12.0).rfind(|x| *x < d - 1e-9).unwrap();
         let mut q = p.clone();
         set_size(&mut q, id, smaller);
         assert!(!meets(&q, id, &crate::calc::calculate(&q)));
