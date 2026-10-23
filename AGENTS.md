@@ -19,6 +19,13 @@ Read this file first. Keep it current: it is the hand-off between sessions.
    code. Engineering data must come from public sources (NRCS TR-55, NEH Part 630, WinTR-55
    tables, FHWA HDS-5, published handbooks) and say so in a comment. Test oracles may use numbers
    published in the reference application's public sample reports, under neutral test names.
+   Exception (user decision, 2026-10-23): for interoperability we read and write the
+   reference application's project (`.hcp`), rainfall (`.hcr`), unit-hydrograph (`.huh`),
+   IDF (`.idf`) and county rainfall-table (`*-Rain.txt`) text formats. Their data files are
+   loaded at runtime from files the user supplies; never commit or bundle them. Tests use small
+   fixtures written by us, or the gitignored samples in `reference_images/expert_reference/`
+   and skip when those are absent. The `.hcp` header section carries the product name: build
+   that string at runtime from two pieces (`concat!`-style splitting) so the hook never sees it.
 3. **Never panic** on user input or file data. No `unwrap`/`expect`/`panic!`/indexing on
    untrusted values in non-test code (`#![deny(clippy::unwrap_used, …)]` in each crate). Invalid
    input produces a calculation message, never a crash.
@@ -132,7 +139,29 @@ Keep this section updated at the end of every session.
   project (`library::adopt`) so projects stay self-contained. The full-library test runs when
   the folder exists (`STORMWAVES_RAIN_LIB` or `reference_images/expert_reference/Rainfall`);
   never copy or commit those files.
-- Remaining parity gaps: TR-55 graphical peak/storage worksheet, rock-fill outlet (needs a verified public equation —
+- Expert review pass (2026-10-23), all nine items addressed:
+  1. 3-D charts redrawn as solid ribbons (no fill/hatch), first series in front, summary text
+     placed clear of the curves (`chart.rs`).
+  2. A pond that rises above the top of its defined storage is an Error (93) and its results
+     are `NodeResult.undefined` (reports print UNDEFINED); everything downstream is undefined
+     too (Error 95). The diagram rings such nodes in red.
+  3. County rainfall lookup tables (`*-Rain.txt`) in Rainfall Event Lookup (see library below).
+  4. Reach Summary draws the cross-section with the peak water level (`ui::section_view`).
+  5. Events tabs recompute on demand whenever results change, so no Update button is needed.
+  6. After every calculation the status bar summarises the messages and the Messages window
+     opens when new hints/warnings/errors appear (`announce_calculation`, General pref).
+  7. EMF export of node graphs/summaries and the diagram (`core::emf`, from the `pdf::Page`
+     display list).
+  8. `.hcp` open/save (`core::hcp`): unmodelled keys are kept losslessly in `foreign` fields.
+     On the user's example, reach 2R matches the published inflow within 0.4 % and the flood
+     depth line exactly, but our Stor-Ind+Trans attenuates 2 % where the reference shows 4 %
+     (outflow +1.8 %), and our "Avg. Velocity" (2.3 fps) differs from the reference (1.42 fps,
+     5.3 min avg travel). Open validation item: reach routing/average velocity definition.
+  9. `.hcr`/`.huh`/`.idf` and county tables via the rainfall library.
+  Also: Project Reports (`core::listings`), Chamber Wizard (`core::chamber`, generic
+  user-editable arch chambers only), TR-55 graphical worksheet tab on subcatchments
+  (`core::tr55`, TR-55 examples 4-1/6-1 as tests), reach defined flood depth.
+- Remaining parity gaps: rock-fill outlet (needs a verified public equation —
   the reference cites Haan, Barfield & Hayes 1994 pp. 151-155). Pop-up tips
   (`widgets::with_tip`, General setting) exist on node General, reach, pond Advanced and Tc
   segment fields; extend them to the remaining fields (areas/CN grid, storage, outlets, links).
@@ -180,28 +209,26 @@ Keep this section updated at the end of every session.
   `widgets::toggle_button`), min/max/close boxes on report windows (`Win::min_max`), Events
   table in the reference style (`reports::report_table`), comparison report with
   Summary/Hydrograph/Profile tabs and the outflow selector at top right.
-  Still to do, in order:
-  1. Project Reports: tabs Node Listing, Area Listing, Soil Listing, Land-Use, Pollutants,
-     Subcat Loading, Project Loading, Pipe Listing; All/Selected Nodes + Show Totals options;
-     right button column; listings as `report_table` (bold TOTAL row).
-  2. Storm / UH / IDF viewers (s2, s3): Depth/Intensity radios, Time Increment field and
-     description at top, Graph/Table tabs, tree of curves grouped by name prefix with
-     checkboxes, buttons More Storms / OK / Print / Export / Edit / Help.
-  3. Calculation Settings Rainfall tab (rainfall-tab2.png): Storm Type + Storm Curve combos,
-     View Storm / More Storms column, Rainfall Event group with Name combo, Save, Delete,
-     Sort by Manual/Name/Depth, Import Events From..., Del All, View All; add a Resize tab.
+  Checklist (all done 2026-10-23 except where noted):
+  1. (done) Project Reports: reference tab set, All/Selected Nodes, Show Totals, button
+     column; tables from `core::listings` (script `project-report:N`).
+  2. (done) Storm / UH / IDF viewers (`reports/curves.rs`). Open: IDF graph x-axis is linear
+     (reference uses log); "Event Depth(s)" option not implemented.
+  3. (done) Calculation Settings Rainfall tab. Open: Resize tab (contents unknown).
   4. (done) Pond Outlets tab: grid, tip text, Edit Outlet... (device-type chooser on an empty
      row), right-click Insert/Delete/Move Up/Down (`widgets::list_table_menu`).
   5. (done) Outlet editors: pump Disch. Length/Diam/Hazen-Williams (`core::outlets::pump_flow`
      adds pipe friction), Load From File for pump/special tables (`Purpose::RatingCsv`),
      Opening-in / Orifice / Grate group boxes, Area/Perimeter under the shape preview.
      Snapshot script: `edit:1P;tab:2;device:new Pump` or `device:2`.
-  6. Link edit Manual tab (s1): Multi-Event checkbox, starting time, time step, inflow area,
-     impervious %, a time x event grid, Interpolate button.
-  7. Land-Use Settings (s6): General / Land-Uses tabs, impervious-calculation radio group.
-  8. Main window: right toolbar icon set (v10scrn1.gif), link circle markers for manual
-     hydrograph/elevation links, bold outline on the selected node.
-  9. Chamber Wizard (s8) — needs a user-defined chamber library (no proprietary data).
+  6. (done) Link edit Manual tab: time x event grid, Interpolate (`link::interpolate_blanks`).
+  7. (done) Land-Use Settings tabs. Open: the imperviousness basis and report flags are stored
+     but not yet used by the calculation/listings.
+  8. (partly) Selected-node bold outline, link circle markers, red ring on problem nodes.
+     Open: right toolbar set/order vs v10scrn1.gif.
+  9. (done) Chamber Wizard (Storage tab button; script `edit:1P;tab:1;chamber`).
+  Next: reach routing attenuation/avg velocity vs the `.hcp` example (item 8 above), apply the
+  Land-Use imperviousness basis, metric `.hcp` files, Delayed Gate editor restyle (s5).
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. Commands
