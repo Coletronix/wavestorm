@@ -86,6 +86,27 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
                     out.push(format!("{:>12}         {:.2}% Unconnected", group(u.area(c.unconnected_area), u.area_dp()), c.unconnected_area / c.impervious_area.max(1e-9) * 100.0));
                 }
             }
+            // Land use and pollutant loading (Settings > Land-Use), when the areas carry land uses.
+            let lu = &project.land_use;
+            if (lu.report_land_use || lu.report_loading) && sc.areas.iter().any(|a| a.land_use.as_deref().is_some_and(|x| !x.is_empty())) {
+                let id = node.id;
+                let rows = crate::landuse::loading_where(project, results, &|x| x == id);
+                out.push(String::new());
+                for row in &rows {
+                    let mut line = String::new();
+                    if lu.report_land_use {
+                        line.push_str(&format!("{:>12}  {:<20} {:.2}% Imp.", group(u.area(row.area), u.area_dp()), row.land_use, row.impervious * 100.0));
+                    } else {
+                        line.push_str(&format!("{:>12}  {:<20}", group(u.area(row.area), u.area_dp()), row.land_use));
+                    }
+                    if lu.report_loading {
+                        for (name, load) in lu.pollutants.iter().zip(&row.loads) {
+                            line.push_str(&format!("  {name}= {} lb", group(*load, 2)));
+                        }
+                    }
+                    out.push(line);
+                }
+            }
             out.push(String::new());
             if !sc.tc.is_empty() {
                 out.push("    Tc  Length    Slope  Velocity  Capacity  Description".into());

@@ -218,6 +218,23 @@ mod tests {
     }
 
     #[test]
+    fn summary_reports_land_use_when_enabled() {
+        let mut p = Project::default();
+        p.land_use.uses = vec![("Parking".into(), vec![100.0, 0.5, 2.0])];
+        let id = p.add_node(NodeType::Subcat, [0.0, 0.0]);
+        let mut a = SubArea::new(43_560.0, 98.0, "Paved parking, HSG B");
+        a.land_use = Some("Parking".into());
+        p.node_mut(id).unwrap().data = NodeData::Subcat(Subcatchment { areas: vec![a], tc: vec![], uh: None, large_units: true });
+        let text = |p: &Project| crate::report::node_summary(p, &crate::calc::calculate(p), p.node(id).unwrap()).join("\n");
+        assert!(text(&p).contains("TSS="));
+        p.land_use.report_loading = false;
+        let t = text(&p);
+        assert!(!t.contains("TSS=") && t.contains("% Imp."));
+        p.land_use.report_land_use = false;
+        assert!(!text(&p).contains("% Imp."));
+    }
+
+    #[test]
     fn simple_method_load() {
         let mut p = Project::default();
         p.land_use.uses = vec![("Parking".into(), vec![100.0, 0.5, 2.0])];

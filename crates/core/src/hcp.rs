@@ -210,7 +210,9 @@ pub fn import(text: &str) -> Result<(Project, Vec<String>), String> {
     let mut head = Rec::new(first);
     if let Some(u) = head.take("FileUnits") {
         if !u.eq_ignore_ascii_case("English") {
-            return Err(format!("Project files stored in {u} units are not supported."));
+            return Err(format!(
+                "Project files stored in {u} units are not supported yet (no sample to verify the unit conversions against). Files stored in English units open fine, including ones whose reports are set to metric."
+            ));
         }
     }
     if let Some(u) = head.take("ReportUnits") {

@@ -157,6 +157,12 @@ Keep this section updated at the end of every session.
      depth line exactly, but our Stor-Ind+Trans attenuates 2 % where the reference shows 4 %
      (outflow +1.8 %), and our "Avg. Velocity" (2.3 fps) differs from the reference (1.42 fps,
      5.3 min avg travel). Open validation item: reach routing/average velocity definition.
+     Findings (2026-10-23): sub-stepping the level-pool routing (1-30 sub-steps) converges to
+     20.37 cfs, so step size is not the cause; Manning at the reference's own depth at peak
+     storage (1.41') is 20.4 cfs, so the reference's 19.99 comes from its translation/peak
+     interpolation or its earlier, sharper inflow (12.23 h vs our 12.26 h, the known UH timing
+     offset). Avg travel time is not ΣS/ΣO (3.8 min, +2.1 translation = 5.9 vs 5.3). More
+     oracles: gitignored `research/ext2/ceqa1.txt` has six published Stor-Ind+Trans reaches.
   9. `.hcr`/`.huh`/`.idf` and county tables via the rainfall library.
   Also: Project Reports (`core::listings`), Chamber Wizard (`core::chamber`, generic
   user-editable arch chambers only), TR-55 graphical worksheet tab on subcatchments
