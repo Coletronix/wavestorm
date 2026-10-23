@@ -1015,7 +1015,7 @@ impl StormwavesApp {
             if tb(ui, Glyph::Trace, "Trace a subcatchment outline", matches!(tool, Tool::Trace { .. })) {
                 self.start_trace();
             }
-            if tb(ui, Glyph::ZoomFit, "Measure length", matches!(tool, Tool::Measure { .. })) {
+            if tb(ui, Glyph::Measure, "Measure length",matches!(tool, Tool::Measure { .. })) {
                 self.tool = Tool::Measure { points: Vec::new() };
                 self.status = "Click points along the path; double-click or Enter to finish".into();
             }

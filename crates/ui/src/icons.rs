@@ -53,9 +53,22 @@ pub fn node_colors(t: NodeType, tok: &Tokens) -> (Color32, Color32) {
 
 /// Draws a node symbol with its number (or palette caption) inside.
 pub fn draw_node(p: &Painter, t: NodeType, c: Pos2, d: f32, label: &str, selected: bool, external: bool, tok: &Tokens) {
-    let (fill, stroke) = node_colors(t, tok);
+    draw_node_ex(p, t, c, d, label, selected, external, false, tok);
+}
+
+/// Like `draw_node`, plus a red outline when `problem` is set (undefined results or errors).
+/// A selected node gets a bold, dark outline. `external` adds the small circle marker under
+/// the symbol (manual hydrograph or tailwater elevation).
+pub fn draw_node_ex(p: &Painter, t: NodeType, c: Pos2, d: f32, label: &str, selected: bool, external: bool, problem: bool, tok: &Tokens) {
+    let (fill, base_stroke) = node_colors(t, tok);
+    let stroke = if selected && t != NodeType::Text { dark(base_stroke) } else { base_stroke };
     let pts = node_outline(t, c, d);
-    let width = if selected { (d * 0.07).clamp(2.5, 5.0) } else { (d * 0.025).clamp(1.0, 2.0) };
+    let width = if selected { (d * 0.09).clamp(3.0, 6.0) } else { (d * 0.025).clamp(1.0, 2.0) };
+    if problem && t != NodeType::Text {
+        let red = Color32::from_rgb(220, 20, 20);
+        let big = node_outline(t, c, d * 1.18);
+        p.add(Shape::closed_line(big, Stroke::new((d * 0.05).clamp(2.0, 3.5), red)));
+    }
     if t == NodeType::Text {
         dashed_polygon(p, &pts, Stroke::new(1.0, stroke));
     } else if t == NodeType::Link {
@@ -70,16 +83,20 @@ pub fn draw_node(p: &Painter, t: NodeType, c: Pos2, d: f32, label: &str, selecte
         p.add(Shape::convex_polygon(pts, fill, Stroke::new(width, stroke)));
     }
     if external {
-        let r = d * 0.09;
-        let cc = pos2(c.x - d * 0.15, c.y + d * 0.44 + r);
+        let r = d * 0.11;
+        let cc = pos2(c.x, c.y + d * 0.5 + r + 1.0);
         p.circle_filled(cc, r, tok.canvas);
-        p.circle_stroke(cc, r, Stroke::new(1.0, stroke));
+        p.circle_stroke(cc, r, Stroke::new(1.3, base_stroke));
     }
     if !label.is_empty() {
         let size = (d * 0.34).clamp(7.0, 28.0) * if label.chars().count() > 3 { 0.75 } else { 1.0 };
         let dy = if t == NodeType::Pond { d * 0.14 } else { 0.0 };
         p.text(c + vec2(0.0, dy), Align2::CENTER_CENTER, label, FontId::proportional(size), tok.node_text);
     }
+}
+
+fn dark(c: Color32) -> Color32 {
+    Color32::from_rgb(c.r() / 3, c.g() / 3, (c.b() / 3).max(40))
 }
 
 fn dashed_polygon(p: &Painter, pts: &[Pos2], stroke: Stroke) {
@@ -113,6 +130,7 @@ pub enum Glyph {
     Underlay,
     Calibrate,
     Trace,
+    Measure,
     Pointer,
     Undo,
     Redo,
@@ -161,8 +179,9 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             }
         }
         Glyph::Delete => {
-            p.line_segment([r.left_top() + vec2(3.0, 3.0), r.right_bottom() - vec2(3.0, 3.0)], Stroke::new(3.0, ink));
-            p.line_segment([r.right_top() + vec2(-3.0, 3.0), r.left_bottom() + vec2(3.0, -3.0)], Stroke::new(3.0, ink));
+            let x = Color32::from_rgb(30, 30, 30);
+            p.line_segment([r.left_top() + vec2(3.0, 3.0), r.right_bottom() - vec2(3.0, 3.0)], Stroke::new(3.0, x));
+            p.line_segment([r.right_top() + vec2(-3.0, 3.0), r.left_bottom() + vec2(3.0, -3.0)], Stroke::new(3.0, x));
         }
         Glyph::Edit | Glyph::Notes => {
             let page = Rect::from_min_size(r.min + vec2(s * 0.1, 0.0), vec2(s * 0.62, s * 0.9));
@@ -266,6 +285,16 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             p.add(Shape::convex_polygon(pts.clone(), t.subcat.0, Stroke::new(1.5, t.subcat.1)));
             for q in pts {
                 p.rect_filled(Rect::from_center_size(q, vec2(3.0, 3.0)), 0.0, ink);
+            }
+        }
+        Glyph::Measure => {
+            let bar = Rect::from_center_size(c, vec2(s * 0.95, s * 0.38));
+            p.rect_filled(bar, 0.0, Color32::from_rgb(250, 215, 120));
+            p.rect_stroke(bar, 0.0, thin, egui::StrokeKind::Inside);
+            for k in 0..6 {
+                let x = bar.min.x + 2.0 + k as f32 * (bar.width() - 4.0) / 5.0;
+                let h = if k % 2 == 0 { s * 0.2 } else { s * 0.12 };
+                p.line_segment([pos2(x, bar.min.y), pos2(x, bar.min.y + h)], Stroke::new(1.0, ink));
             }
         }
         Glyph::Pointer => {
