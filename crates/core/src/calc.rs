@@ -270,6 +270,7 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
     } else {
         run_nodes(project, event, &order, rain.as_ref(), n, None, &mut r);
     }
+    tailwater_checks(project, &order, &mut r);
     r.order = order;
     r.messages.push(Message::new(31, Severity::Note, None, "Calculations complete"));
     r
@@ -480,8 +481,14 @@ fn subcat(
             runoff::rational_runoff(c_weighted, area, intensity, duration, tc_hr, s.rational_rise, s.rational_fall, s.span_start, s.dt, n)
         }
     };
+    if s.runoff != RunoffMethod::Rational && tc_min <= 0.0 {
+        msgs.push(Message::new(46, Severity::Hint, Some(node.id), format!("{} Tc=0 (Instant runoff peak depends on dt)", node.label())));
+    }
+    if s.runoff == RunoffMethod::Rational && tc_hr < 8.0 * s.dt {
+        msgs.push(Message::new(70, Severity::Warning, Some(node.id), format!("{} Tc<8dt requires smaller dt", node.label())));
+    }
     if !hydro.has_flow() {
-        msgs.push(Message::new(45, Severity::Hint, Some(node.id), format!("{} Runoff=Zero", node.label())));
+        msgs.push(Message::new(45,Severity::Hint, Some(node.id), format!("{} Runoff=Zero", node.label())));
     } else {
         if tc_hr > 0.0 && tc_hr < 2.0 * s.dt {
             msgs.push(Message::new(49, Severity::Hint, Some(node.id), format!("{} Tc<2dt may require smaller dt", node.label())));
@@ -636,7 +643,111 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
     }
     let mut total = outflow.clone();
     total.add(&lost);
+    flow_checks(node, inflow, &total, true, msgs);
     NodeResult { inflow: inflow.clone(), outflow: total, routes: [outflow, z.clone(), z, lost], detail: Detail::Reach(detail), ..Default::default() }
+}
+
+/// Outflow index (0 primary, 1 secondary, 2 tertiary) a device routes to, if it routes directly to one.
+fn route_index(r: Routing) -> Option<usize> {
+    match r {
+        Routing::Primary => Some(0),
+        Routing::Secondary => Some(1),
+        Routing::Tertiary => Some(2),
+        _ => None,
+    }
+}
+
+/// Elevation at which a device discharges (a culvert's outlet invert, otherwise its invert).
+fn device_outlet_level(d: &outlets::OutletDevice) -> f64 {
+    match &d.kind {
+        outlets::DeviceKind::Culvert { outlet_invert, .. } => *outlet_invert,
+        _ => d.invert,
+    }
+}
+
+/// Messages 89 (Qout>Qin) and 86 (oscillating outflow) for a routed pond or reach.
+fn flow_checks(node: &Node, inflow: &Hydrograph, outflow: &Hydrograph, check_qout: bool, msgs: &mut Vec<Message>) {
+    let (pi, po) = (inflow.peak().value, outflow.peak().value);
+    if check_qout && po > pi * 1.005 && po - pi > 0.001 {
+        msgs.push(Message::new(89, Severity::Warning, Some(node.id), format!("{} Qout>Qin may require smaller dt", node.label())));
+    }
+    let tol = 1e-6 + 0.001 * outflow.q.iter().copied().fold(0.0, f64::max);
+    let mut last = 0i8;
+    let mut changes: Vec<usize> = Vec::new();
+    for (i, w) in outflow.q.windows(2).enumerate() {
+        let d = w[1] - w[0];
+        if !(d.abs() >= tol) {
+            continue;
+        }
+        let sign = if d > 0.0 { 1 } else { -1 };
+        if last != 0 && sign != last {
+            changes.push(i);
+        }
+        last = sign;
+    }
+    if changes.windows(9).any(|w| matches!((w.first(), w.last()), (Some(a), Some(b)) if b - a <= 19)) {
+        msgs.push(Message::new(86, Severity::Warning, Some(node.id), format!("{} Oscillations may require smaller dt", node.label())));
+    }
+}
+
+/// Messages 78 and 80: a downstream node fed by a pond whose tailwater was not modelled (free
+/// tailwater, non-dynamic pond routing) but which rose above the pond's devices or water surface.
+fn tailwater_checks(project: &Project, order: &[NodeId], r: &mut Results) {
+    if project.settings.pond_method == PondMethod::DynStorInd {
+        return;
+    }
+    let mut out = Vec::new();
+    for id in order {
+        let Some(node) = project.node(*id) else { continue };
+        let NodeData::Pond(pond) = &node.data else { continue };
+        let Some(pres) = r.node(*id) else { continue };
+        let Detail::Pond(pd) = &pres.detail else { continue };
+        for k in 0..3 {
+            if pond.tailwater.get(k) != Some(&Tailwater::Free) {
+                continue;
+            }
+            let Some(target) = node.outflows.get(k).copied().flatten() else { continue };
+            let (Some(down), Some(dres)) = (project.node(target), r.node(target)) else { continue };
+            if pres.undefined.is_some() || dres.undefined.is_some() {
+                continue;
+            }
+            let down_elev: &[f64] = match &dres.detail {
+                Detail::Pond(p) => &p.elevation,
+                Detail::Reach(rd) => &rd.elevation,
+                _ => continue,
+            };
+            let peak = down_elev.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let mut any_device = false;
+            for (i, d) in pond.devices.iter().enumerate() {
+                if route_index(d.routing) != Some(k) {
+                    continue;
+                }
+                any_device = true;
+                let x = peak - device_outlet_level(d);
+                if x > 0.005 {
+                    out.push(Message::new(78, Severity::Warning, Some(target), format!("{} Submerged Pond {} device #{} by {:.2}'", down.label(), node.label(), i + 1, x)));
+                }
+            }
+            if !any_device {
+                continue;
+            }
+            let flow = pres.routes.get(k);
+            let mut worst: Option<(f64, usize)> = None;
+            for (i, (dn, up)) in down_elev.iter().zip(&pd.elevation).enumerate() {
+                if !flow.is_some_and(|h| h.q.get(i).is_some_and(|q| *q > 1e-6)) {
+                    continue;
+                }
+                let x = dn - up;
+                if x > 0.005 && worst.is_none_or(|w| x > w.0) {
+                    worst = Some((x, i));
+                }
+            }
+            if let Some((x, i)) = worst {
+                out.push(Message::new(80, Severity::Warning, Some(target), format!("{} Exceeded Pond {} by {:.2}' @ {:.2} hrs", down.label(), node.label(), x, pres.inflow.time(i))));
+            }
+        }
+    }
+    r.messages.extend(out);
 }
 
 /// Bottom of a pond's model: storage bottom, or the lowest device invert for zero-storage ponds.
@@ -659,6 +770,29 @@ fn route_pond(
     let top_store = pond.storage.top().unwrap_or(bottom);
     let top_dev = pond.devices.iter().map(|d| d.invert).fold(bottom, f64::max);
     let top = top_store.max(top_dev) + 10.0;
+    let mut vols: Vec<(usize, f64, f64)> = pond.storage.volumes.iter().enumerate().filter(|(_, v)| v.embedded_in.is_none()).map(|(j, v)| (j, v.bottom(), v.top())).collect();
+    vols.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let mut highest: Option<(usize, f64)> = None;
+    for (j, b, t) in vols {
+        if let Some((lj, lt)) = highest {
+            if b - lt > 0.005 {
+                msgs.push(Message::new(42, Severity::Hint, Some(node.id), format!("{} Gap in defined storage above volume #{} at {:.2}'", node.label(), lj + 1, lt)));
+            }
+        }
+        if highest.is_none_or(|(_, lt)| t > lt) {
+            highest = Some((j, t));
+        }
+    }
+    for (k, tw) in pond.tailwater.iter().enumerate() {
+        if let Tailwater::Fixed(e) = tw {
+            for (i, d) in pond.devices.iter().enumerate() {
+                let level = device_outlet_level(d);
+                if route_index(d.routing) == Some(k) && level < *e {
+                    msgs.push(Message::new(77, Severity::Warning, Some(node.id), format!("{} Manual tailwater submerged device #{} by {:.2}'", node.label(), i + 1, e - level)));
+                }
+            }
+        }
+    }
     for (i, d) in pond.devices.iter().enumerate() {
         if !pond.storage.is_empty() && d.invert > top_store {
             msgs.push(Message::new(92, Severity::Warning, Some(node.id), format!("{} Outlet Device {} is above defined storage", node.label(), i + 1)));
@@ -795,6 +929,15 @@ fn route_pond(
     {
         msgs.push(Message::new(58, Severity::Hint, Some(node.id), format!("{} Peaked {:.2}' above defined flood level", node.label(), peak_e - flood)));
     }
+    for (i, d) in pond.devices.iter().enumerate() {
+        if let outlets::DeviceKind::Channel { section, .. } = &d.kind {
+            let full = section.full_depth();
+            if peak_e.is_finite() && full.is_finite() && peak_e - d.invert > full {
+                msgs.push(Message::new(96, Severity::Warning, Some(node.id), format!("{} Channel Outlet {} depth exceeded by {:.2}'", node.label(), i + 1, peak_e - d.invert - full)));
+            }
+        }
+    }
+    flow_checks(node, inflow, &outflow, start <= bottom, msgs);
     let tw = [tw_of(Routing::Primary, peak_e, ipk), tw_of(Routing::Secondary, peak_e, ipk), tw_of(Routing::Tertiary, peak_e, ipk)];
     let detail = PondDetail {
         start_elevation: start,
@@ -937,6 +1080,175 @@ mod tests {
         assert!(!r.has_errors(), "{:?}", r.messages);
         p.settings.dt = 0.0;
         assert!(calculate(&p).has_errors());
+    }
+
+    fn has_msg(r: &Results, code: u16, node: NodeId, needle: &str) -> bool {
+        r.messages.iter().any(|m| m.code == code && m.node == Some(node) && m.text.contains(needle))
+    }
+
+    fn set_tc(p: &mut Project, s: NodeId, minutes: f64) {
+        if let Some(Node { data: NodeData::Subcat(sc), .. }) = p.node_mut(s) {
+            sc.tc = vec![TcSegment { kind: TcKind::Direct { minutes, length: 0.0, velocity: 0.0 }, description: String::new() }];
+        }
+    }
+
+    fn pond_mut(p: &mut Project, id: NodeId) -> &mut Pond {
+        match p.node_mut(id) {
+            Some(Node { data: NodeData::Pond(pd), .. }) => pd,
+            _ => panic!("not a pond"),
+        }
+    }
+
+    #[test]
+    fn gap_in_defined_storage_is_hinted() {
+        let (mut p, _, pond) = project_with_pond();
+        assert!(!calculate(&p).messages.iter().any(|m| m.code == 42));
+        let shape = VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations: vec![60.0, 62.0], values: vec![0.5 * AC, 1.0 * AC] };
+        let pd = pond_mut(&mut p, pond);
+        pd.storage.volumes.push(StorageVolume::new("Upper", 60.0, shape.clone()));
+        let mut embedded = StorageVolume::new("Inside", 57.0, shape);
+        embedded.embedded_in = Some(0);
+        pd.storage.volumes.push(embedded);
+        let r = calculate(&p);
+        let n42: Vec<_> = r.messages.iter().filter(|m| m.code == 42).collect();
+        assert_eq!(n42.len(), 1, "{n42:?}");
+        assert!(has_msg(&r, 42, pond, "Gap in defined storage above volume #1 at 55.00'"), "{n42:?}");
+    }
+
+    #[test]
+    fn tc_zero_hint_and_rational_tc_warning() {
+        let (mut p, s, _) = project_with_pond();
+        set_tc(&mut p, s, 0.0);
+        let r = calculate(&p);
+        assert!(has_msg(&r, 46, s, "Tc=0 (Instant runoff peak depends on dt)"));
+        assert!(!r.messages.iter().any(|m| m.code == 70));
+        set_tc(&mut p, s, 23.2);
+        assert!(!calculate(&p).messages.iter().any(|m| m.code == 46));
+        // Rational: Tc of 23.2 min is under 8 dt for dt = 0.1 h.
+        p.settings.runoff = RunoffMethod::Rational;
+        p.settings.events[0].rational_intensity = Some(3.0);
+        let r = calculate(&p);
+        assert!(has_msg(&r, 70, s, "Tc<8dt requires smaller dt"), "{:?}", r.messages);
+        p.settings.dt = 0.04;
+        assert!(!calculate(&p).messages.iter().any(|m| m.code == 70));
+    }
+
+    #[test]
+    fn peak_over_tc_channel_capacity_is_hinted() {
+        use crate::geometry::Section;
+        let (mut p, s, _) = project_with_pond();
+        if let Some(Node { data: NodeData::Subcat(sc), .. }) = p.node_mut(s) {
+            sc.tc.push(TcSegment { kind: TcKind::Channel { length: 100.0, slope: 0.01, n: 0.03, section: Section::Rectangular { width: 1.0, depth: 0.5 } }, description: String::new() });
+        }
+        let r = calculate(&p);
+        assert!(has_msg(&r, 47, s, "of capacity of segment #2"), "{:?}", r.messages);
+    }
+
+    #[test]
+    fn manual_tailwater_above_a_device_is_flagged() {
+        let (mut p, _, pond) = project_with_pond();
+        pond_mut(&mut p, pond).tailwater[0] = Tailwater::Fixed(52.0);
+        let r = calculate(&p);
+        assert!(has_msg(&r, 77, pond, "Manual tailwater submerged device #1 by 2.00'"), "{:?}", r.messages);
+        pond_mut(&mut p, pond).tailwater[0] = Tailwater::Fixed(49.0);
+        assert!(!calculate(&p).messages.iter().any(|m| m.code == 77));
+    }
+
+    #[test]
+    fn channel_outlet_depth_exceeded_is_flagged() {
+        use crate::geometry::Section;
+        let (mut p, _, pond) = project_with_pond();
+        pond_mut(&mut p, pond).devices = vec![OutletDevice::new("Channel", 50.0, Routing::Primary, DeviceKind::Channel { section: Section::Rectangular { width: 4.0, depth: 0.2 }, n: 0.03, slope: 0.01 })];
+        let r = calculate(&p);
+        assert!(has_msg(&r, 96, pond, "Channel Outlet 1 depth exceeded by"), "{:?}", r.messages);
+        pond_mut(&mut p, pond).devices = vec![OutletDevice::new("Channel", 50.0, Routing::Primary, DeviceKind::Channel { section: Section::Rectangular { width: 4.0, depth: 20.0 }, n: 0.03, slope: 0.01 })];
+        assert!(!calculate(&p).messages.iter().any(|m| m.code == 96));
+    }
+
+    fn two_ponds() -> (Project, NodeId, NodeId) {
+        use crate::geometry::PipeShape;
+        let (mut p, _s, upper) = project_with_pond();
+        let lower = p.add_node(NodeType::Pond, [200.0, 0.0]);
+        if let Some(n) = p.node_mut(upper) {
+            n.outflows[0] = Some(lower);
+        }
+        pond_mut(&mut p, upper).devices = vec![OutletDevice::new(
+            "Culvert",
+            50.0,
+            Routing::Primary,
+            DeviceKind::Culvert { shape: PipeShape::Round, width: 1.5, height: 1.5, length: 40.0, outlet_invert: 49.8, n: 0.013, ke: 0.5, cc: 0.9, fill: 0.0, entrance: String::new() },
+        )];
+        if let Some(n) = p.node_mut(lower) {
+            n.data = NodeData::Pond(Pond {
+                storage: crate::storage::PondStorage { volumes: vec![StorageVolume::new("Lower", 49.5, VolumeShape::Prismatoid { width: 60.0, length: 60.0, height: 8.0, z: 0.0 })] },
+                devices: vec![OutletDevice::new(
+                    "Orifice",
+                    49.5,
+                    Routing::Primary,
+                    DeviceKind::Orifice { shape: OpeningShape::Circular { diameter: 0.4 }, plane: Plane::Vertical, cd: 0.6, columns: 1, rows: 1, row_spacing: 0.0, weir_at_low_head: true, grate: None },
+                )],
+                ..Default::default()
+            });
+        }
+        (p, upper, lower)
+    }
+
+    #[test]
+    fn unmodelled_tailwater_submergence_is_reported_once() {
+        let (mut p, upper, lower) = two_ponds();
+        let r = calculate(&p);
+        assert!(!r.has_errors(), "{:?}", r.messages);
+        assert!(has_msg(&r, 78, lower, "Submerged Pond"), "{:?}", r.messages);
+        assert!(r.messages.iter().filter(|m| m.code == 78).all(|m| m.text.contains("device #1 by")));
+        assert!(r.messages.iter().filter(|m| m.code == 78).count() == 1);
+        assert!(has_msg(&r, 80, lower, "Exceeded Pond"), "{:?}", r.messages);
+        assert!(r.messages.iter().filter(|m| m.code == 80).count() == 1);
+        let done = r.messages.iter().position(|m| m.code == 31).unwrap_or(0);
+        assert!(r.messages.iter().position(|m| m.code == 78).unwrap_or(usize::MAX) < done);
+        // Manual or dynamic tailwater means it was modelled: no message.
+        pond_mut(&mut p, upper).tailwater[0] = Tailwater::Fixed(40.0);
+        let r = calculate(&p);
+        assert!(!r.messages.iter().any(|m| m.code == 78 || m.code == 80));
+        p.settings.pond_method = PondMethod::DynStorInd;
+        pond_mut(&mut p, upper).tailwater[0] = Tailwater::Free;
+        let r = calculate(&p);
+        assert!(!r.messages.iter().any(|m| m.code == 78 || m.code == 80));
+    }
+
+    #[test]
+    fn qout_over_qin_and_oscillation_checks() {
+        let mut p = Project::default();
+        let id = p.add_node(NodeType::Pond, [0.0, 0.0]);
+        let node = p.node(id).unwrap().clone();
+        let h = |q: Vec<f64>| Hydrograph { t0: 0.0, dt: 0.1, q };
+        let smooth = h((0..40).map(|i| (-((i as f64 - 20.0) / 6.0).powi(2)).exp() * 10.0).collect());
+        let mut msgs = Vec::new();
+        flow_checks(&node, &smooth, &smooth, true, &mut msgs);
+        assert!(msgs.is_empty(), "{msgs:?}");
+        let bigger = h(smooth.q.iter().map(|q| q * 1.02).collect());
+        flow_checks(&node, &smooth, &bigger, true, &mut msgs);
+        assert_eq!(msgs.iter().map(|m| m.code).collect::<Vec<_>>(), vec![89]);
+        msgs.clear();
+        flow_checks(&node, &smooth, &bigger, false, &mut msgs);
+        assert!(msgs.is_empty());
+        let zigzag = h((0..40).map(|i| 5.0 + if i % 2 == 0 { 1.0 } else { -1.0 }).collect());
+        flow_checks(&node, &zigzag, &zigzag, true, &mut msgs);
+        assert_eq!(msgs.iter().map(|m| m.code).collect::<Vec<_>>(), vec![86]);
+        // A few isolated wiggles are fine.
+        let mut q = smooth.q.clone();
+        q.iter_mut().skip(2).step_by(7).for_each(|v| *v += 0.5);
+        msgs.clear();
+        flow_checks(&node, &h(q.clone()), &h(q), true, &mut msgs);
+        assert!(!msgs.iter().any(|m| m.code == 86), "{msgs:?}");
+    }
+
+    #[test]
+    fn ordinary_ponds_do_not_oscillate() {
+        let (p, _, _) = project_with_pond();
+        let r = calculate(&p);
+        assert!(!r.messages.iter().any(|m| matches!(m.code, 86 | 89)), "{:?}", r.messages);
+        let (p, _, _) = two_ponds();
+        assert!(!calculate(&p).messages.iter().any(|m| matches!(m.code, 86 | 89)));
     }
 
     #[test]

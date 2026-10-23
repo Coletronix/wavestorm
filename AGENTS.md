@@ -139,6 +139,7 @@ Keep this section updated at the end of every session.
   project (`library::adopt`) so projects stay self-contained. The full-library test runs when
   the folder exists (`STORMWAVES_RAIN_LIB` or `reference_images/expert_reference/Rainfall`);
   never copy or commit those files.
+- Calculation messages emitted (`calc.rs`): 13 16 19 22 31 37 40 42 43 44 45 46 47 49 55 58 67 70 73 76 77 78 80 82 85 86 89 91 92 93 95 96 97 98 (plus errors 500 520 550 560 595).
 - Expert review pass (2026-10-23), all nine items addressed:
   1. 3-D charts redrawn as solid ribbons (no fill/hatch), first series in front, summary text
      placed clear of the curves (`chart.rs`).
