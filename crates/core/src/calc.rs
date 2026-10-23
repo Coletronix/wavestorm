@@ -97,6 +97,8 @@ pub struct PondDetail {
     pub tailwater: [Option<f64>; 3],
 }
 
+// Boxing PondDetail would churn every consumer of the public `Detail` data model for no real gain.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Default)]
 pub enum Detail {
     #[default]
@@ -208,6 +210,8 @@ pub fn calculate_all(project: &Project) -> Vec<Results> {
 }
 
 /// Calculates the project for one rainfall event.
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
     let s = &project.settings;
     let mut r = Results { event: event.name.clone(), event_heading: event.heading(), t0: s.span_start, dt: s.dt, ..Default::default() };
@@ -254,10 +258,10 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
             if change < 1e-4 {
                 break;
             }
-            if pass == 11 {
-                if let Some(p) = &mut prev {
-                    p.messages.push(Message::new(85, Severity::Warning, None, "Dynamic tailwater did not converge; Oscillations may require smaller dt"));
-                }
+            if pass == 11
+                && let Some(p) = &mut prev
+            {
+                p.messages.push(Message::new(85, Severity::Warning, None, "Dynamic tailwater did not converge; Oscillations may require smaller dt"));
             }
         }
         if let Some(p) = prev {
@@ -356,12 +360,12 @@ fn run_nodes(project: &Project, event: &RainEvent, order: &[NodeId], rain: Optio
         };
         let mut result = result;
         // Anything fed by an undefined node is undefined too.
-        if result.undefined.is_none() {
-            if let Some(up) = project.inflows(id).into_iter().find(|(up, _)| r.nodes.get(up).is_some_and(|u| u.undefined.is_some())) {
-                let label = project.node(up.0).map(|n| n.label()).unwrap_or_default();
-                r.messages.push(Message::new(95, Severity::Error, Some(id), format!("{} Inflow from {label} is undefined", node.label())));
-                result.undefined = Some(format!("inflow from {label} is undefined"));
-            }
+        if result.undefined.is_none()
+            && let Some(up) = project.inflows(id).into_iter().find(|(up, _)| r.nodes.get(up).is_some_and(|u| u.undefined.is_some()))
+        {
+            let label = project.node(up.0).map(|n| n.label()).unwrap_or_default();
+            r.messages.push(Message::new(95, Severity::Error, Some(id), format!("{} Inflow from {label} is undefined", node.label())));
+            result.undefined = Some(format!("inflow from {label} is undefined"));
         }
         r.nodes.insert(id, result);
     }
@@ -490,21 +494,22 @@ fn subcat(
         if hydro.q.last().is_some_and(|q| *q > 0.01 * p.value) {
             msgs.push(Message::new(37, Severity::Hint, Some(node.id), format!("{} Longer time span advised for full volumes", node.label())));
         }
-        if let Some(q0) = hydro.q.first() {
-            if *q0 > 0.01 * p.value {
-                msgs.push(Message::new(82, Severity::Warning, Some(node.id), format!("{} Early inflow requires earlier time span", node.label())));
-            }
+        if let Some(q0) = hydro.q.first()
+            && *q0 > 0.01 * p.value
+        {
+            msgs.push(Message::new(82, Severity::Warning, Some(node.id), format!("{} Early inflow requires earlier time span", node.label())));
         }
         for (i, seg) in detail.tc_segments.iter().enumerate() {
-            if let Some(cap) = seg.capacity {
-                if cap > 0.0 && p.value > cap {
-                    msgs.push(Message::new(
-                        47,
-                        Severity::Hint,
-                        Some(node.id),
-                        format!("{} Peak is {:.0}% of capacity of segment #{}", node.label(), p.value / cap * 100.0, i + 1),
-                    ));
-                }
+            if let Some(cap) = seg.capacity
+                && cap > 0.0
+                && p.value > cap
+            {
+                msgs.push(Message::new(
+                    47,
+                    Severity::Hint,
+                    Some(node.id),
+                    format!("{} Peak is {:.0}% of capacity of segment #{}", node.label(), p.value / cap * 100.0, i + 1),
+                ));
             }
         }
     }
@@ -658,10 +663,11 @@ fn route_pond(
         if !pond.storage.is_empty() && d.invert > top_store {
             msgs.push(Message::new(92, Severity::Warning, Some(node.id), format!("{} Outlet Device {} is above defined storage", node.label(), i + 1)));
         }
-        if let Some(b) = pond.storage.bottom() {
-            if d.invert < b && !matches!(d.kind, outlets::DeviceKind::Exfiltration { .. }) {
-                msgs.push(Message::new(44, Severity::Hint, Some(node.id), format!("{} Outlet Device {} is below defined storage", node.label(), i + 1)));
-            }
+        if let Some(b) = pond.storage.bottom()
+            && d.invert < b
+            && !matches!(d.kind, outlets::DeviceKind::Exfiltration { .. })
+        {
+            msgs.push(Message::new(44, Severity::Hint, Some(node.id), format!("{} Outlet Device {} is below defined storage", node.label(), i + 1)));
         }
     }
     // Downstream elevation for dynamic tailwater: previous-step elevation of the target node.
@@ -784,10 +790,10 @@ fn route_pond(
     let (ipk, peak_e) = elevation.iter().copied().enumerate().fold((0, f64::NEG_INFINITY), |b, (i, v)| if v > b.1 { (i, v) } else { b });
     let peak_storage = storage.get(ipk).copied().unwrap_or(0.0);
     let detention = routing::detention_time(inflow, &outflow, pond.storage.storage(start));
-    if let Some(flood) = pond.flood_elevation {
-        if peak_e > flood {
-            msgs.push(Message::new(58, Severity::Hint, Some(node.id), format!("{} Peaked {:.2}' above defined flood level", node.label(), peak_e - flood)));
-        }
+    if let Some(flood) = pond.flood_elevation
+        && peak_e > flood
+    {
+        msgs.push(Message::new(58, Severity::Hint, Some(node.id), format!("{} Peaked {:.2}' above defined flood level", node.label(), peak_e - flood)));
     }
     let tw = [tw_of(Routing::Primary, peak_e, ipk), tw_of(Routing::Secondary, peak_e, ipk), tw_of(Routing::Tertiary, peak_e, ipk)];
     let detail = PondDetail {

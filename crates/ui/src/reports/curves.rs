@@ -64,11 +64,11 @@ fn grouped(names: &[String]) -> Vec<(Option<String>, Vec<String>)> {
     let mut out: Vec<(Option<String>, Vec<String>)> = Vec::new();
     for n in names {
         let g = group_of(n);
-        if let Some(g) = &g {
-            if let Some(slot) = out.iter_mut().find(|(k, _)| k.as_deref() == Some(g)) {
-                slot.1.push(n.clone());
-                continue;
-            }
+        if let Some(g) = &g
+            && let Some(slot) = out.iter_mut().find(|(k, _)| k.as_deref() == Some(g))
+        {
+            slot.1.push(n.clone());
+            continue;
         }
         out.push((g, vec![n.clone()]));
     }

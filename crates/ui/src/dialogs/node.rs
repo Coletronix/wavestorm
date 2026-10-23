@@ -90,10 +90,10 @@ impl ManualGrid {
             col.resize(n, String::new());
             let vals: Vec<Option<f64>> = col.iter().map(|s| s.trim().parse::<f64>().ok()).collect();
             for (s, v) in col.iter_mut().zip(interpolate_blanks(&vals)) {
-                if s.trim().parse::<f64>().is_err() {
-                    if let Some(v) = v {
-                        *s = format!("{v:.2}");
-                    }
+                if s.trim().parse::<f64>().is_err()
+                    && let Some(v) = v
+                {
+                    *s = format!("{v:.2}");
                 }
             }
         }
@@ -239,16 +239,16 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
         }
     });
     // Sub-dialogs.
-    if let Some((cn, desc)) = lookup::cn_lookup(ctx, &mut st.cn_lookup) {
-        if let NodeData::Subcat(sc) = &mut st.draft.data {
-            match st.sel_row {
-                Some(i) if i < sc.areas.len() => {
-                    sc.areas[i].cn = cn;
-                    sc.areas[i].hsg = stormwaves_core::cn::soil_from_description(&desc);
-                    sc.areas[i].description = desc;
-                }
-                _ => sc.areas.push(SubArea::new(0.0, cn, &desc)),
+    if let Some((cn, desc)) = lookup::cn_lookup(ctx, &mut st.cn_lookup)
+        && let NodeData::Subcat(sc) = &mut st.draft.data
+    {
+        match st.sel_row {
+            Some(i) if i < sc.areas.len() => {
+                sc.areas[i].cn = cn;
+                sc.areas[i].hsg = stormwaves_core::cn::soil_from_description(&desc);
+                sc.areas[i].description = desc;
             }
+            _ => sc.areas.push(SubArea::new(0.0, cn, &desc)),
         }
     }
     tc_editor(ctx, st, &units, doc);
@@ -282,34 +282,34 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
             None => {}
         }
     }
-    if let Some(ed) = &mut st.device_edit {
-        if let NodeData::Pond(pond) = &mut st.draft.data {
-            match outlet::show(ctx, ed, &units, pond, &st.draft.number, actions) {
-                Some(true) => {
-                    let dev = ed.device.clone();
-                    match ed.index {
-                        Some(i) if i < pond.devices.len() => pond.devices[i] = dev,
-                        _ => {
-                            let at = ed.insert_at.unwrap_or(usize::MAX).min(pond.devices.len());
-                            let shift = |j: usize| Some(if j >= at { j + 1 } else { j });
-                            remap_routes(&mut pond.devices, shift);
-                            let mut dev = dev;
-                            remap_routes(std::slice::from_mut(&mut dev), shift);
-                            pond.devices.insert(at, dev);
-                        }
+    if let Some(ed) = &mut st.device_edit
+        && let NodeData::Pond(pond) = &mut st.draft.data
+    {
+        match outlet::show(ctx, ed, &units, pond, &st.draft.number, actions) {
+            Some(true) => {
+                let dev = ed.device.clone();
+                match ed.index {
+                    Some(i) if i < pond.devices.len() => pond.devices[i] = dev,
+                    _ => {
+                        let at = ed.insert_at.unwrap_or(usize::MAX).min(pond.devices.len());
+                        let shift = |j: usize| Some(if j >= at { j + 1 } else { j });
+                        remap_routes(&mut pond.devices, shift);
+                        let mut dev = dev;
+                        remap_routes(std::slice::from_mut(&mut dev), shift);
+                        pond.devices.insert(at, dev);
                     }
-                    st.device_edit = None;
                 }
-                Some(false) => st.device_edit = None,
-                None => {}
+                st.device_edit = None;
             }
+            Some(false) => st.device_edit = None,
+            None => {}
         }
     }
     if apply {
-        if let NodeData::Link(l) = &mut st.draft.data {
-            if let (LinkSource::Manual(m), Some(g)) = (&mut l.source, &st.manual_grid) {
-                g.apply(m, &units);
-            }
+        if let NodeData::Link(l) = &mut st.draft.data
+            && let (LinkSource::Manual(m), Some(g)) = (&mut l.source, &st.manual_grid)
+        {
+            g.apply(m, &units);
         }
         let draft = st.draft.clone();
         doc.edit("Node Edit", |p| {
@@ -451,23 +451,23 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
             if widgets::button_enabled(ui, "Edit...", 70.0, sel.is_some()).clicked() {
                 edit = sel;
             }
-            if widgets::button_enabled(ui, "Delete", 70.0, sel.is_some()).clicked() {
-                if let Some(i) = sel {
-                    sc.tc.remove(i);
-                    st.sel_row = None;
-                }
+            if widgets::button_enabled(ui, "Delete", 70.0, sel.is_some()).clicked()
+                && let Some(i) = sel
+            {
+                sc.tc.remove(i);
+                st.sel_row = None;
             }
-            if widgets::button_enabled(ui, "Move Up", 70.0, sel.is_some_and(|i| i > 0)).clicked() {
-                if let Some(i) = sel {
-                    sc.tc.swap(i, i - 1);
-                    st.sel_row = Some(i - 1);
-                }
+            if widgets::button_enabled(ui, "Move Up", 70.0, sel.is_some_and(|i| i > 0)).clicked()
+                && let Some(i) = sel
+            {
+                sc.tc.swap(i, i - 1);
+                st.sel_row = Some(i - 1);
             }
         });
-        if let Some(i) = edit {
-            if let Some(s) = sc.tc.get(i) {
-                st.tc_edit = Some((Some(i), s.clone()));
-            }
+        if let Some(i) = edit
+            && let Some(s) = sc.tc.get(i)
+        {
+            st.tc_edit = Some((Some(i), s.clone()));
         }
         let total = tc::total_minutes(&sc.tc, cn, 1);
         ui.add_space(4.0);
@@ -882,10 +882,10 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
                     };
                 }
             }
-            if let Some(i) = edit {
-                if let Some(v) = p.storage.volumes.get(i) {
-                    st.volume_edit = Some((Some(i), v.clone()));
-                }
+            if let Some(i) = edit
+                && let Some(v) = p.storage.volumes.get(i)
+            {
+                st.volume_edit = Some((Some(i), v.clone()));
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
@@ -1078,7 +1078,8 @@ fn volume_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
                     let opts: Vec<(CustomKind, String)> = CustomKind::ALL.iter().map(|k| (*k, k.label().to_string())).collect();
                     widgets::combo_field(ui, "ck", "Data Type:", kind, &opts, 220.0);
                     let is_area = matches!(kind, CustomKind::AreaPrismatic | CustomKind::AreaConic);
-                    let (val_label, to, from): (String, Box<dyn Fn(f64) -> f64>, Box<dyn Fn(f64) -> f64>) = if is_area {
+                    type Conv<'a> = Box<dyn Fn(f64) -> f64 + 'a>;
+                    let (val_label, to, from): (String, Conv, Conv) = if is_area {
                         (format!("Surf.Area ({})", if u.metric() { "m²" } else { "sq-ft" }), Box::new(|v| if u.metric() { v / stormwaves_core::units::FT_PER_M.powi(2) } else { v }), Box::new(|v| if u.metric() { v * stormwaves_core::units::FT_PER_M.powi(2) } else { v }))
                     } else {
                         (format!("Storage ({})", if u.metric() { "m³" } else { "cu-ft" }), Box::new(|v| if u.metric() { v / stormwaves_core::units::CF_PER_M3 } else { v }), Box::new(|v| if u.metric() { v * stormwaves_core::units::CF_PER_M3 } else { v }))

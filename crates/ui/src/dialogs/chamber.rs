@@ -40,10 +40,10 @@ pub fn show(ctx: &egui::Context, title: &str, w: &mut ChamberWizard, u: &Units) 
         let f = &mut w.field;
         ui.horizontal(|ui| {
             let options: Vec<(usize, String)> = w.models.iter().enumerate().map(|(i, m)| (i, m.name.clone())).collect();
-            if widgets::combo_field(ui, "model", "Model:", &mut w.model, &options, 200.0) {
-                if let Some(m) = w.models.get(w.model) {
-                    f.model = m.clone();
-                }
+            if widgets::combo_field(ui, "model", "Model:", &mut w.model, &options, 200.0)
+                && let Some(m) = w.models.get(w.model)
+            {
+                f.model = m.clone();
             }
             ui.add_space(12.0);
             // The user's own arch chamber: outside width, height and length per unit.

@@ -104,8 +104,7 @@ impl StormwavesApp {
     }
 
     pub fn new_project(&mut self) {
-        let mut p = Project::default();
-        p.title = format!("Untitled {}", self.untitled);
+        let p = Project { title: format!("Untitled {}", self.untitled), ..Project::default() };
         self.untitled += 1;
         self.docs.push(Doc::new(p, None));
         self.active = self.docs.len() - 1;
@@ -360,10 +359,10 @@ impl StormwavesApp {
         self.last_backup = now;
         #[cfg(not(target_arch = "wasm32"))]
         for d in &self.docs {
-            if let (true, Some(path)) = (d.dirty, &d.path) {
-                if let Ok(json) = d.project.to_json() {
-                    let _ = std::fs::write(format!("{path}.bak"), json);
-                }
+            if let (true, Some(path)) = (d.dirty, &d.path)
+                && let Ok(json) = d.project.to_json()
+            {
+                let _ = std::fs::write(format!("{path}.bak"), json);
             }
         }
     }
@@ -704,15 +703,15 @@ impl StormwavesApp {
                     }
                 });
                 let sel = self.doc().selection.first().copied();
-                if ui.add_enabled(sel.is_some(), egui::Button::new("Edit...")).clicked() {
-                    if let Some(id) = sel {
-                        self.open_edit(id);
-                    }
+                if ui.add_enabled(sel.is_some(), egui::Button::new("Edit...")).clicked()
+                    && let Some(id) = sel
+                {
+                    self.open_edit(id);
                 }
-                if ui.add_enabled(sel.is_some(), egui::Button::new("Report...")).clicked() {
-                    if let Some(id) = sel {
-                        self.open_report(id);
-                    }
+                if ui.add_enabled(sel.is_some(), egui::Button::new("Report...")).clicked()
+                    && let Some(id) = sel
+                {
+                    self.open_report(id);
                 }
                 if ui.add_enabled(sel.is_some(), egui::Button::new("Delete")).clicked() {
                     self.delete_selection();
@@ -933,11 +932,11 @@ impl StormwavesApp {
         let r = &doc.results;
         let mut cols: Vec<(String, Vec<f64>)> = Vec::new();
         for n in &doc.project.nodes {
-            if let Some(res) = r.node(n.id) {
-                if n.node_type() != NodeType::Text {
-                    cols.push((format!("{} Inflow (cfs)", n.label()), res.inflow.q.clone()));
-                    cols.push((format!("{} Outflow (cfs)", n.label()), res.outflow.q.clone()));
-                }
+            if let Some(res) = r.node(n.id)
+                && n.node_type() != NodeType::Text
+            {
+                cols.push((format!("{} Inflow (cfs)", n.label()), res.inflow.q.clone()));
+                cols.push((format!("{} Outflow (cfs)", n.label()), res.outflow.q.clone()));
             }
         }
         let mut out = String::from("Time (hours)");
@@ -984,16 +983,16 @@ impl StormwavesApp {
             if tb(ui, Glyph::Delete, "Delete selected node(s)") {
                 self.delete_selection();
             }
-            if tb(ui, Glyph::Edit, "Edit selected node") {
-                if let Some(id) = self.doc().selection.first().copied() {
-                    self.open_edit(id);
-                }
+            if tb(ui, Glyph::Edit, "Edit selected node")
+                && let Some(id) = self.doc().selection.first().copied()
+            {
+                self.open_edit(id);
             }
             separator(ui);
-            if tb(ui, Glyph::Report, "Node Report") {
-                if let Some(id) = self.doc().selection.first().copied() {
-                    self.open_report(id);
-                }
+            if tb(ui, Glyph::Report, "Node Report")
+                && let Some(id) = self.doc().selection.first().copied()
+            {
+                self.open_report(id);
             }
             if tb(ui, Glyph::Compare, "Comparison Report") {
                 let sel = self.doc().selection.clone();
@@ -1288,11 +1287,9 @@ impl StormwavesApp {
                         }
                     });
                 }
-                if n.node_type() == NodeType::Subcat && n.outline.is_some() {
-                    if ui.button("Update Area from Outline").clicked() {
-                        self.area_from_outline(id);
-                        close = true;
-                    }
+                if n.node_type() == NodeType::Subcat && n.outline.is_some() && ui.button("Update Area from Outline").clicked() {
+                    self.area_from_outline(id);
+                    close = true;
                 }
             });
         });
@@ -1472,10 +1469,10 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         }
         // Opens the chamber wizard of the pond whose edit dialog is open last.
         "chamber" => {
-            if let Some(Window::Edit(e)) = app.doc().windows.last_mut() {
-                if let stormwaves_core::project::NodeData::Pond(p) = &e.draft.data {
-                    e.chamber = Some(dialogs::chamber::ChamberWizard::new(p.chamber.as_ref(), p.storage.bottom().unwrap_or(100.0)));
-                }
+            if let Some(Window::Edit(e)) = app.doc().windows.last_mut()
+                && let stormwaves_core::project::NodeData::Pond(p) = &e.draft.data
+            {
+                e.chamber = Some(dialogs::chamber::ChamberWizard::new(p.chamber.as_ref(), p.storage.bottom().unwrap_or(100.0)));
             }
         }
         "select" => {
@@ -1500,19 +1497,19 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         }
         // "device:2" opens outlet number 2 of the pond being edited; "device:new Pump" starts a new one.
         "device" => {
-            if let Some(Window::Edit(e)) = app.doc().windows.last_mut() {
-                if let NodeData::Pond(p) = &e.draft.data {
-                    if let Some(name) = arg.trim().strip_prefix("new ") {
-                        if let Some((label, kind)) = dialogs::outlet::templates().into_iter().find(|(l, _)| *l == name.trim()) {
-                            let base = p.storage.bottom().unwrap_or(100.0);
-                            let dev = stormwaves_core::outlets::OutletDevice::new(label, base, stormwaves_core::outlets::Routing::Primary, kind);
-                            e.device_edit = Some(dialogs::outlet::DeviceEditor::new(None, dev));
-                        }
-                    } else if let Some(i) = arg.trim().parse::<usize>().ok().and_then(|n| n.checked_sub(1)) {
-                        if let Some(d) = p.devices.get(i) {
-                            e.device_edit = Some(dialogs::outlet::DeviceEditor::new(Some(i), d.clone()));
-                        }
+            if let Some(Window::Edit(e)) = app.doc().windows.last_mut()
+                && let NodeData::Pond(p) = &e.draft.data
+            {
+                if let Some(name) = arg.trim().strip_prefix("new ") {
+                    if let Some((label, kind)) = dialogs::outlet::templates().into_iter().find(|(l, _)| *l == name.trim()) {
+                        let base = p.storage.bottom().unwrap_or(100.0);
+                        let dev = stormwaves_core::outlets::OutletDevice::new(label, base, stormwaves_core::outlets::Routing::Primary, kind);
+                        e.device_edit = Some(dialogs::outlet::DeviceEditor::new(None, dev));
                     }
+                } else if let Some(i) = arg.trim().parse::<usize>().ok().and_then(|n| n.checked_sub(1))
+                    && let Some(d) = p.devices.get(i)
+                {
+                    e.device_edit = Some(dialogs::outlet::DeviceEditor::new(Some(i), d.clone()));
                 }
             }
         }

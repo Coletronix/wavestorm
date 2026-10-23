@@ -223,6 +223,8 @@ pub fn storage_ratio(dist: Distribution, qo_qi: f64) -> f64 {
 }
 
 /// Storage required (cu ft) to cut `qi` to `qo` given runoff `runoff_in` inches over `area_sf`.
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 pub fn storage_estimate(dist: Distribution, qi: f64, qo: f64, runoff_in: f64, area_sf: f64) -> f64 {
     if !(qi > 0.0) {
         return 0.0;

@@ -63,7 +63,8 @@ pub struct RunoffSeries {
 /// The unit hydrograph has the NRCS unit duration ΔD = 0.133 Tc, so Tp = ΔD/2 + 0.6 Tc. Rainfall
 /// excess is convolved on an internal step no longer than ΔD (the main step divided evenly), and
 /// the result is sampled at the main step. Runoff volume is conserved exactly.
-#[allow(clippy::too_many_arguments)]
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::too_many_arguments, clippy::neg_cmp_op_on_partial_ord)]
 pub fn scs_uh_runoff(
     rain: &Rainfall,
     parts: &[CnArea],
@@ -125,6 +126,8 @@ pub fn scs_uh_runoff(
 /// Santa Barbara Urban Hydrograph: the instantaneous excess hydrograph routed through a linear
 /// reservoir with K = Tc, Q₂ = Q₁ + w(I₁ + I₂ - 2Q₁), w = Δt / (2Tc + Δt).
 #[allow(clippy::too_many_arguments)]
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 pub fn sbuh_runoff(rain: &Rainfall, parts: &[CnArea], ia_ratio: f64, tc_hr: f64, t0: f64, dt: f64, n: usize) -> RunoffSeries {
     let area_sf: f64 = parts.iter().map(|p| p.area_sf).sum();
     let mut out = RunoffSeries { hydrograph: Hydrograph::zeros(t0, dt, n), precip: Vec::with_capacity(n), excess: Vec::with_capacity(n) };
@@ -160,7 +163,8 @@ pub const RATIONAL_FACTOR: f64 = SQFT_PER_ACRE / 12.0 / SEC_PER_HR;
 
 /// Rational-method trapezoidal hydrograph: rises over Tc·rise, holds the peak C·i·A until the
 /// storm duration ends, then falls over Tc·fall.
-#[allow(clippy::too_many_arguments)]
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::too_many_arguments, clippy::neg_cmp_op_on_partial_ord)]
 pub fn rational_runoff(
     c: f64,
     area_sf: f64,

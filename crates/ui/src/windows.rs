@@ -6,6 +6,8 @@ use crate::reports;
 use stormwaves_core::project::NodeId;
 
 /// A floating window.
+// Windows are few and short-lived UI state; boxing each state type would churn every constructor and match.
+#[allow(clippy::large_enum_variant)]
 pub enum Window {
     Report(reports::ReportState),
     Edit(dialogs::node::EditState),
@@ -46,6 +48,8 @@ impl Window {
 }
 
 /// Things windows ask the app to do.
+// Carries a whole `Window` in `OpenWindow`; see `Window`.
+#[allow(clippy::large_enum_variant)]
 pub enum WindowAction {
     OpenReport(NodeId),
     OpenEdit(NodeId),

@@ -311,6 +311,8 @@ fn hydro_chart(page: &mut Page, x: f32, y: f32, w: f32, h: f32, title: &str, ser
     }
 }
 
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 fn nice(raw: f64) -> f64 {
     if !(raw > 0.0) {
         return 1.0;

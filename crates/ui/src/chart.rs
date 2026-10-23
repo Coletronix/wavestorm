@@ -37,6 +37,8 @@ pub struct ChartView {
     pub y: Option<(f64, f64)>,
 }
 
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 fn nice_step(range: f64, target: usize) -> f64 {
     if !(range > 0.0) {
         return 1.0;
@@ -252,14 +254,12 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
             clip.add(Shape::line(pts.clone(), Stroke::new(2.0, s.color)));
             all_pts.extend(pts.iter().copied());
         }
-        if let Some(label) = &s.peak_label {
-            if let Some((j, _)) = s.y.iter().enumerate().filter(|(_, v)| v.is_finite()).max_by(|a, b| a.1.total_cmp(b.1)) {
-                if let (Some(x), Some(y)) = (s.x.get(j), s.y.get(j)) {
-                    if *y > 0.0 {
-                        peak_boxes.push((pos2(sx(*x), sy(*y)) + off, label.clone(), s.color));
-                    }
-                }
-            }
+        if let Some(label) = &s.peak_label
+            && let Some((j, _)) = s.y.iter().enumerate().filter(|(_, v)| v.is_finite()).max_by(|a, b| a.1.total_cmp(b.1))
+            && let (Some(x), Some(y)) = (s.x.get(j), s.y.get(j))
+            && *y > 0.0
+        {
+            peak_boxes.push((pos2(sx(*x), sy(*y)) + off, label.clone(), s.color));
         }
     }
     // Summary text (right-aligned, large, bold).
@@ -343,17 +343,17 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
         }
     }
     // Drag-zoom: drag down-right to zoom, up-left to reset.
-    if resp.dragged() {
-        if let (Some(a), Some(b)) = (resp.interact_pointer_pos().map(|q| q - resp.drag_delta()), resp.interact_pointer_pos()) {
-            let _ = a;
-            let origin = ui.ctx().data(|d| d.get_temp::<Pos2>(resp.id.with("origin"))).unwrap_or(b);
-            ui.painter().rect_stroke(Rect::from_two_pos(origin, b), 0.0, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Inside);
-        }
+    if resp.dragged()
+        && let (Some(a), Some(b)) = (resp.interact_pointer_pos().map(|q| q - resp.drag_delta()), resp.interact_pointer_pos())
+    {
+        let _ = a;
+        let origin = ui.ctx().data(|d| d.get_temp::<Pos2>(resp.id.with("origin"))).unwrap_or(b);
+        ui.painter().rect_stroke(Rect::from_two_pos(origin, b), 0.0, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Inside);
     }
-    if resp.drag_started() {
-        if let Some(p0) = resp.interact_pointer_pos() {
-            ui.ctx().data_mut(|d| d.insert_temp(resp.id.with("origin"), p0));
-        }
+    if resp.drag_started()
+        && let Some(p0) = resp.interact_pointer_pos()
+    {
+        ui.ctx().data_mut(|d| d.insert_temp(resp.id.with("origin"), p0));
     }
     if resp.drag_stopped() {
         let origin = ui.ctx().data(|d| d.get_temp::<Pos2>(resp.id.with("origin")));

@@ -339,11 +339,11 @@ pub fn num_box(ui: &mut Ui, id: Id, value: &mut f64, decimals: usize, width: f32
                 *value = f64::NAN;
                 changed = true;
             }
-        } else if let Ok(v) = trimmed.parse::<f64>() {
-            if (v - *value).abs() > 0.0 || !value.is_finite() {
-                *value = v;
-                changed = true;
-            }
+        } else if let Ok(v) = trimmed.parse::<f64>()
+            && ((v - *value).abs() > 0.0 || !value.is_finite())
+        {
+            *value = v;
+            changed = true;
         }
     }
     if resp.has_focus() {
@@ -694,18 +694,18 @@ pub fn grid(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>,
             }
         }
     });
-    if let Some(i) = ev.delete_row {
-        if i < rows.len() {
-            rows.remove(i);
-            ev.changed = true;
-            *selected = None;
-        }
+    if let Some(i) = ev.delete_row
+        && i < rows.len()
+    {
+        rows.remove(i);
+        ev.changed = true;
+        *selected = None;
     }
-    if let Some(i) = ev.insert_row {
-        if i <= rows.len() {
-            rows.insert(i, vec![String::new(); cols.len()]);
-            ev.changed = true;
-        }
+    if let Some(i) = ev.insert_row
+        && i <= rows.len()
+    {
+        rows.insert(i, vec![String::new(); cols.len()]);
+        ev.changed = true;
     }
     ev
 }

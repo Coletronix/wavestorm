@@ -164,9 +164,9 @@ fn summary_lines(project: &Project, node: &Node, r: &NodeResult, event_heading: 
             out.push(format!("Outflow={}", f(&r.outflow)));
             let names = ["Primary", "Secondary", "Tertiary", "Discarded"];
             if r.routes.iter().filter(|h| h.has_flow()).count() > 1 {
-                for k in 0..4 {
-                    if r.routes[k].has_flow() {
-                        out.push(format!("{}={}", names[k], f(&r.routes[k])));
+                for (name, route) in names.iter().zip(&r.routes) {
+                    if route.has_flow() {
+                        out.push(format!("{}={}", name, f(route)));
                     }
                 }
             }
@@ -368,15 +368,15 @@ pub fn show_node_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ReportState
                     if ui.button("Save Summary as Text...").clicked() {
                         actions.push(WindowAction::SaveFile { name: format!("{}.txt", node.label()), bytes: summary().into_bytes(), ext: "txt" });
                     }
-                    if ui.button("Save Graph as EMF...").clicked() {
-                        if let Some(bytes) = stormwaves_core::printing::node_graph_emf(&doc.project, &doc.results, node.id) {
-                            actions.push(WindowAction::SaveFile { name: format!("{} graph.emf", node.label()), bytes, ext: "emf" });
-                        }
+                    if ui.button("Save Graph as EMF...").clicked()
+                        && let Some(bytes) = stormwaves_core::printing::node_graph_emf(&doc.project, &doc.results, node.id)
+                    {
+                        actions.push(WindowAction::SaveFile { name: format!("{} graph.emf", node.label()), bytes, ext: "emf" });
                     }
-                    if ui.button("Save Summary as EMF...").clicked() {
-                        if let Some(bytes) = stormwaves_core::printing::node_summary_emf(&doc.project, &doc.results, node.id) {
-                            actions.push(WindowAction::SaveFile { name: format!("{} summary.emf", node.label()), bytes, ext: "emf" });
-                        }
+                    if ui.button("Save Summary as EMF...").clicked()
+                        && let Some(bytes) = stormwaves_core::printing::node_summary_emf(&doc.project, &doc.results, node.id)
+                    {
+                        actions.push(WindowAction::SaveFile { name: format!("{} summary.emf", node.label()), bytes, ext: "emf" });
                     }
                     if ui.button("Save Hydrograph as CSV...").clicked() {
                         let (heads, cols) = report::hydrograph_table(&doc.project, &doc.results, &node, false, st.inflows);
@@ -422,7 +422,7 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
             match section {
                 Some((sec, depth)) => {
                     let t = Tokens::get(ui.ctx());
-                    let sec_h = (size.y / 3.0).min(170.0).max(60.0);
+                    let sec_h = (size.y / 3.0).clamp(60.0, 170.0);
                     text_area(ui, &lines, (size.y - sec_h - 4.0).max(40.0));
                     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), sec_h), Sense::hover());
                     widgets::sunken(ui.painter(), rect, t.field, &t);
@@ -646,7 +646,8 @@ fn events_tab(ui: &mut Ui, project: &Project, node: &Node, all: &[stormwaves_cor
     let h = |a: &str, b: String| (a.to_string(), format!("({b})"));
     let elev_unit = if u.metric() { "meters" } else { "feet" }.to_string();
     let is_sub = node.node_type() == NodeType::Subcat;
-    let (heads, rows, peaks): (Vec<(String, String)>, Vec<Vec<String>>, Vec<f64>) = if is_sub {
+    type EventTable = (Vec<(String, String)>, Vec<Vec<String>>, Vec<f64>);
+    let (heads, rows, peaks): EventTable = if is_sub {
         let heads = vec![("Event".to_string(), String::new()), h("Rainfall", u.rain_heading().into()), h("Runoff", u.flow_label().into()), h("Volume", u.volume_heading().into()), h("Depth", u.rain_heading().into())];
         let mut rows = Vec::new();
         let mut peaks = Vec::new();
@@ -817,10 +818,10 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
                     if ui.button("Save as Text...").clicked() {
                         actions.push(WindowAction::SaveFile { name: format!("{name}.txt"), bytes: listing.lines().join("\n").into_bytes(), ext: "txt" });
                     }
-                    if let Listing::Table(t) = &listing {
-                        if ui.button("Save as CSV...").clicked() {
-                            actions.push(WindowAction::SaveFile { name: format!("{name}.csv"), bytes: t.csv().into_bytes(), ext: "csv" });
-                        }
+                    if let Listing::Table(t) = &listing
+                        && ui.button("Save as CSV...").clicked()
+                    {
+                        actions.push(WindowAction::SaveFile { name: format!("{name}.csv"), bytes: t.csv().into_bytes(), ext: "csv" });
                     }
                 });
                 widgets::button_enabled(ui, "Edit", 62.0, false);
@@ -1013,15 +1014,15 @@ pub fn show_messages(ctx: &egui::Context, doc: &mut Doc, actions: &mut Vec<Windo
                     Severity::Error => t.error,
                 };
                 let resp = ui.add(egui::Label::new(RichText::new(line).monospace().color(color)).sense(Sense::click()));
-                if resp.clicked() {
-                    if let Some(id) = m.node {
-                        doc.selection = vec![id];
-                    }
+                if resp.clicked()
+                    && let Some(id) = m.node
+                {
+                    doc.selection = vec![id];
                 }
-                if resp.double_clicked() {
-                    if let Some(id) = m.node {
-                        actions.push(WindowAction::OpenReport(id));
-                    }
+                if resp.double_clicked()
+                    && let Some(id) = m.node
+                {
+                    actions.push(WindowAction::OpenReport(id));
                 }
             }
         });

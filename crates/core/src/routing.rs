@@ -125,6 +125,8 @@ pub struct LevelPoolResult {
 /// storage-indication (modified Puls) method; the step function also allows tailwater and pump
 /// states. `commit` is true for the single call made at each step's final elevation, so stateful
 /// devices update only then.
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 pub fn level_pool(
     table: &StageTable,
     inflow: &Hydrograph,
@@ -294,6 +296,8 @@ pub fn detention_time(inflow: &Hydrograph, outflow: &Hydrograph, initial_storage
 
 /// Pond sizing estimate: (peak outflow, storage needed) pairs from routing `inflow` through
 /// hypothetical ponds whose discharge is proportional to storage (S = K·O) for a wide range of K.
+// `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 pub fn pond_sizing(inflow: &Hydrograph) -> Vec<(f64, f64)> {
     let dt = inflow.dt * SEC_PER_HR;
     let peak_in = inflow.peak().value;

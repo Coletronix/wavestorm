@@ -388,13 +388,12 @@ impl Builder {
             // duration ("1.05" = 1.0 and table 5); split it when a field is missing.
             let f: Vec<String> = if f.first().map(String::as_str) == Some("7") { f[1..].to_vec() } else { f.clone() };
             let mut v: Vec<String> = f.get(2..).unwrap_or(&[]).to_vec();
-            if v.len() == 6 {
-                if let Some((a, b)) = v[2].split_once('.') {
-                    if b.len() >= 2 {
-                        let (dur, table) = (format!("{a}.{}", &b[..1]), b[1..].to_string());
-                        v.splice(2..3, [dur, table]);
-                    }
-                }
+            if v.len() == 6
+                && let Some((a, b)) = v[2].split_once('.')
+                && b.len() >= 2
+            {
+                let (dur, table) = (format!("{a}.{}", &b[..1]), b[1..].to_string());
+                v.splice(2..3, [dur, table]);
             }
             let start_t = v.first().and_then(|s| num(s)).unwrap_or(0.0);
             let Some(depth) = v.get(1).and_then(|s| num(s)) else {
@@ -504,12 +503,12 @@ fn struct_pond(t: &Table, start: Option<f64>, notes: &mut Vec<String>, st: u32) 
     rows.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut start = start;
     // Storage must start from zero: insert a zero-storage stage one foot lower and start there.
-    if let Some(&(e0, _, s0)) = rows.first() {
-        if s0 > 0.0 {
-            rows.insert(0, (e0 - 1.0, 0.0, 0.0));
-            start = start.or(Some(e0));
-            notes.push(format!("STRUCT {st:02}: first storage is not zero; a zero-storage stage was added at {:.2} ft and the pond starts at {e0:.2} ft.", e0 - 1.0));
-        }
+    if let Some(&(e0, _, s0)) = rows.first()
+        && s0 > 0.0
+    {
+        rows.insert(0, (e0 - 1.0, 0.0, 0.0));
+        start = start.or(Some(e0));
+        notes.push(format!("STRUCT {st:02}: first storage is not zero; a zero-storage stage was added at {:.2} ft and the pond starts at {e0:.2} ft.", e0 - 1.0));
     }
     let bottom = rows.first().map_or(0.0, |r| r.0);
     let volume = StorageVolume::new(

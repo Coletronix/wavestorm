@@ -137,10 +137,10 @@ impl<'a> Win<'a> {
                 ctx.request_repaint();
             }
         }
-        if buttons.close {
-            if let Some(o) = self.open {
-                *o = false;
-            }
+        if buttons.close
+            && let Some(o) = self.open
+        {
+            *o = false;
         }
         r.and_then(|r| r.inner).flatten()
     }
