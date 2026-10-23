@@ -19,11 +19,42 @@ pub struct LandUseSettings {
     pub annual_rainfall: Option<f64>,
     /// Fraction of annual rainfall events that produce runoff (Pj).
     pub correction: f64,
+    /// Include the land-use and pollutant-loading listings in project reports.
+    #[serde(default = "yes")]
+    pub report_land_use: bool,
+    #[serde(default = "yes")]
+    pub report_loading: bool,
+    /// How imperviousness is calculated for the listings (the General tab radio group).
+    #[serde(default)]
+    pub imperviousness: ImperviousBasis,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// The scope over which imperviousness is calculated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ImperviousBasis {
+    #[default]
+    EntireProject,
+    ProjectLandUse,
+    EachSubcatchment,
+    SubcatchmentLandUse,
+    ActualRunoff,
 }
 
 impl Default for LandUseSettings {
     fn default() -> Self {
-        LandUseSettings { pollutants: vec!["TSS".into(), "TP".into(), "TN".into()], uses: Vec::new(), annual_rainfall: Some(42.0), correction: 0.9 }
+        LandUseSettings {
+            pollutants: vec!["TSS".into(), "TP".into(), "TN".into()],
+            uses: Vec::new(),
+            annual_rainfall: Some(42.0),
+            correction: 0.9,
+            report_land_use: true,
+            report_loading: true,
+            imperviousness: ImperviousBasis::default(),
+        }
     }
 }
 
@@ -126,6 +157,13 @@ mod tests {
     use super::*;
     use crate::cn::SubArea;
     use crate::project::{NodeType, Subcatchment};
+
+    #[test]
+    fn old_settings_load_with_defaults() {
+        let s: LandUseSettings = serde_json::from_str(r#"{"pollutants":[],"uses":[],"annual_rainfall":null,"correction":0.9}"#).unwrap();
+        assert!(s.report_land_use && s.report_loading);
+        assert_eq!(s.imperviousness, ImperviousBasis::EntireProject);
+    }
 
     #[test]
     fn simple_method_load() {

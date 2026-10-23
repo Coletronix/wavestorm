@@ -251,9 +251,32 @@ pub fn parse_csv(text: &str) -> Result<(Vec<f64>, Vec<(String, Vec<f64>)>), Stri
     Ok((times, names.into_iter().zip(cols).collect()))
 }
 
+/// Fills blank entries that lie between two entered values by linear interpolation by index.
+/// Blanks before the first or after the last entered value stay blank.
+pub fn interpolate_blanks(values: &[Option<f64>]) -> Vec<Option<f64>> {
+    let mut out = values.to_vec();
+    let known: Vec<usize> = (0..values.len()).filter(|&i| values[i].is_some_and(|v| v.is_finite())).collect();
+    for w in known.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let (va, vb) = (values[a].unwrap_or(0.0), values[b].unwrap_or(0.0));
+        for (i, slot) in out.iter_mut().enumerate().take(b).skip(a + 1) {
+            *slot = Some(va + (vb - va) * (i - a) as f64 / (b - a) as f64);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interpolate_fills_interior_blanks_only() {
+        let v = [None, Some(1.0), None, None, Some(4.0), None];
+        let r = interpolate_blanks(&v);
+        assert_eq!(r, vec![None, Some(1.0), Some(2.0), Some(3.0), Some(4.0), None]);
+        assert!(interpolate_blanks(&[]).is_empty());
+    }
 
     fn reference_link() -> Link {
         Link {
