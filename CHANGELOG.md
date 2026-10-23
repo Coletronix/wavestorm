@@ -7,6 +7,8 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-23
+
 ### Changed
 - Renamed the application **WAVEStorm** everywhere: window title, About box, printed footers,
   file headers, crates (`wavestorm-core`, `wavestorm-ui`), binaries (`wavestorm`,
@@ -19,12 +21,16 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
   sketches no longer use fixed white/black.
 
 ### Added
-- **Iridescent Glass** theme (View > Theme, Settings > General): dark glass surfaces with
-  iridescent rims over an aurora backdrop, a new line-icon set, glowing routing arrows, glass
-  node symbols, and a modernised layout — one header bar with the logo, menus, project tabs,
-  event selector and undo/redo; glass node tiles and settings rails; a floating tool dock on
-  the diagram with a zoom readout; overlay scrollbars; a status line with a messages chip.
-  The other themes keep their layout.
+- **Iridescent Glass** theme (View > Theme, Settings > General): a dark theme where everything
+  has a little depth. Panels, buttons, tiles and windows are raised glass slabs with visible
+  thickness, rainbow lower edges, bevels, glints and iridescent rims. Fields, tables, charts
+  and the diagram are sunken wells. Checks, radios and status lights are glass beads, dividers
+  are engraved, nodes are extruded glass blocks with embossed labels, and routing arrows,
+  chart lines and the new icon set are lit glass tubes. All of this sits over an aurora
+  backdrop. It also has a modernised layout: one header bar with the logo, menus, project
+  tabs, event selector and undo/redo; glass node tiles and a settings rail; a floating tool
+  dock on the diagram with a zoom readout; overlay scrollbars; and a status line with a
+  messages chip. The other themes keep their layout.
 
 ## [0.1.0] - 2026-10-23
 
@@ -75,5 +81,6 @@ First tagged release.
 - Stor-Ind+Trans reach attenuation can differ from the reference application (~2 % vs ~4 % on
   one published example).
 
-[Unreleased]: https://github.com/Coletronix/stormwaves/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Coletronix/stormwaves/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Coletronix/stormwaves/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Coletronix/stormwaves/releases/tag/v0.1.0
