@@ -13,6 +13,7 @@ pub mod platform;
 pub mod prefs;
 pub mod reports;
 pub mod samples;
+pub mod section_view;
 pub mod theme;
 pub mod underlay;
 pub mod widgets;
