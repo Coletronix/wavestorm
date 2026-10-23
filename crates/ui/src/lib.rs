@@ -203,6 +203,16 @@ impl StormwavesApp {
                 doc.windows.push(Window::Calibrate(dialogs::misc::CalibrateState::intro()));
                 self.status = format!("Background loaded: {} ({} page{}). Use Diagram > Background > Calibrate Scale.", item.name, pages, if pages == 1 { "" } else { "s" });
             }
+            Purpose::RatingCsv => {
+                let rows = dialogs::outlet::parse_rating(&String::from_utf8_lossy(&item.bytes))?;
+                let n = rows.len();
+                let ed = self.doc().windows.iter_mut().find_map(|w| if let Window::Edit(e) = w { e.device_edit.as_mut() } else { None });
+                let ok = ed.is_some_and(|ed| dialogs::outlet::set_rating(&mut ed.device.kind, rows));
+                if !ok {
+                    return Err("Open a pump or special outlet editor before loading a rating file.".into());
+                }
+                self.status = format!("Loaded {n} rows from {}", item.name);
+            }
             Purpose::LinkCsv => {
                 let text = String::from_utf8_lossy(&item.bytes).into_owned();
                 let (times, columns) = stormwaves_core::link::parse_csv(&text)?;
@@ -1438,6 +1448,24 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
                     Window::ProjectReport(s) => s.tab = n,
                     Window::LandUse(s) => s.tab = n,
                     _ => {}
+                }
+            }
+        }
+        // "device:2" opens outlet number 2 of the pond being edited; "device:new Pump" starts a new one.
+        "device" => {
+            if let Some(Window::Edit(e)) = app.doc().windows.last_mut() {
+                if let NodeData::Pond(p) = &e.draft.data {
+                    if let Some(name) = arg.trim().strip_prefix("new ") {
+                        if let Some((label, kind)) = dialogs::outlet::templates().into_iter().find(|(l, _)| *l == name.trim()) {
+                            let base = p.storage.bottom().unwrap_or(100.0);
+                            let dev = stormwaves_core::outlets::OutletDevice::new(label, base, stormwaves_core::outlets::Routing::Primary, kind);
+                            e.device_edit = Some(dialogs::outlet::DeviceEditor::new(None, dev));
+                        }
+                    } else if let Some(i) = arg.trim().parse::<usize>().ok().and_then(|n| n.checked_sub(1)) {
+                        if let Some(d) = p.devices.get(i) {
+                            e.device_edit = Some(dialogs::outlet::DeviceEditor::new(Some(i), d.clone()));
+                        }
+                    }
                 }
             }
         }

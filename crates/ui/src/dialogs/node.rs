@@ -11,6 +11,7 @@ use egui::{RichText, Ui, vec2};
 use stormwaves_core::cn::SubArea;
 use stormwaves_core::geometry::{PipeShape, RatingPoint, Section, XsPoint};
 use stormwaves_core::link::{LinkElevation, LinkSource, ManualHydrograph, interpolate_blanks};
+use stormwaves_core::outlets::{OutletDevice, Routing};
 use stormwaves_core::project::{Node, NodeData, NodeId, NodeType, Tailwater};
 use stormwaves_core::storage::{CustomKind, StorageVolume, VolumeShape};
 use stormwaves_core::tc::{self, TcKind, TcSegment};
@@ -27,6 +28,8 @@ pub struct EditState {
     pub device_edit: Option<DeviceEditor>,
     /// Text of the manual-hydrograph grid of a link (built when the Manual tab is first drawn).
     pub manual_grid: Option<ManualGrid>,
+    /// Device-type chooser open: the outlet number the new device will take.
+    pub device_pick: Option<usize>,
     /// Text of the Area grid while editing (area, CN, description).
     pub area_rows: Vec<Vec<String>>,
     pub add_kind: usize,
@@ -126,10 +129,50 @@ impl EditState {
             volume_edit: None,
             device_edit: None,
             manual_grid: None,
+            device_pick: None,
             area_rows: Vec::new(),
             add_kind: 0,
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OutletAction {
+    Edit,
+    Insert,
+    Delete,
+    Up,
+    Down,
+}
+
+/// Re-points "route to device n" links after outlets were removed, inserted or moved;
+/// `f` gives the new number, or None to fall back to the primary outflow.
+fn remap_routes(devices: &mut [OutletDevice], f: impl Fn(usize) -> Option<usize>) {
+    for d in devices {
+        if let Routing::Device(j) = d.routing {
+            d.routing = f(j).map_or(Routing::Primary, Routing::Device);
+        }
+    }
+}
+
+/// The small "which device?" chooser shown for an empty outlet row. Returns the chosen
+/// device label and template, or Some(None) on Cancel.
+fn device_chooser(ctx: &egui::Context) -> Option<Option<(&'static str, stormwaves_core::outlets::DeviceKind)>> {
+    let mut out = None;
+    crate::frame::Win::new("Select Outlet Device Type").id(egui::Id::new("device-chooser")).collapsible(false).resizable(false).show(ctx, |ui| {
+        ui.label("Choose the type of outlet device:");
+        ui.add_space(2.0);
+        for (label, kind) in outlet::templates() {
+            if widgets::button(ui, label, 220.0).clicked() {
+                out = Some(Some((label, kind)));
+            }
+        }
+        ui.add_space(4.0);
+        if widgets::button(ui, "Cancel", 80.0).clicked() {
+            out = Some(None);
+        }
+    });
+    out
 }
 
 fn tabs(t: NodeType) -> &'static [&'static str] {
@@ -208,14 +251,36 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
     }
     tc_editor(ctx, st, &units, doc);
     volume_editor(ctx, st, &units);
+    if let (Some(at), None) = (st.device_pick, &st.device_edit) {
+        match device_chooser(ctx) {
+            Some(Some((label, kind))) => {
+                if let NodeData::Pond(pond) = &st.draft.data {
+                    let base = pond.storage.bottom().unwrap_or(100.0);
+                    let mut ed = DeviceEditor::new(None, OutletDevice::new(label, base, Routing::Primary, kind));
+                    ed.insert_at = Some(at);
+                    st.device_edit = Some(ed);
+                }
+                st.device_pick = None;
+            }
+            Some(None) => st.device_pick = None,
+            None => {}
+        }
+    }
     if let Some(ed) = &mut st.device_edit {
         if let NodeData::Pond(pond) = &mut st.draft.data {
-            match outlet::show(ctx, ed, &units, pond, &st.draft.number) {
+            match outlet::show(ctx, ed, &units, pond, &st.draft.number, actions) {
                 Some(true) => {
                     let dev = ed.device.clone();
                     match ed.index {
                         Some(i) if i < pond.devices.len() => pond.devices[i] = dev,
-                        _ => pond.devices.push(dev),
+                        _ => {
+                            let at = ed.insert_at.unwrap_or(usize::MAX).min(pond.devices.len());
+                            let shift = |j: usize| Some(if j >= at { j + 1 } else { j });
+                            remap_routes(&mut pond.devices, shift);
+                            let mut dev = dev;
+                            remap_routes(std::slice::from_mut(&mut dev), shift);
+                            pond.devices.insert(at, dev);
+                        }
                     }
                     st.device_edit = None;
                 }
@@ -826,46 +891,65 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
                 .iter()
                 .map(|d| vec![u.fmt_elev(d.invert), if d.description.is_empty() { d.kind.label().to_string() } else { d.description.clone() }, d.routing.label()])
                 .collect();
-            let ev = widgets::list_table(ui, "outlets", &[("Invert", 80.0, true), ("Description", 260.0, false), ("Routing", 100.0, false)], &rows, &mut st.sel_row, 150.0);
-            let mut edit = ev.double_clicked;
-            let mut del = None;
-            let sel = st.sel_row.filter(|i| *i < p.devices.len());
+            let count = p.devices.len();
+            let mut act: Option<(OutletAction, usize)> = None;
+            let ev = widgets::list_table_menu(ui, "outlets", &[("Invert (feet)", 80.0, true), ("Description", 260.0, false), ("Routing", 100.0, false)], &rows, &mut st.sel_row, 150.0, &mut |ui, i| {
+                let used = i < count;
+                if ui.button("Edit Outlet...").clicked() {
+                    act = Some((OutletAction::Edit, i));
+                    ui.close();
+                }
+                if ui.button("Insert").clicked() {
+                    act = Some((OutletAction::Insert, i.min(count)));
+                    ui.close();
+                }
+                if ui.add_enabled(used, egui::Button::new("Delete")).clicked() {
+                    act = Some((OutletAction::Delete, i));
+                    ui.close();
+                }
+                ui.separator();
+                if ui.add_enabled(used && i > 0, egui::Button::new("Move Up")).clicked() {
+                    act = Some((OutletAction::Up, i));
+                    ui.close();
+                }
+                if ui.add_enabled(used && i + 1 < count, egui::Button::new("Move Down")).clicked() {
+                    act = Some((OutletAction::Down, i));
+                    ui.close();
+                }
+            });
+            if let Some(i) = ev.double_clicked {
+                act = Some((OutletAction::Edit, i));
+            }
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if widgets::button_enabled(ui, "Edit Outlet...", 100.0, sel.is_some()).clicked() {
-                    edit = sel;
-                }
-                if widgets::button_enabled(ui, "Delete", 70.0, sel.is_some()).clicked() {
-                    del = sel;
-                    st.sel_row = None;
+                ui.add_sized(vec2(330.0, 44.0), egui::Label::new(RichText::new("Tip: for standpipes and other compound outlets, enter the final outlet device (the barrel) FIRST, then route the other openings to it. Right-click a row to insert, delete or reorder.").color(Tokens::get(ui.ctx()).text_dim)).wrap());
+                if widgets::button(ui, "Edit Outlet...", 100.0).clicked() {
+                    act = Some((OutletAction::Edit, st.sel_row.unwrap_or(count)));
                 }
             });
-            if let Some(i) = del {
-                p.devices.remove(i);
-                for d in &mut p.devices {
-                    d.routing = match d.routing {
-                        stormwaves_core::outlets::Routing::Device(j) if j == i => stormwaves_core::outlets::Routing::Primary,
-                        stormwaves_core::outlets::Routing::Device(j) if j > i => stormwaves_core::outlets::Routing::Device(j - 1),
-                        other => other,
-                    };
-                }
-            }
-            if let Some(i) = edit {
-                if let Some(d) = p.devices.get(i) {
-                    st.device_edit = Some(DeviceEditor::new(Some(i), d.clone()));
-                }
-            }
-            ui.add_space(4.0);
-            ui.label("Add outlet device:");
-            ui.horizontal_wrapped(|ui| {
-                let base = p.storage.bottom().unwrap_or(100.0);
-                for (label, kind) in outlet::templates() {
-                    if widgets::button(ui, label, 0.0).clicked() {
-                        st.device_edit = Some(DeviceEditor::new(None, stormwaves_core::outlets::OutletDevice::new(label, base, stormwaves_core::outlets::Routing::Primary, kind)));
+            if let Some((a, i)) = act {
+                match a {
+                    OutletAction::Edit => match p.devices.get(i) {
+                        Some(d) => st.device_edit = Some(DeviceEditor::new(Some(i), d.clone())),
+                        None => st.device_pick = Some(count),
+                    },
+                    OutletAction::Insert => st.device_pick = Some(i),
+                    OutletAction::Delete if i < count => {
+                        p.devices.remove(i);
+                        remap_routes(&mut p.devices, |j| if j == i { None } else if j > i { Some(j - 1) } else { Some(j) });
+                        st.sel_row = None;
                     }
+                    OutletAction::Up | OutletAction::Down => {
+                        let k = if a == OutletAction::Up { i.wrapping_sub(1) } else { i + 1 };
+                        if i < count && k < count {
+                            p.devices.swap(i, k);
+                            remap_routes(&mut p.devices, |j| Some(if j == i { k } else if j == k { i } else { j }));
+                            st.sel_row = Some(k);
+                        }
+                    }
+                    OutletAction::Delete => {}
                 }
-            });
-            ui.add_space(4.0);
-            ui.label(RichText::new("Tip: for a riser, enter the outlet barrel (culvert) first, then route the openings to it (Routing = Device 1).").color(Tokens::get(ui.ctx()).text_dim));
+            }
         }
         "Tailwater" => {
             for (k, name) in ["Primary", "Secondary", "Tertiary"].iter().enumerate() {

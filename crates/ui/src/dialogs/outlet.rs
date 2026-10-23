@@ -2,8 +2,10 @@
 
 use super::lookup::{ENTRANCES, manning_button};
 use super::{Buttons, conv_field, ok_cancel_apply, opt_field};
+use crate::platform::Purpose;
 use crate::theme::Tokens;
 use crate::widgets;
+use crate::windows::WindowAction;
 use egui::{Color32, Rect, RichText, Stroke, Ui, pos2, vec2};
 use stormwaves_core::geometry::{PipeShape, Section};
 use stormwaves_core::outlets::{DeviceKind, ExfilMode, OpeningShape, OutletDevice, Plane, Routing};
@@ -13,11 +15,13 @@ use stormwaves_core::units::Units;
 pub struct DeviceEditor {
     pub index: Option<usize>,
     pub device: OutletDevice,
+    /// For a new device: the position to insert it at (default: the end).
+    pub insert_at: Option<usize>,
 }
 
 impl DeviceEditor {
     pub fn new(index: Option<usize>, device: OutletDevice) -> Self {
-        DeviceEditor { index, device }
+        DeviceEditor { index, device, insert_at: None }
     }
 }
 
@@ -60,7 +64,7 @@ pub fn templates() -> Vec<(&'static str, DeviceKind)> {
         ("Exfiltration", DeviceKind::Exfiltration { mode: ExfilMode::SurfaceVelocity { velocity: 1.0 / 12.0 / 3600.0 }, phase_in: 0.01, max_elevation: None }),
         ("Special (Rating Table)", DeviceKind::Special { table: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 3.0)], head_based: true, extrapolate: false }),
         ("Constant Flow/Skimmer", DeviceKind::ConstantFlow { flow: 0.5, phase_in: 0.3 }),
-        ("Pump", DeviceKind::Pump { rating: vec![(0.0, 2.0), (10.0, 1.5), (20.0, 0.0)], on_elevation: 102.0, off_elevation: 100.5, discharge_elevation: 110.0, max_elevation: None, priority_group: 0 }),
+        ("Pump", DeviceKind::Pump { rating: vec![(0.0, 2.0), (10.0, 1.5), (20.0, 0.0)], on_elevation: 102.0, off_elevation: 100.5, discharge_elevation: 110.0, max_elevation: None, priority_group: 0, discharge_length: 0.0, discharge_diameter: 0.0, hazen_c: 120.0 }),
         ("Tube/Siphon", DeviceKind::Siphon { diameter: 1.0, length: 40.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 }),
         ("Dam Breach", DeviceKind::DamBreach { start_time: None, start_elevation: Some(105.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 }),
         ("Delayed Gate", DeviceKind::DelayedGate { trigger_elevation: 102.0, delay: 2.0, opening: 1.0, width: 2.0, height: 2.0, cd: 0.6 }),
@@ -69,8 +73,9 @@ pub fn templates() -> Vec<(&'static str, DeviceKind)> {
 }
 
 /// Returns Some(true) on OK, Some(false) on Cancel.
-pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, pond_number: &str) -> Option<bool> {
+pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, pond_number: &str, actions: &mut Vec<WindowAction>) -> Option<bool> {
     let mut result = Buttons::None;
+    let t = Tokens::get(ctx);
     let title = format!("Pond {pond_number}P {} Outlet", ed.device.kind.label());
     crate::frame::Win::new(title).id(egui::Id::new("device-editor")).collapsible(false).resizable(false).show(ctx, |ui| {
         let d = &mut ed.device;
@@ -121,7 +126,7 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         inch(ui, "fill", "Inside Fill:", fill);
                     });
                     ui.horizontal(|ui| {
-                        conv_field(ui, "n", "Manning's Number:", "", n, |x| x, |x| x, 3, 100.0);
+                        conv_field(ui, "n", "Manning's Number:", "", n, |x| x, |x| x, 3, 120.0);
                         if let Some(v) = manning_button(ui, "cn") {
                             *n = v;
                         }
@@ -137,43 +142,42 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         conv_field(ui, "ke", "Ke:", "", ke, |x| x, |x| x.max(0.0), 3, 70.0);
                         conv_field(ui, "cc", "Contraction Coef.:", "", cc, |x| x, |x| x.clamp(0.1, 1.0), 3, 120.0);
                     });
-                    let sec = Section::Pipe { shape: *shape, width: *width, height: *height, fill: *fill };
-                    let p = sec.props(sec.full_depth());
-                    ui.label(format!("Area= {:.2} sf   Perimeter= {:.2}'", p.area, p.perimeter));
                 }
                 DeviceKind::Orifice { shape, plane, cd, columns, rows, row_spacing, weir_at_low_head, grate } => {
                     len(ui, "inv", "Invert Elevation:", &mut d.invert);
-                    ui.horizontal(|ui| {
-                        if widgets::radio(ui, matches!(plane, Plane::Horizontal), "Horizontal").clicked() {
+                    widgets::group(ui, "Opening in:", |ui| {
+                        if widgets::radio(ui, matches!(plane, Plane::Horizontal), "Horizontal Plane = 0 deg").clicked() {
                             *plane = Plane::Horizontal;
                         }
-                        if widgets::radio(ui, matches!(plane, Plane::Vertical), "Vertical").clicked() {
+                        if widgets::radio(ui, matches!(plane, Plane::Vertical), "Vertical Plane = 90 deg").clicked() {
                             *plane = Plane::Vertical;
                         }
-                        if widgets::radio(ui, matches!(plane, Plane::Angle(_)), "Custom angle").clicked() {
+                        if widgets::radio(ui, matches!(plane, Plane::Angle(_)), "Custom Angle: 0-90 deg").clicked() && !matches!(plane, Plane::Angle(_)) {
                             *plane = Plane::Angle(45.0);
                         }
-                        if let Plane::Angle(a) = plane {
-                            conv_field(ui, "ang", "Angle:", "deg", a, |x| x, |x| x.clamp(0.0, 90.0), 1, 90.0);
-                        }
                     });
-                    ui.horizontal(|ui| {
-                        let circ = matches!(shape, OpeningShape::Circular { .. });
-                        if widgets::radio(ui, circ, "Circular").clicked() && !circ {
-                            *shape = OpeningShape::Circular { diameter: 0.5 };
-                        }
-                        if widgets::radio(ui, !circ, "Rectangular").clicked() && circ {
-                            *shape = OpeningShape::Rectangular { width: 1.0, height: 0.5 };
-                        }
-                    });
-                    ui.horizontal(|ui| match shape {
-                        OpeningShape::Circular { diameter } => {
-                            inch(ui, "dia", "Diameter:", diameter);
-                        }
-                        OpeningShape::Rectangular { width, height } => {
-                            inch(ui, "w", "Width:", width);
-                            inch(ui, "h", "Height:", height);
-                        }
+                    if let Plane::Angle(a) = plane {
+                        conv_field(ui, "ang", "Angle:", "degrees", a, |x| x, |x| x.clamp(0.0, 90.0), 1, 130.0);
+                    }
+                    widgets::group(ui, "Orifice: (each opening)", |ui| {
+                        ui.horizontal(|ui| {
+                            let circ = matches!(shape, OpeningShape::Circular { .. });
+                            if widgets::radio(ui, circ, "Circular").clicked() && !circ {
+                                *shape = OpeningShape::Circular { diameter: 0.5 };
+                            }
+                            if widgets::radio(ui, !circ, "Rectangular").clicked() && circ {
+                                *shape = OpeningShape::Rectangular { width: 1.0, height: 0.5 };
+                            }
+                        });
+                        ui.horizontal(|ui| match shape {
+                            OpeningShape::Circular { diameter } => {
+                                inch(ui, "dia", "Diameter:", diameter);
+                            }
+                            OpeningShape::Rectangular { width, height } => {
+                                inch(ui, "w", "Width:", width);
+                                inch(ui, "h", "Height:", height);
+                            }
+                        });
                     });
                     ui.horizontal(|ui| {
                         let mut c = *columns as f64;
@@ -192,18 +196,20 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         conv_field(ui, "cd", "Discharge Coefficient:", "", cd, |x| x, |x| x.clamp(0.0, 1.0), 3, 140.0);
                         widgets::check(ui, weir_at_low_head, "Use weir flow at low head");
                     });
-                    if matches!(plane, Plane::Horizontal) {
-                        let mut has = grate.is_some();
-                        if widgets::check(ui, &mut has, "Set grate dimensions (perimeter weir control)").changed() {
-                            *grate = if has { Some((3.0, 3.0)) } else { None };
-                        }
-                        if let Some((w, l)) = grate {
-                            ui.horizontal(|ui| {
-                                inch(ui, "gw", "Grate Width:", w);
-                                inch(ui, "gl", "Grate Length:", l);
-                            });
-                        }
-                    }
+                    widgets::group(ui, "Grate: (overall size)", |ui| {
+                        ui.add_enabled_ui(matches!(plane, Plane::Horizontal), |ui| {
+                            let mut has = grate.is_some();
+                            if widgets::check(ui, &mut has, "Set Grate dimensions (perimeter weir control)").changed() {
+                                *grate = if has { Some((3.0, 3.0)) } else { None };
+                            }
+                            if let Some((w, l)) = grate {
+                                ui.horizontal(|ui| {
+                                    inch(ui, "gw", "Width:", w);
+                                    inch(ui, "gl", "Length:", l);
+                                });
+                            }
+                        });
+                    });
                 }
                 DeviceKind::SharpCrestedWeir { length, end_contractions, crest_height, rise } => {
                     ui.horizontal(|ui| {
@@ -328,10 +334,15 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                     if let Some(i) = del {
                         table.remove(i);
                     }
-                    if widgets::button(ui, "Add Row", 80.0).clicked() {
-                        let last = table.last().copied().unwrap_or((0.0, 0.0));
-                        table.push((last.0 + 0.5, last.1));
-                    }
+                    ui.horizontal(|ui| {
+                        if widgets::button(ui, "Add Row", 80.0).clicked() {
+                            let last = table.last().copied().unwrap_or((0.0, 0.0));
+                            table.push((last.0 + 0.5, last.1));
+                        }
+                        if widgets::button(ui, "Load From File...", 120.0).clicked() {
+                            actions.push(WindowAction::PickFile(Purpose::RatingCsv));
+                        }
+                    });
                 }
                 DeviceKind::ConstantFlow { flow, phase_in } => {
                     ui.horizontal(|ui| {
@@ -340,38 +351,55 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         len(ui, "pi", "Phase-In Depth:", phase_in);
                     });
                 }
-                DeviceKind::Pump { rating, on_elevation, off_elevation, discharge_elevation, max_elevation, priority_group } => {
-                    ui.horizontal(|ui| {
-                        len(ui, "inv", "Intake Elevation:", &mut d.invert);
-                        len(ui, "on", "On Elevation:", on_elevation);
-                        len(ui, "off", "Off Elevation:", off_elevation);
-                    });
-                    ui.horizontal(|ui| {
-                        len(ui, "de", "Discharge Elevation:", discharge_elevation);
-                        super::opt_field(ui, "max", "Maximum Elevation:", u.len_label(), max_elevation, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
-                        let mut g = *priority_group as f64;
-                        if conv_field(ui, "grp", "Priority Group:", "0 = none", &mut g, |x| x, |x| x.clamp(0.0, 99.0).round(), 0, 110.0) {
-                            *priority_group = if g.is_finite() { g as u32 } else { 0 };
-                        }
-                    });
-                    ui.label(RichText::new(format!("{:>12} {:>12}", "Lift (ft)", "Q (cfs)")).monospace());
-                    let mut del = None;
-                    for (i, p) in rating.iter_mut().enumerate() {
-                        ui.horizontal(|ui| {
-                            widgets::num_box(ui, ui.id().with(("ph", i)), &mut p.0, 2, 90.0, None);
-                            widgets::num_box(ui, ui.id().with(("pq", i)), &mut p.1, 3, 90.0, None);
-                            if widgets::button(ui, "X", 22.0).clicked() {
-                                del = Some(i);
+                DeviceKind::Pump { rating, on_elevation, off_elevation, discharge_elevation, max_elevation, priority_group, discharge_length, discharge_diameter, hazen_c } => {
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            len(ui, "on", "On Elevation:", on_elevation);
+                            len(ui, "off", "Off Elevation:", off_elevation);
+                            len(ui, "inv", "Intake Elevation:", &mut d.invert);
+                            len(ui, "de", "Discharge Elev:", discharge_elevation);
+                            super::opt_field(ui, "max", "Max. Elevation:", u.len_label(), max_elevation, |x| u.len(x), |x| u.len_in(x), 2, 130.0);
+                            let mut g = *priority_group as f64;
+                            if conv_field(ui, "grp", "Priority Group:", "", &mut g, |x| x, |x| x.clamp(0.0, 99.0).round(), 0, 130.0) {
+                                *priority_group = if g.is_finite() { g as u32 } else { 0 };
                             }
                         });
-                    }
-                    if let Some(i) = del {
-                        rating.remove(i);
-                    }
-                    if widgets::button(ui, "Add Row", 80.0).clicked() {
-                        let last = rating.last().copied().unwrap_or((0.0, 0.0));
-                        rating.push((last.0 + 5.0, last.1));
-                    }
+                        ui.vertical(|ui| {
+                            len(ui, "dl", "Disch. Length:", discharge_length);
+                            inch(ui, "dd", "Disch. Diam:", discharge_diameter);
+                            conv_field(ui, "hw", "Hazen-Williams Coef:", "", hazen_c, |x| x, |x| x.max(1.0), 0, 130.0);
+                            ui.add_space(6.0);
+                            ui.add_sized(vec2(170.0, 90.0), egui::Label::new(RichText::new("Maximum elevation and Priority Group are optional: leave them blank for most applications. A discharge length and diameter add pipe friction to the pump lift.").color(t.text_dim)).wrap());
+                        });
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new("Pump Rating Table").strong());
+                            ui.label(RichText::new(format!("{:>10} {:>10}", "Head (ft)", "Flow (cfs)")).monospace());
+                            let mut del = None;
+                            egui::ScrollArea::vertical().id_salt("pump-rating").max_height(150.0).show(ui, |ui| {
+                                for (i, p) in rating.iter_mut().enumerate() {
+                                    ui.horizontal(|ui| {
+                                        widgets::num_box(ui, ui.id().with(("ph", i)), &mut p.0, 2, 80.0, None);
+                                        widgets::num_box(ui, ui.id().with(("pq", i)), &mut p.1, 3, 80.0, None);
+                                        if widgets::button(ui, "X", 22.0).clicked() {
+                                            del = Some(i);
+                                        }
+                                    });
+                                }
+                            });
+                            if let Some(i) = del {
+                                rating.remove(i);
+                            }
+                            ui.horizontal(|ui| {
+                                if widgets::button(ui, "Add Row", 80.0).clicked() {
+                                    let last = rating.last().copied().unwrap_or((0.0, 0.0));
+                                    rating.push((last.0 + 5.0, last.1));
+                                }
+                                if widgets::button(ui, "Load From File...", 120.0).clicked() {
+                                    actions.push(WindowAction::PickFile(Purpose::RatingCsv));
+                                }
+                            });
+                        });
+                    });
                 }
                 DeviceKind::Siphon { diameter, length, n, ke, outlet_elevation, prime_elevation, break_elevation } => {
                     ui.horizontal(|ui| {
@@ -433,7 +461,16 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                     super::node::section_editor(ui, section, u, false);
                 }
             });
-            sketch(ui, &d.kind);
+            if !matches!(d.kind, DeviceKind::Pump { .. } | DeviceKind::Special { .. }) {
+                ui.vertical(|ui| {
+                    sketch(ui, &d.kind);
+                    if let Some((area, perimeter)) = opening_props(&d.kind) {
+                        ui.add_space(4.0);
+                        ui.label(format!("Area= {area:.2} sf"));
+                        ui.label(format!("Perimeter= {perimeter:.2}'"));
+                    }
+                });
+            }
         });
         result = ok_cancel_apply(ui, false, "pond");
     });
@@ -442,6 +479,57 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
         Buttons::Cancel => Some(false),
         Buttons::None => None,
     }
+}
+
+/// Parses a two-column rating file (head or elevation, flow) separated by commas, tabs,
+/// semicolons or spaces. Header and unparsable lines are skipped.
+pub fn parse_rating(text: &str) -> Result<Vec<(f64, f64)>, String> {
+    let rows: Vec<(f64, f64)> = text
+        .lines()
+        .filter_map(|line| {
+            let mut nums = line.split(|c: char| c == ',' || c == ';' || c == '\t' || c.is_whitespace()).filter(|s| !s.is_empty()).map(|s| s.parse::<f64>());
+            match (nums.next(), nums.next()) {
+                (Some(Ok(a)), Some(Ok(b))) if a.is_finite() && b.is_finite() => Some((a, b)),
+                _ => None,
+            }
+        })
+        .collect();
+    if rows.is_empty() { Err("The file has no rows of two numbers (head, flow).".into()) } else { Ok(rows) }
+}
+
+/// Replaces the rating table of a pump or special device with `rows`; false for other kinds.
+pub fn set_rating(kind: &mut DeviceKind, rows: Vec<(f64, f64)>) -> bool {
+    match kind {
+        DeviceKind::Pump { rating, .. } => *rating = rows,
+        DeviceKind::Special { table, .. } => *table = rows,
+        _ => return false,
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rating_file_parsing() {
+        let rows = parse_rating("head,flow\n9.0, 0.5\n7;1.0\n\n6\t1.5\nbad,line\n");
+        assert_eq!(rows, Ok(vec![(9.0, 0.5), (7.0, 1.0), (6.0, 1.5)]));
+        assert!(parse_rating("a,b\n").is_err());
+    }
+}
+
+/// Area (sf) and perimeter (ft) of one opening, for the text under the shape preview.
+fn opening_props(kind: &DeviceKind) -> Option<(f64, f64)> {
+    let sec = match kind {
+        DeviceKind::Culvert { shape, width, height, fill, .. } => Section::Pipe { shape: *shape, width: *width, height: *height, fill: *fill },
+        DeviceKind::Orifice { shape: OpeningShape::Circular { diameter }, .. } => Section::Pipe { shape: PipeShape::Round, width: *diameter, height: *diameter, fill: 0.0 },
+        DeviceKind::Orifice { shape: OpeningShape::Rectangular { width, height }, .. } => Section::Pipe { shape: PipeShape::Box, width: *width, height: *height, fill: 0.0 },
+        DeviceKind::DelayedGate { width, height, .. } => Section::Pipe { shape: PipeShape::Box, width: *width, height: *height, fill: 0.0 },
+        _ => return None,
+    };
+    let p = sec.props(sec.full_depth());
+    Some((p.area, p.perimeter))
 }
 
 /// Live picture of the opening (water-blue on grey), drawn from the entered dimensions.

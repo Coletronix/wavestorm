@@ -200,6 +200,12 @@ pub struct ListEvents {
 /// A read-only grid: sunken white box, bevelled header cells, a row-number column and
 /// navy row selection (the classic data-grid look).
 pub fn list_table(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: &[Vec<String>], selected: &mut Option<usize>, height: f32) -> ListEvents {
+    list_table_menu(ui, id, cols, rows, selected, height, &mut |_, _| {})
+}
+
+/// [`list_table`] with a right-click menu: right-clicking any row (empty ones too) selects it
+/// and calls `menu` with the row index to fill the popup.
+pub fn list_table_menu(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: &[Vec<String>], selected: &mut Option<usize>, height: f32, menu: &mut dyn FnMut(&mut Ui, usize)) -> ListEvents {
     let t = Tokens::get(ui.ctx());
     let mut ev = ListEvents::default();
     let row_h = 18.0;
@@ -230,6 +236,10 @@ pub fn list_table(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: &[Vec
             p.rect_filled(num, 0.0, t.face);
             bevel(p, num, true, &t);
             p.text(num.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, format!("{}", i + 1), font.clone(), t.text);
+            if resp.secondary_clicked() {
+                *selected = Some(i);
+            }
+            resp.context_menu(|ui| menu(ui, i));
             let Some(row) = rows.get(i) else {
                 p.line_segment([pos2(num.max.x, r.max.y - 0.5), pos2(r.max.x, r.max.y - 0.5)], Stroke::new(1.0, t.face));
                 continue;

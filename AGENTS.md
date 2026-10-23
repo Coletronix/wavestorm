@@ -176,11 +176,12 @@ Keep this section updated at the end of every session.
   3. Calculation Settings Rainfall tab (rainfall-tab2.png): Storm Type + Storm Curve combos,
      View Storm / More Storms column, Rainfall Event group with Name combo, Save, Delete,
      Sort by Manual/Name/Depth, Import Events From..., Del All, View All; add a Resize tab.
-  4. Pond Outlets tab (s3): grid # / Invert / Description / Routing, tip text, Edit Outlet...
-     button that asks for the device type on an empty row (instead of our type buttons).
-  5. Outlet editors (s4, s5): Description, Routing, Discharge Multiplier along the top;
-     pump Disch. Length/Diam/Hazen-Williams and a Load From File button; orifice angle
-     (custom plane) and grate group boxes.
+  4. (done) Pond Outlets tab: grid, tip text, Edit Outlet... (device-type chooser on an empty
+     row), right-click Insert/Delete/Move Up/Down (`widgets::list_table_menu`).
+  5. (done) Outlet editors: pump Disch. Length/Diam/Hazen-Williams (`core::outlets::pump_flow`
+     adds pipe friction), Load From File for pump/special tables (`Purpose::RatingCsv`),
+     Opening-in / Orifice / Grate group boxes, Area/Perimeter under the shape preview.
+     Snapshot script: `edit:1P;tab:2;device:new Pump` or `device:2`.
   6. Link edit Manual tab (s1): Multi-Event checkbox, starting time, time step, inflow area,
      impervious %, a time x event grid, Interpolate button.
   7. Land-Use Settings (s6): General / Land-Uses tabs, impervious-calculation radio group.
