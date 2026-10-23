@@ -172,8 +172,10 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     let clip = p.with_clip_rect(plot.expand2(vec2(depth.x.abs() + 2.0, depth.y.abs() + 2.0)).translate(vec2(depth.x / 2.0, depth.y / 2.0)).intersect(rect));
     let n = spec.series.len();
     let mut peak_boxes: Vec<(Pos2, String, Color32)> = Vec::new();
-    for (i, s) in spec.series.iter().enumerate() {
-        let off = if spec.three_d { depth / (n.max(1) as f32) * (n - 1 - i) as f32 } else { Vec2::ZERO };
+    let mut all_pts: Vec<Pos2> = Vec::new();
+    // First series sits at the front; later ones step back. Draw back to front.
+    for (i, s) in spec.series.iter().enumerate().rev() {
+        let off = if spec.three_d { depth / (n.max(1) as f32) * i as f32 } else { Vec2::ZERO };
         let pts: Vec<Pos2> = s.x.iter().zip(&s.y).filter(|(x, y)| x.is_finite() && y.is_finite()).map(|(x, y)| pos2(sx(*x), sy(*y)) + off).collect();
         if pts.len() < 2 {
             continue;
@@ -183,9 +185,9 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
             // Solid extrusion: front face (area under the curve, light tint), top face (ribbon
             // swept straight back in depth, series colour) and a darker right end cap. Opaque
             // triangle meshes only, so steep spikes stay clean.
-            let tint = lerp_color(s.color, Color32::WHITE, 0.45);
-            let top_face = lerp_color(s.color, Color32::WHITE, 0.25);
-            let edge = lerp_color(s.color, Color32::BLACK, 0.45);
+            let front = lerp_color(s.color, Color32::BLACK, 0.25);
+            let top_face = s.color;
+            let edge = lerp_color(s.color, Color32::BLACK, 0.65);
             let mut mesh = egui::Mesh::default();
             let quad = |m: &mut egui::Mesh, q: [Pos2; 4], c: Color32| {
                 let i = m.vertices.len() as u32;
@@ -196,20 +198,35 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
                 m.add_triangle(i, i + 2, i + 3);
             };
             let rib = depth / (n.max(1) as f32) * 0.8;
-            let (first, last) = (pts[0], pts[pts.len() - 1]);
+            // Wall thickness below the curve (clamped so it never goes under the floor).
+            let thick = vec2(0.0, 4.0);
+            let floor = base + off.y;
+            let dn = |q: Pos2| pos2(q.x, (q.y + thick.y).min(floor.max(q.y)));
+            let last = pts[pts.len() - 1];
             for w in pts.windows(2) {
                 quad(&mut mesh, [w[0] + rib, w[1] + rib, w[1], w[0]], top_face);
             }
-            quad(&mut mesh, [last + rib, pos2(last.x, base + off.y) + rib, pos2(last.x, base + off.y), last], edge);
+            quad(&mut mesh, [last + rib, dn(last) + rib, dn(last), last], edge);
             for w in pts.windows(2) {
-                quad(&mut mesh, [w[0], w[1], pos2(w[1].x, base + off.y), pos2(w[0].x, base + off.y)], tint);
+                quad(&mut mesh, [w[0], w[1], dn(w[1]), dn(w[0])], front);
             }
             clip.add(Shape::mesh(mesh));
-            clip.add(Shape::line(pts.iter().map(|q| *q + rib).collect(), Stroke::new(1.0, edge)));
-            clip.add(Shape::line(pts.clone(), Stroke::new(1.8, s.color)));
-            let _ = first;
+            let outline = Stroke::new(1.0, edge);
+            clip.add(Shape::line(pts.iter().map(|q| *q + rib).collect(), outline));
+            clip.add(Shape::line(pts.iter().map(|q| dn(*q)).collect(), outline));
+            clip.add(Shape::line(pts.clone(), outline));
+            let mut last_x = f32::NEG_INFINITY;
+            for q in &pts {
+                if q.x - last_x >= 6.0 {
+                    clip.line_segment([*q, *q + rib], Stroke::new(0.5, edge));
+                    last_x = q.x;
+                }
+            }
+            all_pts.extend(pts.iter().copied());
+            all_pts.extend(pts.iter().map(|q| *q + rib));
         } else {
             clip.add(Shape::line(pts.clone(), Stroke::new(2.0, s.color)));
+            all_pts.extend(pts.iter().copied());
         }
         if let Some(label) = &s.peak_label {
             if let Some((j, _)) = s.y.iter().enumerate().filter(|(_, v)| v.is_finite()).max_by(|a, b| a.1.total_cmp(b.1)) {
@@ -223,9 +240,34 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     }
     // Summary text (right-aligned, large, bold).
     if !spec.summary.is_empty() {
-        let size = (plot.height() / (spec.summary.len() as f32 + 1.0)).clamp(11.0, 16.0);
-        let mut sy_ = plot.min.y + 4.0;
+        let max_size = (plot.height() / (spec.summary.len() as f32 + 1.0)).clamp(11.0, 16.0);
         let x = plot.max.x - 6.0;
+        // Largest size / highest position whose box contains no plotted point.
+        let block = |size: f32| {
+            let w = spec.summary.iter().map(|l| p.layout_no_wrap(l.clone(), FontId::proportional(size), t.text).size().x).fold(0.0f32, f32::max);
+            (w + 4.0, size * 1.25 * spec.summary.len() as f32 + 2.0)
+        };
+        let fits = |top: f32, bw: f32, bh: f32| {
+            let r = Rect::from_min_size(pos2(x - bw, top - 2.0), vec2(bw + 4.0, bh + 4.0));
+            !all_pts.iter().any(|q| r.contains(*q))
+        };
+        let mut size = 11.0f32;
+        let mut sy_ = plot.min.y + 4.0;
+        'find: for cand in [max_size, 14.0, 12.5, 11.0] {
+            if cand > max_size {
+                continue;
+            }
+            let (bw, bh) = block(cand);
+            let mut top = plot.min.y + 4.0;
+            while top + bh <= plot.max.y - 4.0 {
+                if fits(top, bw, bh) {
+                    size = cand;
+                    sy_ = top;
+                    break 'find;
+                }
+                top += 6.0;
+            }
+        }
         for line in spec.summary {
             let f = FontId::proportional(size);
             p.text(pos2(x + 1.5, sy_ + 1.5), Align2::RIGHT_TOP, line, f.clone(), t.chart_bg.gamma_multiply(0.6));
