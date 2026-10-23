@@ -301,14 +301,43 @@ impl RunoffMethod {
 pub struct IdfCurve {
     pub name: String,
     pub events: Vec<(String, f64, f64, f64)>,
+    /// Events given as discrete (duration minutes, intensity in/hr) points instead of
+    /// coefficients (from IDF files and NOAA tables).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tables: Vec<(String, Vec<(f64, f64)>)>,
 }
 
 impl IdfCurve {
     pub fn intensity(&self, event: &str, minutes: f64) -> Option<f64> {
-        let (_, a, b, c) = self.events.iter().find(|e| e.0.eq_ignore_ascii_case(event))?;
-        let d = (b + minutes).powf(*c);
-        (d > 0.0).then(|| a / d)
+        if let Some((_, a, b, c)) = self.events.iter().find(|e| e.0.eq_ignore_ascii_case(event)) {
+            let d = (b + minutes).powf(*c);
+            return (d > 0.0).then(|| a / d);
+        }
+        let (_, pts) = self.tables.iter().find(|e| e.0.eq_ignore_ascii_case(event))?;
+        interpolate_loglog(pts, minutes)
     }
+}
+
+/// Interpolates (duration, intensity) points linearly in log-log space, holding the end values
+/// beyond the first and last point. `pts` must be sorted by duration.
+pub fn interpolate_loglog(pts: &[(f64, f64)], x: f64) -> Option<f64> {
+    let (first, last) = (pts.first()?, pts.last()?);
+    if !(x.is_finite() && x > 0.0) {
+        return None;
+    }
+    if x <= first.0 {
+        return Some(first.1);
+    }
+    if x >= last.0 {
+        return Some(last.1);
+    }
+    let i = pts.partition_point(|p| p.0 <= x).saturating_sub(1);
+    let (a, b) = (pts.get(i)?, pts.get(i + 1)?);
+    if !(a.0 > 0.0 && b.0 > a.0 && a.1 > 0.0 && b.1 > 0.0) {
+        return Some(a.1);
+    }
+    let s = (x / a.0).ln() / (b.0 / a.0).ln();
+    Some((a.1.ln() + s * (b.1 / a.1).ln()).exp())
 }
 
 /// Calculation settings (the calculation-settings dialog).

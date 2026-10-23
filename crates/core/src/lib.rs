@@ -23,6 +23,7 @@ pub mod project;
 pub mod report;
 pub mod rainfall;
 mod rainfall_data;
+pub mod rainlib;
 pub mod routing;
 pub mod runoff;
 pub mod storage;
