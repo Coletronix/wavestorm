@@ -676,7 +676,7 @@ fn flow_checks(node: &Node, inflow: &Hydrograph, outflow: &Hydrograph, check_qou
     let mut changes: Vec<usize> = Vec::new();
     for (i, w) in outflow.q.windows(2).enumerate() {
         let d = w[1] - w[0];
-        if !(d.abs() >= tol) {
+        if d.is_nan() || d.abs() < tol {
             continue;
         }
         let sign = if d > 0.0 { 1 } else { -1 };
@@ -774,10 +774,10 @@ fn route_pond(
     vols.sort_by(|a, b| a.1.total_cmp(&b.1));
     let mut highest: Option<(usize, f64)> = None;
     for (j, b, t) in vols {
-        if let Some((lj, lt)) = highest {
-            if b - lt > 0.005 {
-                msgs.push(Message::new(42, Severity::Hint, Some(node.id), format!("{} Gap in defined storage above volume #{} at {:.2}'", node.label(), lj + 1, lt)));
-            }
+        if let Some((lj, lt)) = highest
+            && b - lt > 0.005
+        {
+            msgs.push(Message::new(42, Severity::Hint, Some(node.id), format!("{} Gap in defined storage above volume #{} at {:.2}'", node.label(), lj + 1, lt)));
         }
         if highest.is_none_or(|(_, lt)| t > lt) {
             highest = Some((j, t));
