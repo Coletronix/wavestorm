@@ -67,7 +67,7 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
             let depth = if area > 0.0 { r.outflow.volume_cf() / area * 12.0 } else { 0.0 };
             out.push(format!("{}, {} {}", peak_line("Runoff", u, &r.outflow), depth_word(&r.outflow), u.fmt_rain(depth)));
             out.push(String::new());
-            out.push(format!("{}, {span}", crate::calc::runoff_note(project).replace("UH=", "UH=")));
+            out.push(format!("{}, {span}", crate::calc::runoff_note(project)));
             out.push(results.event_heading.clone());
             out.push(String::new());
             out.push(format!("{:>12}  {:>5}  Description", format!("Area ({})", u.area_label()), if d.rational.is_some() { "C" } else { "CN" }));
@@ -181,7 +181,7 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
             }
             out.push(String::new());
             if !pond.storage.is_empty() {
-                out.push(format!("Volume    Invert    Avail.Storage  Storage Description"));
+                out.push("Volume    Invert    Avail.Storage  Storage Description".to_string());
                 for (i, v) in pond.storage.volumes.iter().enumerate() {
                     let embed = v.embedded_in.map(|j| format!(" (embedded in #{})", j + 1)).unwrap_or_default();
                     let voids = if v.voids_pct < 100.0 { format!(" {:.1}% Voids", v.voids_pct) } else { String::new() };
@@ -630,7 +630,7 @@ pub fn hydrograph_table(project: &Project, results: &Results, node: &Node, shrin
         Detail::Reach(d) => {
             heads.push(format!("Inflow ({})", u.flow_label()));
             cols.push(pick(&r.inflow.q, &flow));
-            heads.push(format!("Storage ({})", if u.large { u.volume_label() } else { u.volume_label() }));
+            heads.push(format!("Storage ({})", u.volume_label()));
             cols.push(pick(&d.storage, &|v| u.volume(v)));
             heads.push(format!("Elevation ({})", if u.metric() { "m" } else { "feet" }));
             cols.push(pick(&d.elevation, &|v| u.len(v)));

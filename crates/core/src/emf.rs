@@ -62,7 +62,7 @@ impl Writer {
     /// Appends one record: `body` is padded to 4 bytes.
     fn rec(&mut self, ty: u32, body: &[u8]) {
         let mut body = body.to_vec();
-        while body.len() % 4 != 0 {
+        while !body.len().is_multiple_of(4) {
             body.push(0);
         }
         let size = (body.len() + 8) as u32;

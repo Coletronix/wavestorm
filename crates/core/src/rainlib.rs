@@ -1215,6 +1215,7 @@ coef=24.00      0.5920    0.0230   -.00025    0
     const TABLE: &str = "ID,State,County,Storm,1-Year,2-Year,10-Year\r\n\"3705\",\"AK\",\"Aleutians East, Cold Bay AP AK_IA\",\"IA\",\"1.78\",\"2.16\",\"3.14\"\r\n7,AL,Autauga,III,3.7,4.5,0\r\n8,AL,Baldwin,,0,0,0\r\n";
 
     #[test]
+    #[allow(clippy::approx_constant)] // a 3.14" rainfall depth, not π
     fn county_tables() {
         let t = parse_rain_table("NRCS2-Rain", TABLE).unwrap();
         assert_eq!(t.states(), vec!["AK", "AL"]);

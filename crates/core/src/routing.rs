@@ -402,7 +402,7 @@ mod tests {
             inflow.q[20 + i] = 50.0 * (std::f64::consts::PI * i as f64 / 40.0).sin();
         }
         let (out, x) = muskingum_cunge(&inflow, 10_000.0, 0.002, 50.0, 4.0, 20.0);
-        assert!(x >= 0.0 && x <= 0.5);
+        assert!((0.0..=0.5).contains(&x));
         assert!(out.peak().value < inflow.peak().value);
         assert!(out.peak().time > inflow.peak().time);
         assert!((out.volume_cf() - inflow.volume_cf()).abs() / inflow.volume_cf() < 0.01);
