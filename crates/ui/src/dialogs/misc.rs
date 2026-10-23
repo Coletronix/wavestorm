@@ -7,6 +7,7 @@ use crate::theme::{ThemeKind, Tokens};
 use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{Pos2, RichText, vec2};
+use stormwaves_core::landuse::ImperviousBasis;
 use stormwaves_core::project::{DiagramSettings, Project};
 use stormwaves_core::units::{UnitSystem, Units};
 
@@ -413,11 +414,13 @@ pub struct LandUseState {
     pub draft: stormwaves_core::landuse::LandUseSettings,
     pub tab: usize,
     pub new_pollutant: String,
+    /// Rainfall depth remembered while "Use actual runoff" is selected.
+    pub depth: f64,
 }
 
 impl LandUseState {
     pub fn new(p: &Project) -> Self {
-        LandUseState { draft: p.land_use.clone(), tab: 1, new_pollutant: String::new() }
+        LandUseState { draft: p.land_use.clone(), tab: 1, new_pollutant: String::new(), depth: p.land_use.annual_rainfall.unwrap_or(42.0) }
     }
 }
 
@@ -429,31 +432,60 @@ pub fn land_use(ctx: &egui::Context, doc: &mut Doc, st: &mut LandUseState) -> bo
             ui.set_min_size(vec2(520.0, 260.0));
             let d = &mut st.draft;
             if st.tab == 0 {
-                let annual = d.annual_rainfall.is_some();
-                if widgets::radio(ui, annual, "Annual loading by the Simple Method").clicked() && !annual {
-                    d.annual_rainfall = Some(42.0);
-                }
-                if widgets::radio(ui, !annual, "Single-event loading from calculated runoff").clicked() {
-                    d.annual_rainfall = None;
-                }
+                widgets::check(ui, &mut d.report_land_use, "Report Land-Use");
+                widgets::check(ui, &mut d.report_loading, "Report Pollutant Loading");
+                ui.add_space(4.0);
+                widgets::group(ui, "Calculate Imperviousness for:", |ui| {
+                    for (basis, label) in [
+                        (ImperviousBasis::EntireProject, "Entire Project"),
+                        (ImperviousBasis::ProjectLandUse, "Project Land-Use"),
+                        (ImperviousBasis::EachSubcatchment, "Each Subcatchment"),
+                        (ImperviousBasis::SubcatchmentLandUse, "Subcatchment Land-Use"),
+                        (ImperviousBasis::ActualRunoff, "Use actual runoff"),
+                    ] {
+                        if widgets::radio(ui, d.imperviousness == basis, label).clicked() {
+                            d.imperviousness = basis;
+                            // Actual runoff replaces the Simple Method's annual rainfall.
+                            if basis == ImperviousBasis::ActualRunoff {
+                                if let Some(p) = d.annual_rainfall.take() {
+                                    st.depth = p;
+                                }
+                            } else if d.annual_rainfall.is_none() {
+                                d.annual_rainfall = Some(st.depth);
+                            }
+                        }
+                    }
+                });
+                ui.add_space(4.0);
                 if let Some(p) = &mut d.annual_rainfall {
-                    ui.horizontal(|ui| {
-                        conv_field(ui, "p", "Annual Rainfall Depth:", "inches", p, |x| x, |x| x.max(0.0), 2, 160.0);
-                        conv_field(ui, "pj", "Correction Factor Pj:", "", &mut d.correction, |x| x, |x| x.clamp(0.0, 1.0), 3, 160.0);
-                    });
+                    conv_field(ui, "p", "Rainfall Depth:", "inches", p, |x| x, |x| x.max(0.0), 2, 140.0);
+                    conv_field(ui, "pj", "Correction Factor:", "", &mut d.correction, |x| x, |x| x.clamp(0.0, 1.0), 3, 140.0);
+                } else {
+                    ui.label(RichText::new("Loads use the runoff of the calculated event.").color(Tokens::get(ui.ctx()).text_dim));
                 }
-                ui.label(RichText::new("Assign a land use to each sub-area on the subcatchment Area tab.").color(Tokens::get(ui.ctx()).text_dim));
+                ui.add_space(4.0);
+                if widgets::button_enabled(ui, "Remove Land-Use data...", 160.0, !d.uses.is_empty()).clicked() {
+                    d.uses.clear();
+                }
             } else {
                 egui::ScrollArea::both().max_height(230.0).show(ui, |ui| {
-                    egui::Grid::new("lu").spacing(vec2(8.0, 3.0)).show(ui, |ui| {
-                        ui.label(RichText::new("Land Use").strong());
+                    egui::Grid::new("lu").spacing(vec2(2.0, 2.0)).show(ui, |ui| {
+                        ui.label(RichText::new("Line").strong());
+                        ui.add_sized(vec2(140.0, 16.0), egui::Label::new(RichText::new("Land-Use").strong()));
                         for p in &d.pollutants {
-                            ui.label(RichText::new(format!("{p} (mg/l)")).strong());
+                            ui.add_sized(vec2(70.0, 16.0), egui::Label::new(RichText::new(p).strong()));
+                        }
+                        ui.end_row();
+                        ui.label("");
+                        ui.label("");
+                        for _ in &d.pollutants {
+                            ui.add_sized(vec2(70.0, 16.0), egui::Label::new("(mg/l)"));
                         }
                         ui.end_row();
                         let mut del = None;
                         let n = d.pollutants.len();
                         for (i, (name, conc)) in d.uses.iter_mut().enumerate() {
+                            ui.label(format!("{}", i + 1));
                             widgets::text_box(ui, name, 140.0);
                             conc.resize(n, 0.0);
                             for (k, c) in conc.iter_mut().enumerate() {
@@ -478,6 +510,7 @@ pub fn land_use(ctx: &egui::Context, doc: &mut Doc, st: &mut LandUseState) -> bo
                         d.pollutants.push(st.new_pollutant.trim().to_string());
                         st.new_pollutant.clear();
                     }
+                    widgets::button_enabled(ui, "Import Pollutants...", 130.0, false);
                 });
             }
         });

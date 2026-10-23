@@ -10,7 +10,7 @@ use crate::windows::WindowAction;
 use egui::{RichText, Ui, vec2};
 use stormwaves_core::cn::SubArea;
 use stormwaves_core::geometry::{PipeShape, RatingPoint, Section, XsPoint};
-use stormwaves_core::link::{LinkElevation, LinkSource, ManualHydrograph};
+use stormwaves_core::link::{LinkElevation, LinkSource, ManualHydrograph, interpolate_blanks};
 use stormwaves_core::project::{Node, NodeData, NodeId, NodeType, Tailwater};
 use stormwaves_core::storage::{CustomKind, StorageVolume, VolumeShape};
 use stormwaves_core::tc::{self, TcKind, TcSegment};
@@ -25,21 +25,97 @@ pub struct EditState {
     pub tc_edit: Option<(Option<usize>, TcSegment)>,
     pub volume_edit: Option<(Option<usize>, StorageVolume)>,
     pub device_edit: Option<DeviceEditor>,
-    pub manual_text: String,
+    /// Text of the manual-hydrograph grid of a link (built when the Manual tab is first drawn).
+    pub manual_grid: Option<ManualGrid>,
     /// Text of the Area grid while editing (area, CN, description).
     pub area_rows: Vec<Vec<String>>,
     pub add_kind: usize,
 }
 
+/// Editable text of a link's time x event flow grid (flows in display units, blanks allowed).
+#[derive(Debug, Clone, Default)]
+pub struct ManualGrid {
+    pub multi: bool,
+    pub names: Vec<String>,
+    pub cols: Vec<Vec<String>>,
+}
+
+impl ManualGrid {
+    fn fmt(q: f64, u: &Units) -> String {
+        format!("{:.2}", u.flow(q))
+    }
+
+    pub fn from_manual(m: &ManualHydrograph, events: &[String], u: &Units) -> Self {
+        let multi = !m.per_event.is_empty();
+        if multi {
+            let names: Vec<String> = events.to_vec();
+            let cols = names.iter().map(|n| m.series_for(n).iter().map(|q| Self::fmt(*q, u)).collect()).collect();
+            ManualGrid { multi, names, cols }
+        } else {
+            ManualGrid { multi, names: vec![String::new()], cols: vec![m.flows.iter().map(|q| Self::fmt(*q, u)).collect()] }
+        }
+    }
+
+    pub fn rows(&self) -> usize {
+        self.cols.iter().map(Vec::len).max().unwrap_or(0)
+    }
+
+    /// Switches between one column and one column per event.
+    pub fn set_multi(&mut self, on: bool, events: &[String]) {
+        if on == self.multi {
+            return;
+        }
+        let first = self.cols.first().cloned().unwrap_or_default();
+        if on {
+            self.names = events.to_vec();
+            self.cols = vec![first; events.len().max(1)];
+            if self.names.is_empty() {
+                self.names = vec![String::new()];
+            }
+        } else {
+            self.names = vec![String::new()];
+            self.cols = vec![first];
+        }
+        self.multi = on;
+    }
+
+    /// Fills blanks between entered values, column by column.
+    pub fn interpolate(&mut self) {
+        let n = self.rows();
+        for col in &mut self.cols {
+            col.resize(n, String::new());
+            let vals: Vec<Option<f64>> = col.iter().map(|s| s.trim().parse::<f64>().ok()).collect();
+            for (s, v) in col.iter_mut().zip(interpolate_blanks(&vals)) {
+                if s.trim().parse::<f64>().is_err() {
+                    if let Some(v) = v {
+                        *s = format!("{v:.2}");
+                    }
+                }
+            }
+        }
+    }
+
+    fn series(col: &[String], u: &Units) -> Vec<f64> {
+        let vals: Vec<Option<f64>> = col.iter().map(|s| s.trim().parse::<f64>().ok().filter(|v| v.is_finite())).collect();
+        let filled = interpolate_blanks(&vals);
+        let end = filled.iter().rposition(Option::is_some).map_or(0, |i| i + 1);
+        filled[..end].iter().map(|v| u.flow_in(v.unwrap_or(0.0))).collect()
+    }
+
+    /// Writes the grid back into the manual hydrograph.
+    pub fn apply(&self, m: &mut ManualHydrograph, u: &Units) {
+        if self.multi {
+            m.per_event = self.names.iter().zip(&self.cols).map(|(n, c)| (n.clone(), Self::series(c, u))).collect();
+            m.flows = m.per_event.first().map(|(_, v)| v.clone()).unwrap_or_default();
+        } else {
+            m.per_event.clear();
+            m.flows = self.cols.first().map(|c| Self::series(c, u)).unwrap_or_default();
+        }
+    }
+}
+
 impl EditState {
     pub fn new(node: &Node) -> Self {
-        let manual_text = match &node.data {
-            NodeData::Link(l) => match &l.source {
-                LinkSource::Manual(m) => m.flows.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join("\n"),
-                _ => String::new(),
-            },
-            _ => String::new(),
-        };
         EditState {
             node: node.id,
             draft: node.clone(),
@@ -49,7 +125,7 @@ impl EditState {
             tc_edit: None,
             volume_edit: None,
             device_edit: None,
-            manual_text,
+            manual_grid: None,
             area_rows: Vec::new(),
             add_kind: 0,
         }
@@ -92,7 +168,10 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
                     NodeType::Subcat => subcat_tab(ui, st, &units, tab, doc),
                     NodeType::Reach => reach_tab(ui, st, &units),
                     NodeType::Pond => pond_tab(ui, st, &units, tab, doc),
-                    NodeType::Link => link_tab(ui, st, &units, tab, actions),
+                    NodeType::Link => {
+                        let events: Vec<String> = doc.project.settings.events.iter().map(|e| e.name.clone()).collect();
+                        link_tab(ui, st, &units, tab, actions, &events)
+                    }
                     NodeType::Text => text_tab(ui, st),
                 },
             }
@@ -147,8 +226,8 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
     }
     if apply {
         if let NodeData::Link(l) = &mut st.draft.data {
-            if let LinkSource::Manual(m) = &mut l.source {
-                m.flows = st.manual_text.split(|c: char| c.is_whitespace() || c == ',').filter_map(|s| s.trim().parse::<f64>().ok()).map(|v| units.flow_in(v)).collect();
+            if let (LinkSource::Manual(m), Some(g)) = (&mut l.source, &st.manual_grid) {
+                g.apply(m, &units);
             }
         }
         let draft = st.draft.clone();
@@ -955,7 +1034,7 @@ fn volume_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
 
 // ------------------------------------------------------------------ link
 
-fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut Vec<WindowAction>) {
+fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut Vec<WindowAction>, events: &[String]) {
     let id = st.node;
     let NodeData::Link(l) = &mut st.draft.data else { return };
     match tab {
@@ -969,6 +1048,7 @@ fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut
                 }
                 if widgets::radio(ui, manual, "Enter hydrograph manually").clicked() && !manual {
                     l.source = LinkSource::Manual(ManualHydrograph { t0: 0.0, dt: 0.5, flows: vec![0.0], per_event: vec![] });
+                    st.manual_grid = None;
                 }
                 if widgets::radio(ui, file, "Import from CSV file").clicked() {
                     actions.push(WindowAction::PickCsvForLink(id));
@@ -977,15 +1057,59 @@ fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut
             ui.add_space(6.0);
             match &mut l.source {
                 LinkSource::Manual(m) => {
-                    ui.horizontal(|ui| {
-                        conv_field(ui, "t0", "Starting Time (to):", "hours", &mut m.t0, |x| x, |x| x, 2, 130.0);
-                        conv_field(ui, "dt", "Time Step (dt):", "hours", &mut m.dt, |x| x, |x| x.max(1e-4), 3, 130.0);
-                        conv_field(ui, "area", "Inflow Area:", u.area_heading(), &mut l.inflow_area, |x| u.area(x), |x| u.area_in(x), 3, 130.0);
+                    let g = st.manual_grid.get_or_insert_with(|| ManualGrid::from_manual(m, events, u));
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(150.0);
+                            let mut multi = g.multi;
+                            if widgets::check(ui, &mut multi, "Multi-Event").clicked() {
+                                g.set_multi(multi, events);
+                            }
+                            ui.add_enabled_ui(false, |ui| {
+                                ui.label("Event:");
+                                ui.add_sized(vec2(140.0, 20.0), egui::Label::new(""));
+                            });
+                            conv_field(ui, "t0", "Starting time (to):", "hours", &mut m.t0, |x| x, |x| x, 2, 140.0);
+                            conv_field(ui, "dt", "Time step (dt):", "hours", &mut m.dt, |x| x, |x| x.max(1e-4), 2, 140.0);
+                            conv_field(ui, "area", "Inflow Area:", u.area_heading(), &mut l.inflow_area, |x| u.area(x), |x| u.area_in(x), 3, 140.0);
+                            conv_field(ui, "imp", "Impervious Area:", "%", &mut l.impervious_pct, |x| x, |x| x.clamp(0.0, 100.0), 2, 140.0);
+                            ui.add_space(4.0);
+                            if widgets::button(ui, "Interpolate", 100.0).clicked() {
+                                g.interpolate();
+                            }
+                        });
+                        ui.vertical(|ui| {
+                            let rows = g.rows();
+                            let ncols = g.cols.len();
+                            egui::ScrollArea::vertical().max_height(260.0).id_salt("manual_grid").show(ui, |ui| {
+                                egui::Grid::new("manual_flows").spacing(vec2(2.0, 2.0)).show(ui, |ui| {
+                                    ui.label(RichText::new("Time").strong());
+                                    for n in &g.names {
+                                        ui.label(RichText::new(if g.multi { n.as_str() } else { "Flow" }).strong());
+                                    }
+                                    ui.end_row();
+                                    ui.label("(hours)");
+                                    for _ in 0..ncols {
+                                        ui.label(format!("({})", u.flow_label()));
+                                    }
+                                    ui.end_row();
+                                    for r in 0..=rows {
+                                        ui.label(format!("{:.2}", m.t0 + r as f64 * m.dt));
+                                        for c in &mut g.cols {
+                                            if c.len() <= r {
+                                                c.resize(r + 1, String::new());
+                                            }
+                                            widgets::text_box(ui, &mut c[r], 70.0);
+                                        }
+                                        ui.end_row();
+                                    }
+                                });
+                            });
+                            // The spare blank row is not a flow line.
+                            let n = g.cols.iter().map(|c| c.iter().rposition(|s| !s.trim().is_empty()).map_or(0, |i| i + 1)).max().unwrap_or(0);
+                            ui.label(format!("{n} Flow lines present"));
+                        });
                     });
-                    ui.label(format!("Flows ({}) one per time step, separated by spaces or new lines:", u.flow_label()));
-                    ui.add_sized(vec2(ui.available_width(), 160.0), egui::TextEdit::multiline(&mut st.manual_text).font(egui::TextStyle::Monospace));
-                    let n = st.manual_text.split(|c: char| c.is_whitespace() || c == ',').filter(|s| s.trim().parse::<f64>().is_ok()).count();
-                    ui.label(format!("{n} flow values present"));
                 }
                 LinkSource::Table { name, columns, selected, times } => {
                     ui.label(format!("File: {name} ({} rows, {} hydrographs)", times.len(), columns.len()));

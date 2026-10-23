@@ -1436,6 +1436,7 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
                     Window::Edit(e) => e.tab = n,
                     Window::Settings(s) => s.tab = n,
                     Window::ProjectReport(s) => s.tab = n,
+                    Window::LandUse(s) => s.tab = n,
                     _ => {}
                 }
             }
@@ -1460,6 +1461,27 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             app.open_window(Window::Units(st));
         }
         "messages" => app.open_window(Window::Messages),
+        // Test hook: give a link a small multi-event manual hydrograph (label of the link).
+        "linkmanual" => {
+            if let Some(id) = find(app, arg) {
+                let events: Vec<String> = app.doc().project.settings.events.iter().take(3).map(|e| e.name.clone()).collect();
+                if let Some(stormwaves_core::project::NodeData::Link(l)) = app.doc().project.node_mut(id).map(|n| &mut n.data) {
+                    let col = |k: f64| (0..8).map(|i| if i % 2 == 0 { k * i as f64 } else { f64::NAN }).filter(|q| q.is_finite()).collect::<Vec<f64>>();
+                    l.source = stormwaves_core::link::LinkSource::Manual(stormwaves_core::link::ManualHydrograph {
+                        t0: 10.0,
+                        dt: 0.5,
+                        flows: col(1.0),
+                        per_event: events.iter().enumerate().map(|(i, n)| (n.clone(), col(1.0 + i as f64))).collect(),
+                    });
+                    l.inflow_area = 43_560.0;
+                    l.impervious_pct = 35.0;
+                }
+            }
+        }
+        "landuse" => {
+            let st = dialogs::misc::LandUseState::new(&app.doc().project);
+            app.open_window(Window::LandUse(st));
+        }
         "project-report" => app.open_window(Window::ProjectReport(reports::ProjectReportState { tab: arg.trim().parse().unwrap_or(0), ..Default::default() })),
         "general" => {
             let st = dialogs::misc::GeneralState { draft: app.prefs.clone() };
