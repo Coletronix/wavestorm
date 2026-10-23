@@ -109,22 +109,27 @@ pub fn set_tips_enabled(ctx: &egui::Context, on: bool) {
 /// any part of it for half a second. The tip is a plain explanation for engineers new to the
 /// field; it can be turned off in the General settings.
 pub fn with_tip<R>(ui: &mut Ui, tip: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
-    const DELAY: f32 = 0.5;
     // Fields inside an explicit tip don't add their own generic one.
     let outer = in_tip(ui.ctx());
     ui.ctx().data_mut(|d| d.insert_temp(in_tip_id(), true));
     let inner = ui.scope(add);
     ui.ctx().data_mut(|d| d.insert_temp(in_tip_id(), outer));
-    let enabled = ui.ctx().data(|d| d.get_temp::<bool>(tips_id())).unwrap_or(true);
-    if enabled && inner.response.contains_pointer() && !ui.ctx().input(|i| i.pointer.any_down()) {
-        let still = ui.ctx().input(|i| i.pointer.time_since_last_movement());
+    hover_tip(ui.ctx(), &inner.response, tip);
+    inner.inner
+}
+
+/// Shows `tip` once the pointer has rested on `resp` for half a second (if tips are enabled).
+fn hover_tip(ctx: &egui::Context, resp: &egui::Response, tip: &str) {
+    const DELAY: f32 = 0.5;
+    let enabled = ctx.data(|d| d.get_temp::<bool>(tips_id())).unwrap_or(true);
+    if enabled && resp.contains_pointer() && !ctx.input(|i| i.pointer.any_down()) {
+        let still = ctx.input(|i| i.pointer.time_since_last_movement());
         if still >= DELAY {
-            inner.response.show_tooltip_text(tip);
+            resp.show_tooltip_text(tip);
         } else {
-            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f32(DELAY - still + 0.01));
+            ctx.request_repaint_after(std::time::Duration::from_secs_f32(DELAY - still + 0.01));
         }
     }
-    inner.inner
 }
 
 /// Width left for a window's main body beside a right-hand column, using the column's width
@@ -563,6 +568,8 @@ pub struct Column<'a> {
     pub width: f32,
     /// Right-align (numbers).
     pub numeric: bool,
+    /// Pop-up tip shown over the header and cells (follows the General "show tips" setting).
+    pub tip: Option<&'static str>,
 }
 
 /// What the user did in a grid this frame.
@@ -593,10 +600,14 @@ pub fn grid(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>,
     let head = Rect::from_min_size(inner.min, vec2(inner.width(), row_h + 2.0));
     child.painter().rect_filled(head, 0.0, t.face);
     let mut x = inner.min.x;
-    for (title, w) in std::iter::once(("#", num_w)).chain(cols.iter().map(|c| (c.title, c.width))) {
+    for (k, (title, w, tip)) in std::iter::once(("#", num_w, None)).chain(cols.iter().map(|c| (c.title, c.width, c.tip))).enumerate() {
         let r = Rect::from_min_size(pos2(x, head.min.y), vec2(w, head.height()));
         bevel(child.painter(), r, true, &t);
         child.painter().with_clip_rect(r.shrink(1.0)).text(r.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, title, font.clone(), t.text);
+        if let Some(tip) = tip {
+            let resp = child.interact(r, gid.with(("head", k)), Sense::hover());
+            hover_tip(child.ctx(), &resp, tip);
+        }
         x += w;
     }
     if editable && rows.last().is_none_or(|r| r.iter().any(|c| !c.trim().is_empty())) {
@@ -675,6 +686,10 @@ pub fn grid(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>,
                     if resp.double_clicked() {
                         ev.double_clicked = Some(i);
                     }
+                }
+                if let Some(tip) = c.tip {
+                    let resp = ui.interact(cell, gid.with(("tip", i, j)), Sense::hover());
+                    hover_tip(ui.ctx(), &resp, tip);
                 }
             }
         }

@@ -389,10 +389,10 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
             st.area_rows = sc.areas.iter().map(|a| vec![widgets::cell_fmt(to_area(a.area), if large { 3 } else { 0 }), format!("{}", a.cn), a.description.clone(), a.land_use.clone().unwrap_or_default()]).collect();
         }
         let cols = [
-            widgets::Column { title: &format!("Area ({area_unit})"), width: 100.0, numeric: true },
-            widgets::Column { title: "CN", width: 56.0, numeric: true },
-            widgets::Column { title: "Description", width: 260.0, numeric: false },
-            widgets::Column { title: "Land Use", width: 100.0, numeric: false },
+            widgets::Column { title: &format!("Area ({area_unit})"), width: 100.0, numeric: true, tip: Some("Area of this ground cover and soil group combination, in the displayed area units.") },
+            widgets::Column { title: "CN", width: 56.0, numeric: true, tip: Some("NRCS runoff curve number (TR-55 Table 2-2) for this cover and hydrologic soil group, 30 to 100. Use Lookup CN... to pick from the tables.") },
+            widgets::Column { title: "Description", width: 260.0, numeric: false, tip: Some("Ground cover and soil group text, printed in reports.") },
+            widgets::Column { title: "Land Use", width: 100.0, numeric: false, tip: Some("Optional land use name for this row; areas are grouped by it in the land use listing.") },
         ];
         let ev = widgets::grid(ui, "areas", &cols, &mut st.area_rows, &mut st.sel_row, 210.0, true);
         if ev.changed {
