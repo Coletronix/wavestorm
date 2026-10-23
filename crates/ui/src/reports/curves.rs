@@ -25,6 +25,8 @@ pub struct CurveState {
     pub intensity: bool,
     /// Storms: scale by the current event's depth instead of showing fractions.
     pub current_depth: bool,
+    /// Storms: one curve per event, each scaled to that event's depth.
+    pub event_depths: bool,
     /// Time increment: hours (storms), Tp (unit hydrographs) or minutes (IDF).
     pub inc: f64,
     /// Graph (0) or Table (1).
@@ -34,13 +36,13 @@ pub struct CurveState {
 
 impl CurveState {
     pub fn storms() -> Self {
-        CurveState { kind: CurveKind::Storm, checked: vec!["Type II 24-hr".into()], view: ChartView::default(), intensity: false, current_depth: false, inc: 0.1, tab: 0, fresh: false }
+        CurveState { kind: CurveKind::Storm, checked: vec!["Type II 24-hr".into()], view: ChartView::default(), intensity: false, current_depth: false, event_depths: false, inc: 0.1, tab: 0, fresh: false }
     }
     pub fn uhs() -> Self {
-        CurveState { kind: CurveKind::Uh, checked: vec!["SCS".into(), "Gamma-284".into()], view: ChartView::default(), intensity: true, current_depth: false, inc: 0.1, tab: 0, fresh: false }
+        CurveState { kind: CurveKind::Uh, checked: vec!["SCS".into(), "Gamma-284".into()], view: ChartView::default(), intensity: true, current_depth: false, event_depths: false, inc: 0.1, tab: 0, fresh: false }
     }
     pub fn idf() -> Self {
-        CurveState { kind: CurveKind::Idf, checked: Vec::new(), view: ChartView::default(), intensity: true, current_depth: false, inc: 5.0, tab: 0, fresh: true }
+        CurveState { kind: CurveKind::Idf, checked: Vec::new(), view: ChartView::default(), intensity: true, current_depth: false, event_depths: false, inc: 5.0, tab: 0, fresh: true }
     }
 }
 
@@ -117,25 +119,39 @@ fn build(doc: &Doc, st: &CurveState, table_xs: Option<&dyn Fn(f64) -> Vec<f64>>)
     let (title, x_label, y_label);
     match st.kind {
         CurveKind::Storm => {
-            let scale = if st.current_depth { doc.project.settings.events.get(doc.project.settings.current_event).map(|e| u.rain(e.depth)).unwrap_or(1.0) } else { 1.0 };
-            for (i, name) in st.checked.iter().enumerate() {
+            let events = &doc.project.settings.events;
+            let current = events.get(doc.project.settings.current_event).map(|e| u.rain(e.depth)).unwrap_or(1.0);
+            for name in st.checked.iter() {
                 if let Some(s) = crate::library::find_storm(&doc.project, name) {
+                    // (label, depth scale) per curve: one dimensionless or current-depth curve, or
+                    // one per event using this storm (every event when none does).
+                    let scales: Vec<(String, f64)> = if st.event_depths {
+                        let using: Vec<_> = events.iter().filter(|e| e.storm == s.name).collect();
+                        let pick = if using.is_empty() { events.iter().collect() } else { using };
+                        let single = st.checked.len() == 1;
+                        pick.iter().map(|e| (if single { e.name.clone() } else { format!("{} {}", name, e.name) }, u.rain(e.depth))).collect()
+                    } else {
+                        vec![(name.clone(), if st.current_depth { current } else { 1.0 })]
+                    };
                     let xs = match table_xs {
                         Some(f) => f(s.duration),
-                        None => (0..=400).map(|k| s.duration * k as f64 / 400.0).collect(),
+                        None => (0..=400).map(|k| s.duration * k as f64 / 400.0).collect::<Vec<f64>>(),
                     };
                     let h = if table_xs.is_some() { st.inc.max(1e-3) } else { s.duration / 400.0 };
-                    let ys = xs.iter().map(|x| storm_value(&s, *x, st.intensity, h, scale)).collect();
                     if description.is_empty() {
                         description = vec![s.name.clone(), s.comment.clone(), format!("{} {} Points", s.fractions.len(), if st.intensity { "Intensity" } else { "Depth" })];
                     }
-                    series.push(Series { name: name.clone(), color: COLORS[(i + 2) % COLORS.len()], x: xs, y: ys, peak_label: None });
+                    for (label, scale) in scales {
+                        let ys = xs.iter().map(|x| storm_value(&s, *x, st.intensity, h, scale)).collect();
+                        let color = COLORS[(series.len() + 2) % COLORS.len()];
+                        series.push(Series { name: label, color, x: xs.clone(), y: ys, peak_label: None });
+                    }
                 }
             }
             let what = if st.intensity { "Intensity" } else { "Depth" };
             title = format!("Rainfall {what} vs. Time");
             x_label = "Elapsed Time (hours)".to_string();
-            y_label = match (st.intensity, st.current_depth) {
+            y_label = match (st.intensity, st.current_depth || st.event_depths) {
                 (false, false) => "Fractional Rainfall Depth".to_string(),
                 (true, false) => "Fraction of Depth per Hour".to_string(),
                 (false, true) => format!("Rainfall Depth ({})", u.rain_heading()),
@@ -303,11 +319,14 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, acti
             });
             if st.kind == CurveKind::Storm {
                 ui.vertical(|ui| {
-                    if widgets::radio(ui, !st.current_depth, "Dimensionless").clicked() {
-                        st.current_depth = false;
+                    if widgets::radio(ui, !st.current_depth && !st.event_depths, "Dimensionless").clicked() {
+                        (st.current_depth, st.event_depths) = (false, false);
                     }
                     if widgets::radio(ui, st.current_depth, "Current Depth").clicked() {
-                        st.current_depth = true;
+                        (st.current_depth, st.event_depths) = (true, false);
+                    }
+                    if widgets::radio(ui, st.event_depths, "Event Depth(s)").clicked() {
+                        (st.current_depth, st.event_depths) = (false, true);
                     }
                 });
             }

@@ -1579,6 +1579,11 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
             Err(e) => app.error = Some(format!("Cannot read {arg}: {e}")),
         },
         "storms" => app.open_window(Window::Storms(reports::CurveState::storms())),
+        "storms-events" => {
+            let mut st = reports::CurveState::storms();
+            st.event_depths = true;
+            app.open_window(Window::Storms(st));
+        }
         "uhs" => app.open_window(Window::Storms(reports::CurveState::uhs())),
         "idf" => {
             // Test hook: give a project without an IDF curve a sample one first.
