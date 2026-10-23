@@ -249,7 +249,10 @@ Keep this section updated at the end of every session.
   9. (done) Chamber Wizard (Storage tab button; script `edit:1P;tab:1;chamber`).
   Next: reach routing attenuation/avg velocity vs the `.hcp` example (item 8 above), metric
   `.hcp` files (need a sample), right toolbar order. Done 2026-10-23: Delayed Gate
-  editor layout (model has no Opening Step / Vertical Range / Rotary Weir yet), land-use and
+  editor layout with Opening Step, Vertical Range (moving full-size inlet whose lip drops
+  from invert + range) and Rotary Weir (inlet tilts horizontal → vertical while lowering;
+  from the reference's public batch-detention page — horizontal-state weir uses the generic
+  3.27 grate coefficient, not one derived from Cd), land-use and
   loading lines in subcatchment summaries driven by the Report flags.
 - Name and logo (2026-10-23): the product is written **StormWAVES** in all user-facing text.
   Crate, binary and directory names, Rust identifiers (`StormwavesApp`), the

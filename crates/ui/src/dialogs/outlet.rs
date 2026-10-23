@@ -67,7 +67,7 @@ pub fn templates() -> Vec<(&'static str, DeviceKind)> {
         ("Pump", DeviceKind::Pump { rating: vec![(0.0, 2.0), (10.0, 1.5), (20.0, 0.0)], on_elevation: 102.0, off_elevation: 100.5, discharge_elevation: 110.0, max_elevation: None, priority_group: 0, discharge_length: 0.0, discharge_diameter: 0.0, hazen_c: 120.0 }),
         ("Tube/Siphon", DeviceKind::Siphon { diameter: 1.0, length: 40.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 }),
         ("Dam Breach", DeviceKind::DamBreach { start_time: None, start_elevation: Some(105.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 }),
-        ("Delayed Gate", DeviceKind::DelayedGate { trigger_elevation: 102.0, delay: 2.0, opening: 1.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0 }),
+        ("Delayed Gate", DeviceKind::DelayedGate { trigger_elevation: 102.0, delay: 2.0, opening: 1.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0, vertical_range: 0.0, rotary: false }),
         ("Channel Outlet", DeviceKind::Channel { section: Section::Trapezoidal { bottom: 4.0, z_left: 2.0, z_right: 2.0, depth: 3.0 }, n: 0.03, slope: 0.01 }),
     ]
 }
@@ -439,7 +439,7 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         conv_field(ui, "z", "Side Slope Z:", "h:v", side_z, |x| x, |x| x.max(0.0), 2, 110.0);
                     });
                 }
-                DeviceKind::DelayedGate { trigger_elevation, delay, opening, width, height, cd, step } => {
+                DeviceKind::DelayedGate { trigger_elevation, delay, opening, width, height, cd, step, vertical_range, rotary } => {
                     // Reference layout: timing column, invert column, inlet-size group.
                     ui.horizontal_top(|ui| {
                         ui.vertical(|ui| {
@@ -453,6 +453,12 @@ pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, 
                         ui.add_space(8.0);
                         ui.vertical(|ui| {
                             len(ui, "inv", "Invert Elevation:", &mut d.invert);
+                            widgets::with_tip(ui, "Distance the inlet travels: its lip starts this far above the invert and is lowered to the invert as the device opens; water above the lip flows in at any time. 0 = a gate opening upward from the invert.", |ui| {
+                                len(ui, "range", "Vertical Range:", vertical_range);
+                            });
+                            widgets::with_tip(ui, "Rotating bucket weir for batch detention: the inlet turns from facing up (horizontal orifice) to facing sideways (vertical orifice) as it is lowered. Set the vertical range to the bucket height.", |ui| {
+                                widgets::check(ui, rotary, "Rotary Weir");
+                            });
                         });
                         ui.add_space(8.0);
                         ui.vertical(|ui| {

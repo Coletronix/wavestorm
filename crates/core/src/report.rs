@@ -439,14 +439,15 @@ pub fn device_text(dev: &crate::outlets::OutletDevice, u: &Units) -> Vec<String>
                 format!("Final bottom= {}  width= {}  Z= {:.1}", u.fmt_elev(*final_bottom), ft(*final_width), side_z),
             ]
         }
-        DeviceKind::DelayedGate { trigger_elevation, delay, opening, width, height, cd, step } => vec![
-            format!("{} W x {} H{mult}{} C= {cd:.3}", inch(*width), inch(*height), name("Delayed Gate")),
+        DeviceKind::DelayedGate { trigger_elevation, delay, opening, width, height, cd, step, vertical_range, rotary } => vec![
+            format!("{} W x {} H{mult}{} C= {cd:.3}", inch(*width), inch(*height), name(if *rotary { "Delayed Rotary Weir" } else { "Delayed Gate" })),
             format!(
-                "Trigger= {}  Delay= {:.2} hrs  Opening time= {:.2} hrs{}",
+                "Trigger= {}  Delay= {:.2} hrs  Opening time= {:.2} hrs{}{}",
                 u.fmt_elev(*trigger_elevation),
                 delay,
                 opening,
-                if *step > 0.0 { format!("  Opening step= {step:.2} hrs") } else { String::new() }
+                if *step > 0.0 { format!("  Opening step= {step:.2} hrs") } else { String::new() },
+                if *vertical_range > 0.0 { format!("  Vertical range= {}", ft(*vertical_range)) } else { String::new() }
             ),
         ],
         DeviceKind::Channel { section, n, slope } => vec![format!("{} {}, n= {n:.3} S= {slope:.4} '/'", name("Channel Outlet"), section_text(section, u))],

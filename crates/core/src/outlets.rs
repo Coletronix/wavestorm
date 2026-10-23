@@ -170,6 +170,9 @@ pub enum DeviceKind {
     /// Automated gate (rectangular vertical opening at the invert) that starts opening `delay`
     /// hours after the water first reaches `trigger_elevation` and is fully open after `opening`.
     /// With `step` > 0 (hours) it opens in increments, once per step, instead of continuously.
+    /// With a `vertical_range` (ft) the whole width x height inlet instead moves: its lip drops
+    /// from invert + range to the invert as it opens. A `rotary` weir (batch-detention bucket)
+    /// also turns from a horizontal to a vertical opening as it is lowered.
     DelayedGate {
         trigger_elevation: f64,
         delay: f64,
@@ -179,6 +182,10 @@ pub enum DeviceKind {
         cd: f64,
         #[serde(default)]
         step: f64,
+        #[serde(default)]
+        vertical_range: f64,
+        #[serde(default)]
+        rotary: bool,
     },
     /// The pond discharges straight into a channel: normal-depth flow at depth HW − invert.
     Channel { section: crate::geometry::Section, n: f64, slope: f64 },
@@ -732,18 +739,32 @@ impl OutletDevice {
                 let q = (3.1 * width * h.powf(1.5) + 2.45 * side_z.max(0.0) * h.powf(2.5) * f) * submergence(h, c.tw.map(|t| t - bottom).unwrap_or(0.0), 1.5);
                 weir_result(q, h, width + side_z * h)
             }
-            DeviceKind::DelayedGate { delay, opening, width, height, cd, step, .. } => {
-                let Some(start) = c.state.since else { return DeviceFlow::ZERO };
-                let elapsed = c.time - start - delay;
-                let f = if *opening > 0.0 {
-                    // Stepped opening: the gate moves at the start of each step.
-                    let e = if *step > 0.0 && elapsed >= 0.0 { ((elapsed / step).floor() + 1.0) * step } else { elapsed };
-                    (e / opening).clamp(0.0, 1.0)
-                } else if elapsed >= 0.0 {
-                    1.0
-                } else {
-                    0.0
+            DeviceKind::DelayedGate { delay, opening, width, height, cd, step, vertical_range, rotary, .. } => {
+                // Fraction open: 0 until triggered and the delay has passed, then rising over the opening time.
+                let f = match c.state.since {
+                    None => 0.0,
+                    Some(start) => {
+                        let elapsed = c.time - start - delay;
+                        if *opening > 0.0 {
+                            // Stepped opening: the gate moves at the start of each step.
+                            let e = if *step > 0.0 && elapsed >= 0.0 { ((elapsed / step).floor() + 1.0) * step } else { elapsed };
+                            (e / opening).clamp(0.0, 1.0)
+                        } else if elapsed >= 0.0 {
+                            1.0
+                        } else {
+                            0.0
+                        }
+                    }
                 };
+                if *vertical_range > 0.0 || *rotary {
+                    // A moving inlet of full size whose lip drops from invert + range (closed
+                    // position) to the invert as it opens; water above the lip spills in at any
+                    // time. A rotary weir (bucket) also turns from facing up to facing sideways.
+                    let lip = self.invert + vertical_range.max(0.0) * (1.0 - f);
+                    let plane = if *rotary { Plane::Angle(90.0 * f) } else { Plane::Vertical };
+                    let tail = c.tw.map_or(0.0, |t| t - lip);
+                    return orifice_flow(&OpeningShape::Rectangular { width: *width, height: *height }, plane, *cd, 1, 1, 0.0, true, None, c.hw - lip, tail);
+                }
                 if f <= 0.0 || head <= 0.0 {
                     return DeviceFlow::ZERO;
                 }
@@ -1210,7 +1231,7 @@ mod tests {
         let storage = PondStorage::default();
         let siphon = OutletDevice::new("Siphon", 100.0, Routing::Primary, DeviceKind::Siphon { diameter: 1.0, length: 50.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 });
         let breach = OutletDevice::new("Breach", 110.0, Routing::Secondary, DeviceKind::DamBreach { start_time: None, start_elevation: Some(109.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 });
-        let gate = OutletDevice::new("Gate", 100.0, Routing::Primary, DeviceKind::DelayedGate { trigger_elevation: 103.0, delay: 1.0, opening: 2.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0 });
+        let gate = OutletDevice::new("Gate", 100.0, Routing::Primary, DeviceKind::DelayedGate { trigger_elevation: 103.0, delay: 1.0, opening: 2.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0, vertical_range: 0.0, rotary: false });
         let devs = vec![siphon, breach, gate];
         let mut st = vec![DeviceState::default(); 3];
         // Below priming: nothing flows.
@@ -1240,6 +1261,26 @@ mod tests {
         let early = evaluate(&devs, 109.5, &|_| None, &storage, &st, 5.1).devices[1];
         let later = evaluate(&devs, 109.5, &|_| None, &storage, &st, 6.0).devices[1];
         assert!(later > early && early > 0.0);
+    }
+
+    #[test]
+    fn moving_gate_and_rotary_weir() {
+        let storage = PondStorage::default();
+        let kind = |range: f64, rotary: bool| DeviceKind::DelayedGate { trigger_elevation: 101.0, delay: 0.0, opening: 2.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0, vertical_range: range, rotary };
+        let devs = vec![OutletDevice::new("Gate", 100.0, Routing::Primary, kind(2.0, false)), OutletDevice::new("Bucket", 100.0, Routing::Primary, kind(2.0, true))];
+        let mut st = vec![DeviceState::default(); 2];
+        let q = |st: &[DeviceState], hw: f64, t: f64| evaluate(&devs, hw, &|_| None, &storage, st, t).devices;
+        // Before the trigger the lip stands at 102: nothing below it, spill-in above it.
+        assert_eq!(q(&st, 101.5, 0.0), vec![0.0, 0.0]);
+        assert!(q(&st, 102.5, 0.0).iter().all(|v| *v > 0.0));
+        // Triggered at t=0; halfway the lip is at 101 and the flow at 103 grows as it lowers.
+        update_states(&devs, 101.0, 0.0, &mut st);
+        let (start, half, full) = (q(&st, 103.0, 0.0), q(&st, 103.0, 1.0), q(&st, 103.0, 2.0));
+        for i in 0..2 {
+            assert!(start[i] < half[i] && half[i] < full[i], "{i}: {start:?} {half:?} {full:?}");
+        }
+        // Fully open, the rotary weir is a vertical opening at the invert like the moving gate.
+        assert!((full[0] - full[1]).abs() < 1e-9);
     }
 
     #[test]
