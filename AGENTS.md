@@ -51,6 +51,7 @@ gitignored.
 |---|---|
 | `hydrograph` | `Hydrograph` (t0, dt, cfs), parabolic peak interpolation (TR-20 convention), volume, centroid |
 | `rainfall`, `rainfall_data` | NRCS Type I/IA/II/III 24-hr mass curves (WinTR-55 v2, smoothed by monotone cubic), 6/12-hr trims, custom/Chicago storms, events, AMC, back-to-back storms |
+| `rainlib` | Rainfall library files: `.hcr`/`.huh`/`.idf` parsers and writers, `*-Rain.txt` county tables, storm-code mapping |
 | `uh` | NRCS dimensionless UH (NEH 630 Table 16-1), gamma UHs for any peak factor |
 | `runoff` | SCS runoff equation, TR-20 unit-hydrograph runoff, SBUH, Rational |
 | `cn` | TR-55 Table 2-2 lookup, composite CN, unconnected-impervious adjustment |
@@ -116,9 +117,21 @@ Keep this section updated at the end of every session.
   messages, reports, PDF printing, land-use loading, CSV import/export/merge, full egui UI
   (menus, palette, diagram, dialogs, charts, help), background image/PDF underlay with scale
   calibration and subcatchment tracing, desktop and web (trunk) apps.
-- Remaining parity gaps: TR-55 graphical peak/storage worksheet, built-in county event
-  tables (we look events up from a user-downloaded NOAA Atlas 14 CSV instead: `core::noaa`,
-  Settings > Rainfall Event Lookup), rock-fill outlet (needs a verified public equation —
+- Rainfall library (`core::rainlib`, `ui::library`, `dialogs/lookup.rs`): reads the reference
+  application's `.hcr` storms (coef polynomial segments, `coef1` IDF/Chicago, depth/inten/incr,
+  timedepth/timeincr, `curve=` multi-storm files, units, inline expressions), `.huh` unit
+  hydrographs (peak ordinate = t/Tp 1), `*-Rain.txt` county tables (quoted CSV, several storm codes
+  per row, `storm_for_code` maps "NOAA_C", "MSE3", "N10_D"... to library storm names) and
+  `.idf` files. The `.idf` text layout is OUR ASSUMPTION (no sample): `name/comment/timeunits/
+  depthunits`, then per event `curve=`, optional `factor=`, `coef= a b c` (i = a/(b+t)^c) or
+  `idf= t1 i1 t2 i2 ...` points (log-log interpolation); a NOAA Atlas 14 depth CSV is also
+  accepted. Writers: `write_hcr/huh/idf`. Library folder pref (Settings > General, desktop),
+  "Import Rainfall Files..." (desktop and web; web imports persist in localStorage up to 2.5 MB).
+  Library storms/UHs used by events, the default UH or a subcatchment UH are copied into the
+  project (`library::adopt`) so projects stay self-contained. The full-library test runs when
+  the folder exists (`STORMWAVES_RAIN_LIB` or `reference_images/expert_reference/Rainfall`);
+  never copy or commit those files.
+- Remaining parity gaps: TR-55 graphical peak/storage worksheet, rock-fill outlet (needs a verified public equation —
   the reference cites Haan, Barfield & Hayes 1994 pp. 151-155). Pop-up tips
   (`widgets::with_tip`, General setting) exist on node General, reach, pond Advanced and Tc
   segment fields; extend them to the remaining fields (areas/CN grid, storage, outlets, links).

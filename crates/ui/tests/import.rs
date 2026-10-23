@@ -44,7 +44,7 @@ fn noaa_lookup_creates_events() {
     h.state_mut().platform.push(Incoming { purpose: Purpose::NoaaCsv, name: "site.csv".into(), path: None, bytes: NOAA.as_bytes().to_vec() });
     h.run_steps(3);
     let app = h.state_mut();
-    let lookup = app.doc().windows.iter().find_map(|w| if let Window::EventLookup(s) = w { Some((s.row, s.checked.clone(), s.storm.clone())) } else { None });
+    let lookup = app.doc().windows.iter().find_map(|w| if let Window::EventLookup(s) = w { Some((s.noaa_row, s.checked.clone(), s.storm.clone())) } else { None });
     let (row, checked, storm) = lookup.expect("lookup window opened with the table");
     assert_eq!(row, Some(1), "24-hr row preselected");
     assert_eq!(checked.iter().filter(|c| **c).count(), 6, "2, 5, 10, 25, 50 and 100-year");
@@ -76,4 +76,36 @@ fn tr20_import_opens_a_new_project() {
     // Rain table 7 is not a standard table, so the import has a note and shows the notes window.
     assert!(doc.windows.iter().any(|w| matches!(w, Window::Notes(_))));
     assert!(!doc.results.has_errors());
+}
+
+const COUNTY_TABLE: &str = "ID,State,County,Storm,1-Year,2-Year,10-Year\r\n\"1\",\"AK\",\"Aleutians East, Cold Bay AP AK_IA\",\"IA\",\"1.78\",\"2.16\",\"3.14\"\r\n2,AL,Autauga,III,3.7,4.5,6.6\r\n";
+
+#[test]
+fn county_lookup_and_library_storms_join_the_project() {
+    let mut h = egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut StormwavesApp| app.draw(ui), StormwavesApp::headless());
+    h.run_steps(2);
+    // A library storm imported as a file, then a county table loaded into the lookup.
+    h.state_mut().platform.push(Incoming { purpose: Purpose::RainLib, name: "Zed 3-hr.hcr".into(), path: None, bytes: b"name=Zed 3-hr\nduration=3\ndepth= 0 .1 .5 1\n".to_vec() });
+    h.state_mut().platform.push(Incoming { purpose: Purpose::NoaaCsv, name: "Test-Rain.txt".into(), path: None, bytes: COUNTY_TABLE.as_bytes().to_vec() });
+    h.run_steps(4);
+    let app = h.state_mut();
+    let (source, storm, checked) = app
+        .doc()
+        .windows
+        .iter()
+        .find_map(|w| if let Window::EventLookup(s) = w { Some((s.source.clone(), s.storm.clone(), s.checked.clone())) } else { None })
+        .expect("lookup window");
+    assert_eq!(source, Some(stormwaves_ui::dialogs::lookup::Source::Table("Test-Rain".into())));
+    assert_eq!(storm, "Type IA 24-hr", "the table's storm code maps to a storm");
+    assert_eq!(checked, vec![true, true, true]);
+    // Creating events with a library storm copies that storm into the project.
+    let mut table = stormwaves_core::rainlib::parse_rain_table("Test-Rain", COUNTY_TABLE).unwrap();
+    let row = table.rows.remove(0);
+    let events = table.events(&row, "Zed 3-hr");
+    assert_eq!(events.len(), 3);
+    app.set_events(events, true);
+    let doc = app.doc();
+    assert!(doc.project.storms.iter().any(|s| s.name == "Zed 3-hr"));
+    assert_eq!(doc.project.settings.events.first().map(|e| e.storm.as_str()), Some("Zed 3-hr"));
+    h.run_steps(2);
 }

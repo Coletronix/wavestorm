@@ -18,11 +18,13 @@ pub struct Prefs {
     pub show_tips: bool,
     /// Open the Messages window when a calculation produces new hints, warnings or errors.
     pub show_messages: bool,
+    /// Folder holding rainfall library files (.hcr, .huh, .idf, *-Rain.txt); desktop only.
+    pub rainfall_folder: String,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { theme: ThemeKind::Classic, backup_minutes: 5.0, multiple_project_reports: false, show_tips: true, show_messages: true }
+        Prefs { theme: ThemeKind::Classic, backup_minutes: 5.0, multiple_project_reports: false, show_tips: true, show_messages: true, rainfall_folder: String::new() }
     }
 }
 

@@ -15,6 +15,8 @@ pub enum Purpose {
     NoaaCsv,
     /// A pump or special-outlet rating table (two columns).
     RatingCsv,
+    /// Several rainfall library files at once (.hcr, .huh, .idf, *-Rain.txt).
+    RainLib,
 }
 
 /// A file delivered to the app.
@@ -62,20 +64,33 @@ impl Platform {
             Purpose::Underlay => ("Image or PDF", &["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp", "pdf"]),
             Purpose::LinkCsv => ("Hydrograph CSV", &["csv", "txt"]),
             Purpose::ImportTr20 => ("TR-20 input file", &["inp", "dat", "tr2", "txt"]),
-            Purpose::NoaaCsv => ("NOAA Atlas 14 table", &["csv", "txt"]),
             Purpose::RatingCsv => ("Rating table", &["csv", "txt"]),
+            Purpose::NoaaCsv => ("Rainfall table, IDF file or NOAA Atlas 14 CSV", &["txt", "idf", "csv"]),
+            Purpose::RainLib => ("Rainfall files", &["hcr", "huh", "idf", "txt"]),
         }
     }
 
-    /// Asks the user for a file.
+    /// Asks the user for a file (several for [`Purpose::RainLib`]).
     pub fn pick(&self, purpose: Purpose) {
         if !self.dialogs {
             return;
         }
         let (name, ext) = Self::filters(purpose);
+        let many = purpose == Purpose::RainLib;
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Some(path) = rfd::FileDialog::new().add_filter(name, ext).pick_file() {
+            if many {
+                for path in rfd::FileDialog::new().add_filter(name, ext).pick_files().unwrap_or_default() {
+                    if let Ok(bytes) = std::fs::read(&path) {
+                        self.push(Incoming {
+                            purpose,
+                            name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                            path: Some(path.to_string_lossy().into_owned()),
+                            bytes,
+                        });
+                    }
+                }
+            } else if let Some(path) = rfd::FileDialog::new().add_filter(name, ext).pick_file() {
                 match std::fs::read(&path) {
                     Ok(bytes) => self.push(Incoming {
                         purpose,
@@ -92,11 +107,31 @@ impl Platform {
             let inbox = self.inbox.clone();
             let dialog = rfd::AsyncFileDialog::new().add_filter(name, ext);
             wasm_bindgen_futures::spawn_local(async move {
-                if let Some(file) = dialog.pick_file().await {
+                if many {
+                    for file in dialog.pick_files().await.unwrap_or_default() {
+                        let bytes = file.read().await;
+                        inbox.lock().unwrap_or_else(PoisonError::into_inner).push(Incoming { purpose, name: file.file_name(), path: None, bytes });
+                    }
+                } else if let Some(file) = dialog.pick_file().await {
                     let bytes = file.read().await;
                     inbox.lock().unwrap_or_else(PoisonError::into_inner).push(Incoming { purpose, name: file.file_name(), path: None, bytes });
                 }
             });
+        }
+    }
+
+    /// Asks the user for a folder (desktop only; the browser has no folders).
+    pub fn pick_folder(&self) -> Option<String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if !self.dialogs {
+                return None;
+            }
+            rfd::FileDialog::new().pick_folder().map(|p| p.to_string_lossy().into_owned())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            None
         }
     }
 

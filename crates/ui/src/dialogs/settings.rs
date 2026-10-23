@@ -28,11 +28,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut SettingsState, actions:
     let mut keep = true;
     let mut apply = false;
     let units = doc.project.units;
-    let storms: Vec<String> = {
-        let mut v: Vec<String> = stormwaves_core::rainfall::builtin_storms().into_iter().map(|s| s.name).collect();
-        v.extend(doc.project.storms.iter().map(|s| s.name.clone()));
-        v
-    };
+    let storms: Vec<String> = crate::library::storm_names(&doc.project);
     crate::frame::Win::new("Calculation Settings").id(egui::Id::new("calc-settings")).collapsible(false).resizable(false).default_width(560.0).show(ctx, |ui| {
         widgets::tabs(ui, &["General", "Rainfall", "Time Span", "Reports", "Unit Hydro", "Advanced"], &mut st.tab);
         widgets::tab_body(ui, |ui| {
@@ -42,7 +38,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut SettingsState, actions:
                 1 => rainfall(ui, st, &units, &storms, doc, actions),
                 2 => time_span(ui, &mut st.draft),
                 3 => reports_tab(ui, &mut st.draft),
-                4 => uh_tab(ui, &mut st.draft, actions),
+                4 => uh_tab(ui, &mut st.draft, &doc.project, actions),
                 _ => advanced(ui, &mut st.draft),
             }
         });
@@ -68,7 +64,11 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut SettingsState, actions:
             draft.events.push(RainEvent::new("Custom", "Type II 24-hr", 3.0));
         }
         draft.current_event = draft.current_event.min(draft.events.len() - 1);
-        doc.edit("Calculation Settings", |p| p.settings = draft.clone());
+        doc.edit("Calculation Settings", |p| {
+            p.settings = draft.clone();
+            // Library storms and unit hydrographs in use are copied into the project.
+            crate::library::adopt(p);
+        });
     }
     keep
 }
@@ -125,13 +125,17 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
                 if widgets::button(ui, "IDF...", 50.0).on_hover_text("IDF curve for the Rational method").clicked() {
                     actions.push(WindowAction::OpenWindow(Window::Idf(crate::dialogs::storm::IdfEditor::new(doc))));
                 }
-                if widgets::button(ui, "Lookup...", 70.0).on_hover_text("Create events from a NOAA Atlas 14 precipitation-frequency table").clicked() {
+                if widgets::button(ui, "Lookup...", 70.0).on_hover_text("Create events from a county rainfall table, an IDF file or a NOAA Atlas 14 table").clicked() {
                     actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
                 }
             });
+            if widgets::button(ui, "Import Events From IDF File...", 190.0).on_hover_text("Create events (depth = intensity x duration) from an IDF curve file").clicked() {
+                actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
+                actions.push(WindowAction::PickFile(crate::platform::Purpose::NoaaCsv));
+            }
         });
     });
-    let comment = doc.project.storm(&e.storm).map(|s| s.comment).unwrap_or_else(|| "(storm not found)".into());
+    let comment = crate::library::find_storm(&doc.project, &e.storm).map(|s| s.comment).unwrap_or_else(|| "(storm not found)".into());
     ui.label(RichText::new(comment).color(t.text_dim));
     ui.add_space(2.0);
     ui.horizontal(|ui| {
@@ -236,8 +240,11 @@ fn reports_tab(ui: &mut Ui, s: &mut CalcSettings) {
     widgets::check(ui, &mut s.report_impervious, "Report pervious and impervious areas");
 }
 
-fn uh_tab(ui: &mut Ui, s: &mut CalcSettings, actions: &mut Vec<WindowAction>) {
-    let opts: Vec<(String, String)> = stormwaves_core::uh::builtin_uhs().into_iter().map(|u| (u.name.clone(), format!("{}  (PF {:.0})", u.name, u.peak_factor()))).collect();
+fn uh_tab(ui: &mut Ui, s: &mut CalcSettings, project: &Project, actions: &mut Vec<WindowAction>) {
+    let opts: Vec<(String, String)> = crate::library::uh_names(project)
+        .into_iter()
+        .filter_map(|n| crate::library::find_uh(project, &n).map(|u| (n, format!("{}  (PF {:.0})", u.name, u.peak_factor()))))
+        .collect();
     ui.horizontal(|ui| {
         widgets::combo_field(ui, "uh", "Unit Hydrograph:", &mut s.uh, &opts, 240.0);
         ui.vertical(|ui| {
@@ -249,7 +256,7 @@ fn uh_tab(ui: &mut Ui, s: &mut CalcSettings, actions: &mut Vec<WindowAction>) {
             }
         });
     });
-    if let Some(u) = stormwaves_core::uh::builtin_uhs().into_iter().find(|u| u.name == s.uh) {
+    if let Some(u) = crate::library::find_uh(project, &s.uh) {
         ui.label(RichText::new(u.comment).color(Tokens::get(ui.ctx()).text_dim));
     }
 }

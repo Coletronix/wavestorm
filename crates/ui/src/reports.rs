@@ -1041,26 +1041,33 @@ impl CurveState {
     }
 }
 
-pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState) -> bool {
+pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, actions: &mut Vec<crate::windows::WindowAction>) -> bool {
     let mut open = true;
     let title = if st.storms { "Storm Distribution Report" } else { "Unit Hydrograph Report" };
     crate::frame::Win::new(title).open(&mut open).default_size(vec2(720.0, 440.0)).resizable(true).min_max().show(ctx, |ui| {
-        let names: Vec<String> = if st.storms {
-            let mut v: Vec<String> = stormwaves_core::rainfall::builtin_storms().into_iter().map(|s| s.name).collect();
-            v.extend(doc.project.storms.iter().map(|s| s.name.clone()));
-            v
-        } else {
-            let mut v: Vec<String> = stormwaves_core::uh::builtin_uhs().into_iter().map(|u| u.name).collect();
-            v.extend(doc.project.uhs.iter().map(|u| u.name.clone()));
-            v
-        };
+        // Built-in, project and rainfall-library curves.
+        let names: Vec<String> = if st.storms { crate::library::storm_names(&doc.project) } else { crate::library::uh_names(&doc.project) };
         ui.horizontal(|ui| {
+            if widgets::button(ui, "Import Files...", 100.0).on_hover_text("Add rainfall files (.hcr, .huh, .idf, *-Rain.txt) to the rainfall library").clicked() {
+                actions.push(crate::windows::WindowAction::PickFile(crate::platform::Purpose::RainLib));
+            }
+            if widgets::button(ui, "Save File...", 90.0).on_hover_text(if st.storms { "Save the first checked storm as a rainfall (.hcr) file" } else { "Save the first checked unit hydrograph as a (.huh) file" }).clicked() {
+                if let Some(first) = st.checked.first() {
+                    if st.storms {
+                        if let Some(s) = crate::library::find_storm(&doc.project, first) {
+                            actions.push(crate::windows::WindowAction::SaveFile { name: format!("{}.hcr", s.name), bytes: stormwaves_core::rainlib::write_hcr(&s).into_bytes(), ext: "hcr" });
+                        }
+                    } else if let Some(u) = crate::library::find_uh(&doc.project, first) {
+                        actions.push(crate::windows::WindowAction::SaveFile { name: format!("{}.huh", u.name), bytes: stormwaves_core::rainlib::write_huh(&u).into_bytes(), ext: "huh" });
+                    }
+                }
+            }
             if st.storms {
                 if widgets::button(ui, "New...", 60.0).clicked() {
                     doc.windows.push(crate::windows::Window::StormEdit(crate::dialogs::storm::StormEditor::default()));
                 }
                 if widgets::button(ui, "Copy & Edit", 90.0).on_hover_text("Edit a copy of the first checked storm").clicked() {
-                    if let Some(s) = st.checked.first().and_then(|n| doc.project.storm(n)) {
+                    if let Some(s) = st.checked.first().and_then(|n| crate::library::find_storm(&doc.project, n)) {
                         let mut ed = crate::dialogs::storm::StormEditor::from_storm(&s);
                         ed.name = format!("{} (custom)", s.name);
                         doc.windows.push(crate::windows::Window::StormEdit(ed));
@@ -1080,7 +1087,7 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState) -> b
             for (i, name) in st.checked.iter().enumerate() {
                 let color = COLORS[(i + 2) % COLORS.len()];
                 if st.storms {
-                    if let Some(s) = doc.project.storm(name) {
+                    if let Some(s) = crate::library::find_storm(&doc.project, name) {
                         let n = 400;
                         let xs: Vec<f64> = (0..=n).map(|k| s.duration * k as f64 / n as f64).collect();
                         let ys: Vec<f64> = if st.intensity {
@@ -1091,7 +1098,7 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState) -> b
                         };
                         series.push(Series { name: name.clone(), color, x: xs, y: ys, peak_label: None });
                     }
-                } else if let Some(u) = doc.project.unit_hydrograph(name) {
+                } else if let Some(u) = crate::library::find_uh(&doc.project, name) {
                     let k = u.peak_factor() / stormwaves_core::uh::CFS_PER_SQMI_INCH_PER_HR;
                     let xs: Vec<f64> = (0..=200).map(|j| j as f64 * u.base().min(8.0) / 200.0).collect();
                     let ys = xs.iter().map(|x| u.ordinate(*x) * k).collect();
