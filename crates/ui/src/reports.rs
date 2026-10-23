@@ -449,7 +449,7 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
                 let series = hydro_series(project, node, r);
                 let summary = summary_lines(project, node, r, &doc.results.event_heading);
                 let y_label = format!("Flow ({})", project.units.flow_label());
-                let spec = ChartSpec { title: "Hydrograph", subtitle: &node.title(), x_label: "Time (hours)", y_label: &y_label, series: &series, summary: &summary, three_d: st.three_d, marks: &[] };
+                let spec = ChartSpec { title: "Hydrograph", subtitle: &node.title(), x_label: "Time (hours)", y_label: &y_label, series: &series, summary: &summary, three_d: st.three_d, log_x: false, marks: &[] };
                 chart::chart(ui, &spec, &mut st.view, size);
             }
         }
@@ -553,7 +553,7 @@ fn rating_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
             ("Stage-Area-Storage", format!("Storage ({})", u.volume_label()))
         };
         let y_label = format!("Elevation ({})", if u.metric() { "meters" } else { "feet" });
-        let spec = ChartSpec { title, subtitle: &node.title(), x_label: &x_label, y_label: &y_label, series: &series, summary: &[], three_d: false, marks: &marks };
+        let spec = ChartSpec { title, subtitle: &node.title(), x_label: &x_label, y_label: &y_label, series: &series, summary: &[], three_d: false, log_x: false, marks: &marks };
         chart::chart(ui, &spec, &mut st.view, size);
     }
 }
@@ -577,7 +577,7 @@ fn sizing_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
         let summary = vec![format!("Peak Inflow={}", u.fmt_flow(r.inflow.peak().value)), format!("Inflow Volume={}", u.fmt_volume(r.inflow.volume_cf()))];
         let xl = format!("Storage ({})", u.volume_label());
         let yl = format!("Discharge ({})", u.flow_label());
-        let spec = ChartSpec { title: "Pond Sizing Estimate", subtitle: &node.title(), x_label: &xl, y_label: &yl, series: &series, summary: &summary, three_d: false, marks: &[] };
+        let spec = ChartSpec { title: "Pond Sizing Estimate", subtitle: &node.title(), x_label: &xl, y_label: &yl, series: &series, summary: &summary, three_d: false, log_x: false, marks: &[] };
         chart::chart(ui, &spec, &mut st.view, size);
     }
 }
@@ -986,7 +986,7 @@ fn compare_body(ui: &mut Ui, doc: &mut Doc, st: &mut CompareState, size: egui::V
         }
         let title = ["Inflow", "Outflow", "Primary", "Secondary"][st.what.min(3)];
         let y = format!("Flow ({})", u.flow_label());
-        let spec = ChartSpec { title: &format!("{title} Hydrograph Comparison"), subtitle: "", x_label: "Time (hours)", y_label: &y, series: &series, summary: &[], three_d: st.three_d, marks: &[] };
+        let spec = ChartSpec { title: &format!("{title} Hydrograph Comparison"), subtitle: "", x_label: "Time (hours)", y_label: &y, series: &series, summary: &[], three_d: st.three_d, log_x: false, marks: &[] };
         chart::chart(ui, &spec, &mut st.view, size);
     }
 }

@@ -1580,7 +1580,14 @@ pub fn script(app: &mut StormwavesApp, cmd: &str) {
         },
         "storms" => app.open_window(Window::Storms(reports::CurveState::storms())),
         "uhs" => app.open_window(Window::Storms(reports::CurveState::uhs())),
-        "idf" => app.open_window(Window::Storms(reports::CurveState::idf())),
+        "idf" => {
+            // Test hook: give a project without an IDF curve a sample one first.
+            if app.doc().project.settings.idf.is_none() {
+                let events = vec![("2-Year".to_string(), 60.0, 10.0, 0.80), ("10-Year".to_string(), 90.0, 11.0, 0.80), ("100-Year".to_string(), 130.0, 12.0, 0.80)];
+                app.doc().project.settings.idf = Some(stormwaves_core::project::IdfCurve { name: "Sample IDF".into(), events, tables: Vec::new() });
+            }
+            app.open_window(Window::Storms(reports::CurveState::idf()));
+        }
         "compare" => {
             let sel: Vec<NodeId> = app.doc().project.nodes.iter().filter(|n| n.node_type() != NodeType::Text).map(|n| n.id).take(3).collect();
             app.open_window(Window::Compare(reports::CompareState::new(sel)));

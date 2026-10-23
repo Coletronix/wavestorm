@@ -336,7 +336,7 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, acti
                     }
                 } else {
                     let b = build(doc, st, None);
-                    let spec = ChartSpec { title: &b.title, subtitle: "", x_label: &b.x_label, y_label: &b.y_label, series: &b.series, summary: &[], three_d: false, marks: &[] };
+                    let spec = ChartSpec { title: &b.title, subtitle: "", x_label: &b.x_label, y_label: &b.y_label, series: &b.series, summary: &[], three_d: false, log_x: st.kind == CurveKind::Idf, marks: &[] };
                     chart::chart(ui, &spec, &mut st.view, size);
                 }
             });

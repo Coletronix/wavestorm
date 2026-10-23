@@ -212,8 +212,10 @@ Keep this section updated at the end of every session.
   Checklist (all done 2026-10-23 except where noted):
   1. (done) Project Reports: reference tab set, All/Selected Nodes, Show Totals, button
      column; tables from `core::listings` (script `project-report:N`).
-  2. (done) Storm / UH / IDF viewers (`reports/curves.rs`). Open: IDF graph x-axis is linear
-     (reference uses log); "Event Depth(s)" option not implemented.
+  2. (done) Storm / UH / IDF viewers (`reports/curves.rs`; IDF graph on a log duration axis,
+     `ChartSpec::log_x`). Open: "Event Depth(s)" option not implemented. `.idf` support is
+     marked PROVISIONAL in the UI and in written files (`rainlib::IDF_PROVISIONAL`) until a
+     real `.idf` sample is available; remove the marker once the layout is verified.
   3. (done) Calculation Settings Rainfall tab. Open: Resize tab (contents unknown).
   4. (done) Pond Outlets tab: grid, tip text, Edit Outlet... (device-type chooser on an empty
      row), right-click Insert/Delete/Move Up/Down (`widgets::list_table_menu`).
@@ -222,13 +224,14 @@ Keep this section updated at the end of every session.
      Opening-in / Orifice / Grate group boxes, Area/Perimeter under the shape preview.
      Snapshot script: `edit:1P;tab:2;device:new Pump` or `device:2`.
   6. (done) Link edit Manual tab: time x event grid, Interpolate (`link::interpolate_blanks`).
-  7. (done) Land-Use Settings tabs. Open: the imperviousness basis and report flags are stored
-     but not yet used by the calculation/listings.
+  7. (done) Land-Use Settings tabs; the imperviousness scope drives the loading calculation
+     (`landuse::loading_where`). Open: the Report Land-Use / Report Loading flags are stored
+     but not yet used by printing.
   8. (partly) Selected-node bold outline, link circle markers, red ring on problem nodes.
      Open: right toolbar set/order vs v10scrn1.gif.
   9. (done) Chamber Wizard (Storage tab button; script `edit:1P;tab:1;chamber`).
-  Next: reach routing attenuation/avg velocity vs the `.hcp` example (item 8 above), apply the
-  Land-Use imperviousness basis, metric `.hcp` files, Delayed Gate editor restyle (s5).
+  Next: reach routing attenuation/avg velocity vs the `.hcp` example (item 8 above), metric
+  `.hcp` files, Delayed Gate editor restyle (s5), right toolbar order, Resize tab.
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. Commands

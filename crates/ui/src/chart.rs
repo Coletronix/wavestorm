@@ -24,6 +24,8 @@ pub struct ChartSpec<'a> {
     /// Large right-aligned summary lines ("Runoff=18.56 cfs").
     pub summary: &'a [String],
     pub three_d: bool,
+    /// Logarithmic x axis (IDF curves: intensity vs duration).
+    pub log_x: bool,
     /// Horizontal reference lines (value, label).
     pub marks: &'a [(f64, String)],
 }
@@ -72,10 +74,13 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     top += 20.0;
 
     // Data ranges.
+    // On a log x axis the plot works in log10(x); x values <= 0 are left out.
+    let fx = |x: f64| if spec.log_x { if x > 0.0 { x.log10() } else { f64::NAN } } else { x };
     let mut xr = (f64::INFINITY, f64::NEG_INFINITY);
     let mut yr = (0.0f64, f64::NEG_INFINITY);
     for s in spec.series {
         for (x, y) in s.x.iter().zip(&s.y) {
+            let x = &fx(*x);
             if x.is_finite() && y.is_finite() {
                 xr = (xr.0.min(*x), xr.1.max(*x));
                 yr = (yr.0.min(*y), yr.1.max(*y));
@@ -112,7 +117,7 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     if plot.width() < 40.0 || plot.height() < 40.0 {
         return;
     }
-    let sx = |x: f64| plot.min.x + ((x - x0) / (x1 - x0)) as f32 * plot.width();
+    let sx = |x: f64| plot.min.x + ((fx(x) - x0) / (x1 - x0)) as f32 * plot.width();
     let sy = |y: f64| plot.max.y - ((y - y0) / (y1 - y0)) as f32 * plot.height();
 
     // Back wall and floor (3-D) or plain frame.
@@ -128,15 +133,34 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     let xstep = nice_step(x1 - x0, ((plot.width() / 28.0) as usize).clamp(2, 40));
     let ystep = nice_step(y1 - y0, ((plot.height() / 22.0) as usize).clamp(2, 20));
     let font = FontId::proportional(11.5);
-    let mut x = (x0 / xstep).ceil() * xstep;
-    while x <= x1 + 1e-9 {
+    // Tick positions as (data value, label).
+    let mut xticks: Vec<(f64, String)> = Vec::new();
+    if spec.log_x {
+        // 1-2-5 ticks in every decade.
+        let mut d = x0.floor() as i32;
+        while (d as f64) <= x1 + 1e-9 && xticks.len() < 60 {
+            for m in [1.0, 2.0, 5.0] {
+                let v = m * 10f64.powi(d);
+                if (x0 - 1e-9..=x1 + 1e-9).contains(&v.log10()) {
+                    xticks.push((v, fmt_tick(v, 10f64.powi(d))));
+                }
+            }
+            d += 1;
+        }
+    } else {
+        let mut x = (x0 / xstep).ceil() * xstep;
+        while x <= x1 + 1e-9 {
+            xticks.push((x, fmt_tick(x, xstep)));
+            x += xstep;
+        }
+    }
+    for (x, label) in xticks {
         let px = sx(x);
         grid(pos2(px, plot.max.y) + depth, pos2(px, plot.min.y) + depth);
         if spec.three_d {
             p.line_segment([pos2(px, plot.max.y), pos2(px, plot.max.y) + depth], Stroke::new(1.0, t.chart_grid));
         }
-        p.text(pos2(px, plot.max.y + 4.0), Align2::CENTER_TOP, fmt_tick(x, xstep), font.clone(), t.text);
-        x += xstep;
+        p.text(pos2(px, plot.max.y + 4.0), Align2::CENTER_TOP, label, font.clone(), t.text);
     }
     let mut y = (y0 / ystep).ceil() * ystep;
     while y <= y1 + 1e-9 {

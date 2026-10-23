@@ -133,7 +133,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut StormEditor) -> bool {
                 let xs: Vec<f64> = (0..=n).map(|k| storm.duration * k as f64 / n as f64).collect();
                 let ys: Vec<f64> = xs.iter().map(|x| storm.fraction_at(*x)).collect();
                 let series = vec![Series { name: storm.name.clone(), color: Color32::from_rgb(220, 40, 40), x: xs, y: ys, peak_label: None }];
-                let spec = ChartSpec { title: "Rainfall Depth vs. Time", subtitle: "", x_label: "Elapsed Time (hours)", y_label: "Fractional Depth", series: &series, summary: &[], three_d: false, marks: &[] };
+                let spec = ChartSpec { title: "Rainfall Depth vs. Time", subtitle: "", x_label: "Elapsed Time (hours)", y_label: "Fractional Depth", series: &series, summary: &[], three_d: false, log_x: false, marks: &[] };
                 chart::chart(ui, &spec, &mut st.view, vec2(ui.available_width(), 200.0));
             }
             Err(e) => {
