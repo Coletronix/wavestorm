@@ -234,6 +234,16 @@ impl NodeData {
     }
 }
 
+/// A key/value pair from an interchange file that the model does not represent, kept so that
+/// saving the project writes it back unchanged. `scope` names the section it came from
+/// ("" = the node or project header, "AREA:0" = the first area record, ...).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ForeignEntry {
+    pub scope: String,
+    pub key: String,
+    pub value: String,
+}
+
 /// One node of the routing diagram.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Node {
@@ -255,6 +265,9 @@ pub struct Node {
     /// Traced outline on the diagram (diagram units), for subcatchments drawn over a background.
     #[serde(default)]
     pub outline: Option<Vec<[f64; 2]>>,
+    /// Interchange-file data this model does not represent (see `hcp`).
+    #[serde(default)]
+    pub foreign: Vec<ForeignEntry>,
 }
 
 impl Node {
@@ -451,6 +464,9 @@ pub struct Project {
     #[serde(default)]
     pub land_use: crate::landuse::LandUseSettings,
     pub next_id: NodeId,
+    /// Interchange-file data this model does not represent (see `hcp`).
+    #[serde(default)]
+    pub foreign: Vec<ForeignEntry>,
 }
 
 pub const FORMAT_VERSION: u32 = 1;
@@ -470,6 +486,7 @@ impl Default for Project {
             uhs: Vec::new(),
             land_use: crate::landuse::LandUseSettings::default(),
             next_id: 1,
+            foreign: Vec::new(),
         }
     }
 }
@@ -511,6 +528,7 @@ impl Project {
             data: NodeData::empty(t),
             locked: false,
             outline: None,
+            foreign: Vec::new(),
         });
         id
     }

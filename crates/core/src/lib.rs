@@ -11,6 +11,7 @@ pub mod calc;
 pub mod cn;
 pub mod exchange;
 pub mod geometry;
+pub mod hcp;
 pub mod hydrograph;
 pub mod landuse;
 pub mod link;

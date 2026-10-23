@@ -42,6 +42,9 @@ pub struct Doc {
     /// Bytes length + page the texture was made from (to detect changes).
     pub underlay_key: Option<(usize, usize)>,
     pub fit_pending: bool,
+    /// The project was opened from (or last saved as) an interchange `.hcp` file, so Save writes
+    /// that format again.
+    pub hcp: bool,
 }
 
 impl Doc {
@@ -62,6 +65,7 @@ impl Doc {
             underlay_tex: None,
             underlay_key: None,
             fit_pending: true,
+            hcp: false,
         }
     }
 
