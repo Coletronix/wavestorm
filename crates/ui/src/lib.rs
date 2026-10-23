@@ -1492,7 +1492,7 @@ impl WaveStormApp {
                 self.cmd_button(&mut child, c);
             }
             let y = child.cursor().min.y + 6.0;
-            glass::divider(child.painter(), pos2(rect.min.x + 10.0, y), pos2(rect.max.x - 10.0, y));
+            glass::groove(child.painter(), pos2(rect.min.x + 10.0, y), pos2(rect.max.x - 10.0, y));
             child.add_space(12.0);
             for c in [Cmd::Notes, Cmd::Messages, Cmd::Print] {
                 self.cmd_button(&mut child, c);
@@ -1506,7 +1506,9 @@ impl WaveStormApp {
                 let vbar = Rect::from_min_max(pos2(full.max.x - sb - 3.0, full.min.y + 14.0), pos2(full.max.x - 3.0, full.max.y - sb - 6.0));
                 let hbar = Rect::from_min_max(pos2(full.min.x + 14.0, full.max.y - sb - 3.0), pos2(full.max.x - sb - 6.0, full.max.y - 3.0));
                 let actions = self.canvas(ui, ctx, full, full, vbar, hbar);
-                ui.painter().add(egui::Shape::Path(egui::epaint::PathShape::closed_line(glass::rounded(full, 16.0), glass::iris_stroke(1.0, 0.35))));
+                // The diagram is a recess in the glass: inner shadow, lit lip, iridescent rim.
+                glass::recess(ui.painter(), full, 16.0);
+                ui.painter().add(egui::Shape::Path(egui::epaint::PathShape::closed_line(glass::rounded(full.expand(1.0), 17.0), glass::iris_stroke(1.0, 0.3))));
                 self.glass_dock(ui, full);
                 actions
             })
@@ -1529,7 +1531,7 @@ impl WaveStormApp {
         let mut menus = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
         self.menu_bar(&mut menus);
         let (r, _) = ui.allocate_exact_size(vec2(14.0, 28.0), Sense::hover());
-        ui.painter().line_segment([pos2(r.center().x, r.min.y + 4.0), pos2(r.center().x, r.max.y - 4.0)], Stroke::new(1.0, theme::white(0.12)));
+        glass::groove(ui.painter(), pos2(r.center().x, r.min.y + 4.0), pos2(r.center().x, r.max.y - 4.0));
         self.project_tabs(ui);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
@@ -1561,14 +1563,14 @@ impl WaveStormApp {
         for (i, group) in groups.into_iter().enumerate() {
             if i > 0 {
                 let (r, _) = child.allocate_exact_size(vec2(11.0, 26.0), Sense::hover());
-                child.painter().line_segment([pos2(r.center().x, r.min.y), pos2(r.center().x, r.max.y)], Stroke::new(1.0, theme::white(0.14)));
+                glass::groove(child.painter(), pos2(r.center().x, r.min.y), pos2(r.center().x, r.max.y));
             }
             for c in group {
                 self.cmd_button(&mut child, *c);
                 if *c == Cmd::ZoomIn {
                     let zoom = self.doc().view.zoom;
                     let (r, resp) = child.allocate_exact_size(vec2(zoom_w, 24.0), Sense::click());
-                    child.painter().rect_filled(r, 8.0, theme::white(if resp.hovered() { 0.1 } else { 0.05 }));
+                    glass::well(child.painter(), r, 8.0, if resp.hovered() { t.light } else { t.field });
                     child.painter().text(r.center(), Align2::CENTER_CENTER, format!("{:.0}%", zoom * 100.0), FontId::proportional(12.0), t.text_dim);
                     if resp.on_hover_text("Zoom to 100%").clicked() {
                         let factor = 1.0 / zoom.max(1e-3);
@@ -1617,10 +1619,9 @@ impl WaveStormApp {
                 let w = ui.fonts_mut(|f| f.layout_no_wrap(text.clone(), font.clone(), t.text).size().x) + 28.0;
                 let (r, resp) = ui.allocate_exact_size(vec2(w, 20.0), Sense::click());
                 let p = ui.painter();
-                p.rect_filled(r, 10.0, theme::white(if resp.hovered() { 0.12 } else { 0.06 }));
-                p.rect_stroke(r, 10.0, Stroke::new(1.0, glass::alpha(dot, 0.5)), egui::StrokeKind::Inside);
-                glass::glow(p, pos2(r.min.x + 11.0, r.center().y), 7.0, glass::alpha(dot, 0.5));
-                p.circle_filled(pos2(r.min.x + 11.0, r.center().y), 3.0, dot);
+                glass::surface(p, r, 10.0, if resp.hovered() { glass::Surface::Hover } else { glass::Surface::Key }, &t);
+                glass::glow(p, pos2(r.min.x + 11.0, r.center().y), 8.0, glass::alpha(dot, 0.5));
+                glass::bead(p, pos2(r.min.x + 11.0, r.center().y), 3.5, dot);
                 p.text(pos2(r.min.x + 20.0, r.center().y), Align2::LEFT_CENTER, text, font.clone(), t.text);
                 open_messages = resp.on_hover_text("Show calculation messages").clicked();
                 ui.label(egui::RichText::new(format!("{count} nodes")).font(font.clone()).color(t.text_dim));

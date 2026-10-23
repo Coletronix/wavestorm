@@ -65,8 +65,12 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     let t = Tokens::get(ui.ctx());
     let (rect, resp) = ui.allocate_exact_size(size, Sense::drag());
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, 0.0, t.chart_bg);
-    p.rect_stroke(rect, 0.0, Stroke::new(1.0, t.shadow), egui::StrokeKind::Inside);
+    if t.glass {
+        crate::glass::well(&p, rect, 8.0, t.chart_bg);
+    } else {
+        p.rect_filled(rect, 0.0, t.chart_bg);
+        p.rect_stroke(rect, 0.0, Stroke::new(1.0, t.shadow), egui::StrokeKind::Inside);
+    }
     let mut top = rect.min.y + 6.0;
     if !spec.subtitle.is_empty() {
         bold(&p, pos2(rect.center().x, top + 8.0), Align2::CENTER_CENTER, spec.subtitle, FontId::proportional(14.0), t.text);
@@ -253,9 +257,14 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
             all_pts.extend(pts.iter().map(|q| *q + rib));
         } else {
             if t.glass {
+                // A lit glass tube: glow, cast shadow, the line, and a highlight on top.
                 clip.add(Shape::line(pts.clone(), Stroke::new(7.0, crate::glass::alpha(s.color, 0.12))));
+                clip.add(Shape::line(pts.iter().map(|q| *q + vec2(0.8, 2.5)).collect(), Stroke::new(3.0, crate::glass::alpha(Color32::BLACK, 0.6))));
             }
             clip.add(Shape::line(pts.clone(), Stroke::new(2.0, s.color)));
+            if t.glass {
+                clip.add(Shape::line(pts.iter().map(|q| *q + vec2(-0.3, -0.6)).collect(), Stroke::new(0.8, crate::theme::white(0.55))));
+            }
             all_pts.extend(pts.iter().copied());
         }
         if let Some(label) = &s.peak_label

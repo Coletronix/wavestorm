@@ -267,6 +267,29 @@ Keep this section updated at the end of every session.
   themes mirror the lightness of dark ink (`lighten_dark`). `cargo run -p wavestorm-ui
   --example logo_png` writes `logo.png`/`logo-dark.png` (640 px) for the README `<picture>` and
   the web loading screen; re-run it after replacing the JPG.
+- Themes (2026-10-23, user request). Classic / Modern Light / Modern Dark keep the reference
+  layout; leave them visually unchanged apart from contrast fixes. Modern Dark contrast is
+  guarded by `theme::tests::dark_themes_keep_readable_contrast` (text ≥ 4.5:1, graphics ≥ 3:1);
+  hard-coded glyph/sketch inks go through `icons::ink` (lifted on dark themes only), and
+  light-only surfaces (Messages, legends, peak tags, Chamber Wizard) use tokens.
+  **Iridescent Glass** (`ThemeKind::Glass`, `Tokens::glass`) is the "fun", modernised theme
+  after the user's 3-D glass icon reference; research and sources in gitignored
+  `reference_images/research/glass/NOTES.md`. User direction: everything a bit 3-D, not just
+  raised. `ui::glass` paints it: `surface` (raised slab: drop shadow, visible thickness with
+  a rainbow lower edge, gradient face, sheen, inner `bevel`, `glint`, iridescent rim; kinds
+  Rail/Float/Key/Hover/Selected — Selected is pushed in), `well`/`recess` (sunken: fields,
+  tables, charts, the canvas), `bead`/`socket` (checks, radios, status lights), `lip`
+  (window thickness), `groove` (engraved dividers), `backdrop` (aurora glows; egui has no blur,
+  so glass reads against colour behind it). Icons: `icons::draw_glass_glyph` (Pen = lit glass
+  tubes with shadows; bodies with an offset underside); nodes are extruded glass blocks
+  (`draw_glass_node`); arrows and chart lines are tubes. Layout: `WaveStormApp::glass_chrome`
+  (header with logo/menus/tabs/event/undo/help, node tile rail, settings rail, canvas island,
+  floating dock `glass_dock` with a zoom readout, `glass_status` with a messages chip,
+  overlay scrollbars). Toolbar actions are the shared `Cmd` enum (`run`, `cmd_button`), so
+  both layouts call the same code. Widgets branch on `t.glass` (`push_button`, `tool_button`,
+  `check`, `radio`, `group`, `tabs`/`pill_tab`, `tab_body`, `header_cell`, `sunken`,
+  `combo` — the combo slab is painted under egui's button from last frame's rect). Snapshot
+  with `--do "theme:glass;..."`; `tests/monkey.rs` runs the random-input test in glass too.
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. README
@@ -279,7 +302,7 @@ only (never the user's private files or rainfall library):
 ```sh
 for s in "main select:1P" "hydrograph report:1P;tab:1" "reach-summary report:1R;tab:0" \
          "project-reports project-report:6" "storms storms" "chamber-wizard edit:1P;tab:1;chamber" \
-         "outlets edit:1P;tab:2"; do
+         "outlets edit:1P;tab:2" "glass theme:glass;select:1P" "glass-report theme:glass;compare"; do
   set -- $s; cargo run -q -p wavestorm-ui --example snapshot -- --out docs/screenshots/$1.png --size 1200x720 --do "$2"
 done
 ```

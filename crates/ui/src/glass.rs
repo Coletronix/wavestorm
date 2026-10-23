@@ -98,38 +98,185 @@ pub fn lerp_rgba(a: Color32, b: Color32, f: f32) -> Color32 {
 /// How prominent a glass surface is.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Surface {
-    /// Rails and bars over the backdrop: translucent.
+    /// Rails and bars over the backdrop: translucent, thick glass.
     Rail,
-    /// Floating docks and tiles: translucent with a stronger rim and a drop shadow.
+    /// Floating docks and tiles: thicker, with a larger drop shadow.
     Float,
-    /// A hovered control.
+    /// An idle key (tool buttons): a thin, faint slab.
+    Key,
+    /// A hovered control: lifted a little higher.
     Hover,
-    /// A selected / pressed control: violet-tinted with a bright rim.
+    /// A selected / pressed control: violet-tinted and pushed down into its edge.
     Selected,
 }
 
-/// Paints a glass surface: optional shadow, translucent sheen, top highlight and rim.
+/// Paints a raised slab of glass. Light comes from the top-left: there is a soft drop shadow
+/// under the slab, its thickness shows as a darker lower edge with a rainbow (dispersion) line
+/// along the bottom, and the face has a vertical gradient, a sheen, a bright bevel on its upper
+/// inner edge, a shaded lower inner edge, a specular glint and an iridescent rim.
 pub fn surface(p: &Painter, rect: Rect, radius: f32, kind: Surface, t: &Tokens) {
-    let (top, bottom, rim, edge) = match kind {
-        Surface::Rail => (alpha(t.face, 0.78), alpha(t.face, 0.62), 0.28, 0.10),
-        Surface::Float => (alpha(t.light, 0.86), alpha(t.face, 0.80), 0.55, 0.16),
-        Surface::Hover => (white(0.12), white(0.04), 0.45, 0.14),
-        Surface::Selected => (alpha(IRIS[2], 0.36), alpha(IRIS[1], 0.14), 0.95, 0.22),
+    // (face top, face bottom, rim strength, sheen, thickness, shadow alpha)
+    let (top, bottom, rim, sheen, depth, shadow) = match kind {
+        Surface::Rail => (alpha(t.light, 0.70), alpha(t.face, 0.66), 0.32, 0.14, 3.0, 0.45),
+        Surface::Float => (alpha(t.light, 0.90), alpha(t.face, 0.84), 0.60, 0.18, 4.0, 0.55),
+        Surface::Key => (white(0.07), white(0.02), 0.18, 0.10, 2.0, 0.30),
+        Surface::Hover => (white(0.16), white(0.05), 0.50, 0.18, 3.0, 0.45),
+        Surface::Selected => (alpha(IRIS[2], 0.42), alpha(IRIS[1], 0.18), 0.95, 0.22, 1.0, 0.35),
     };
-    if kind == Surface::Float {
-        let shadow = egui::epaint::Shadow { offset: [0, 10], blur: 28, spread: 0, color: Color32::from_black_alpha(120) };
-        p.add(shadow.as_shape(rect, radius));
-    }
-    let pts = rounded(rect, radius);
+    let r = radius.min(rect.height() / 2.0).min(rect.width() / 2.0);
+    // A pressed key sits lower, so its face moves down into the (now thinner) edge.
+    let face = if kind == Surface::Selected { rect.translate(vec2(0.0, 1.0)) } else { rect };
+    let blur = (6.0 + depth * 4.0) as u8;
+    let drop = egui::epaint::Shadow { offset: [0, (depth * 2.0) as i8], blur, spread: 0, color: Color32::from_black_alpha((shadow * 255.0) as u8) };
+    p.add(drop.as_shape(face, r));
+    // Thickness: the slab's side, seen below the face.
+    let side = rounded(face.translate(vec2(0.0, depth)), r);
+    let side_color = if kind == Surface::Selected { Color32::from_rgb(52, 36, 120) } else { Color32::from_rgb(6, 8, 18) };
+    gradient_fill(p, &side, alpha(side_color, 0.9), alpha(Color32::BLACK, 0.9));
+    let lower: Vec<Pos2> = side.iter().copied().filter(|q| q.y > face.center().y + depth).collect();
+    p.add(Shape::Path(PathShape::line(lower, iris_stroke(1.0, rim * 0.8))));
+    // Face.
+    let pts = rounded(face, r);
     gradient_fill(p, &pts, top, bottom);
-    // Sheen: the upper part catches more light.
-    let sheen = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + rect.height() * 0.45));
-    let sheen_pts: Vec<Pos2> = pts.iter().map(|q| pos2(q.x, q.y.min(sheen.max.y))).collect();
-    gradient_fill(p, &sheen_pts, white(edge * 0.5), white(0.0));
+    let cut = face.min.y + face.height() * 0.48;
+    let sheen_pts: Vec<Pos2> = pts.iter().map(|q| pos2(q.x, q.y.min(cut))).collect();
+    gradient_fill(p, &sheen_pts, white(sheen), white(0.0));
+    bevel(p, face, r, 0.45, 0.4);
+    glint(p, face, 0.5);
     p.add(Shape::Path(PathShape::closed_line(pts, iris_stroke(1.0, rim))));
-    // A crisp top edge.
-    let r = radius.min(rect.height() / 2.0);
-    p.line_segment([pos2(rect.min.x + r, rect.min.y + 0.75), pos2(rect.max.x - r, rect.min.y + 0.75)], egui::Stroke::new(1.0, white(edge)));
+}
+
+/// The inner bevel of a rounded face: a bright line along the upper inner edge fading down the
+/// sides, and a shaded line along the lower inner edge.
+pub fn bevel(p: &Painter, rect: Rect, radius: f32, light: f32, dark: f32) {
+    let inner = rect.shrink(1.0);
+    let pts = rounded(inner, (radius - 1.0).max(0.0));
+    let (y0, y1) = (inner.min.y, inner.max.y);
+    let h = (y1 - y0).max(1.0);
+    let upper: Vec<Pos2> = pts.iter().copied().filter(|q| q.y <= inner.center().y).collect();
+    let lower: Vec<Pos2> = pts.iter().copied().filter(|q| q.y >= inner.center().y).collect();
+    let upper = reorder_open(upper);
+    let lower = reorder_open(lower);
+    p.add(Shape::Path(PathShape::line(upper, PathStroke::new_uv(1.0, move |_, q| white(light * (1.0 - ((q.y - y0) / (h * 0.5)).clamp(0.0, 1.0)))))));
+    p.add(Shape::Path(PathShape::line(
+        lower,
+        PathStroke::new_uv(1.0, move |_, q| alpha(Color32::BLACK, dark * ((q.y - y0) / h - 0.5).clamp(0.0, 0.5) * 2.0)),
+    )));
+}
+
+/// Points taken from a closed outline in order may wrap around its start; rotate them so the
+/// open polyline runs left to right without a jump across the shape.
+fn reorder_open(pts: Vec<Pos2>) -> Vec<Pos2> {
+    let n = pts.len();
+    if n < 3 {
+        return pts;
+    }
+    // The jump is the longest gap between consecutive points.
+    let (mut cut, mut best) = (0, 0.0f32);
+    for i in 0..n {
+        let d = (pts[(i + 1) % n] - pts[i]).length();
+        if d > best {
+            best = d;
+            cut = (i + 1) % n;
+        }
+    }
+    let mut out = pts[cut..].to_vec();
+    out.extend_from_slice(&pts[..cut]);
+    out
+}
+
+/// The visible thickness under an already-drawn rounded face: a strip `depth` deep following
+/// its lower outline, with a rainbow line along the bottom. Safe to draw after the face, since
+/// it lies entirely below it.
+pub fn lip(p: &Painter, rect: Rect, radius: f32, depth: f32) {
+    let lower = reorder_open(rounded(rect, radius).into_iter().filter(|q| q.y >= rect.center().y).collect());
+    let mut mesh = Mesh::default();
+    let (top, bottom) = (alpha(Color32::from_rgb(10, 12, 26), 0.95), alpha(Color32::BLACK, 0.95));
+    for (i, q) in lower.iter().enumerate() {
+        mesh.colored_vertex(*q, top);
+        mesh.colored_vertex(*q + vec2(0.0, depth), bottom);
+        if i > 0 {
+            let k = (2 * i) as u32;
+            mesh.add_triangle(k - 2, k - 1, k);
+            mesh.add_triangle(k - 1, k, k + 1);
+        }
+    }
+    p.add(Shape::mesh(mesh));
+    let base: Vec<Pos2> = lower.iter().map(|q| *q + vec2(0.0, depth)).collect();
+    p.add(Shape::Path(PathShape::line(base, iris_stroke(1.0, 0.5))));
+}
+
+/// An engraved line: a shadowed groove with a lit edge beside it.
+pub fn groove(p: &Painter, a: Pos2, b: Pos2) {
+    let d = (b - a).normalized();
+    let off = vec2(d.y.abs(), d.x.abs()) * 0.9;
+    p.line_segment([a + off, b + off], egui::Stroke::new(1.0, white(0.12)));
+    p.line_segment([a, b], egui::Stroke::new(1.0, alpha(Color32::BLACK, 0.6)));
+}
+
+/// A specular glint: a soft, flattened white highlight near the top-left of a face.
+pub fn glint(p: &Painter, rect: Rect, strength: f32) {
+    let rx = (rect.width() * 0.22).min(70.0);
+    let ry = (rect.height() * 0.16).clamp(1.5, 7.0);
+    let c = pos2(rect.min.x + rect.width() * 0.08 + rx * 0.6, rect.min.y + ry + 1.5);
+    glow_ellipse(p, c, vec2(rx, ry), white(0.35 * strength));
+}
+
+/// A sunken well (text fields, tables, the canvas): a dark floor, an inner shadow falling from
+/// the top edge, and a faint bright lip along the bottom where light catches the far edge.
+pub fn well(p: &Painter, rect: Rect, radius: f32, floor: Color32) {
+    let r = radius.min(rect.height() / 2.0).min(rect.width() / 2.0);
+    let pts = rounded(rect, r);
+    gradient_fill(p, &pts, lerp_rgba(floor, Color32::BLACK, 0.35), floor);
+    recess(p, rect, r);
+}
+
+/// The edges of a recess, drawn over whatever fills it: inner shadow at the top, a soft band
+/// below it, a bright lip at the bottom and a faint outline.
+pub fn recess(p: &Painter, rect: Rect, radius: f32) {
+    let band = (rect.height() * 0.3).min(8.0);
+    let pts = rounded(rect, radius);
+    let top: Vec<Pos2> = pts.iter().map(|q| pos2(q.x, q.y.min(rect.min.y + band))).collect();
+    gradient_fill(p, &top, alpha(Color32::BLACK, 0.35), Color32::TRANSPARENT);
+    let inner = rect.shrink(0.5);
+    let ip = rounded(inner, radius);
+    let (y0, h) = (inner.min.y, inner.height().max(1.0));
+    p.add(Shape::Path(PathShape::closed_line(
+        ip,
+        PathStroke::new_uv(1.0, move |_, q| {
+            let f = ((q.y - y0) / h).clamp(0.0, 1.0);
+            // Dark along the top (shadowed), light along the bottom (lit lip).
+            if f < 0.5 { alpha(Color32::BLACK, 0.55 * (1.0 - f * 2.0) + 0.1) } else { white(0.16 * (f - 0.5) * 2.0 + 0.03) }
+        }),
+    )));
+}
+
+/// A glass bead (checked boxes, radio dots, status lights): a sphere of colour `c` with a
+/// darker underside, a drop shadow, a white specular highlight and a rim.
+pub fn bead(p: &Painter, c: Pos2, r: f32, color: Color32) {
+    glow(p, c + vec2(0.0, r * 0.5), r * 1.6, alpha(Color32::BLACK, 0.45));
+    let pts = arc_points(c, r, 28);
+    gradient_fill(p, &pts, crate::widgets::lerp_color(color, Color32::WHITE, 0.25), crate::widgets::lerp_color(color, Color32::BLACK, 0.45));
+    glow_ellipse(p, c + vec2(-r * 0.25, -r * 0.4), vec2(r * 0.55, r * 0.35), white(0.75));
+    p.circle_stroke(c, r, egui::Stroke::new(1.0, lerp_rgba(color, white(1.0), 0.3)));
+}
+
+fn arc_points(c: Pos2, r: f32, n: usize) -> Vec<Pos2> {
+    (0..n).map(|k| std::f32::consts::TAU * k as f32 / n as f32).map(|a| pos2(c.x + r * a.cos(), c.y + r * a.sin())).collect()
+}
+
+/// A round sunken socket (unchecked radio buttons).
+pub fn socket(p: &Painter, c: Pos2, r: f32, floor: Color32) {
+    p.circle_filled(c, r, floor);
+    let top = arc_points(c, r - 0.5, 28);
+    let (y0, h) = (c.y - r, 2.0 * r);
+    p.add(Shape::Path(PathShape::closed_line(
+        top,
+        PathStroke::new_uv(1.2, move |_, q| {
+            let f = ((q.y - y0) / h).clamp(0.0, 1.0);
+            if f < 0.5 { alpha(Color32::BLACK, 0.6 * (1.0 - f * 2.0) + 0.1) } else { white(0.22 * (f - 0.5) * 2.0 + 0.04) }
+        }),
+    )));
 }
 
 /// A soft round glow (radial gradient from `c` to transparent).
@@ -188,21 +335,6 @@ pub fn canvas(p: &Painter, rect: Rect, t: &Tokens) {
     let (w, h) = (rect.width(), rect.height());
     glow_ellipse(p, pos2(rect.min.x + w * 0.15, rect.min.y), vec2(w * 0.5, h * 0.6), alpha(IRIS[2], 0.10));
     glow_ellipse(p, pos2(rect.max.x, rect.max.y), vec2(w * 0.5, h * 0.6), alpha(IRIS[0], 0.07));
-}
-
-/// A thin horizontal divider that fades out at both ends.
-pub fn divider(p: &Painter, a: Pos2, b: Pos2) {
-    let mid = pos2((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
-    let stroke = |x0: Pos2, x1: Pos2, c0: Color32, c1: Color32| {
-        let pts = vec![x0, x1];
-        let len = (x1 - x0).length().max(1.0);
-        p.add(Shape::Path(PathShape::line(
-            pts,
-            PathStroke::new_uv(1.0, move |_, q| lerp_rgba(c0, c1, ((q - x0).length() / len).clamp(0.0, 1.0))),
-        )));
-    };
-    stroke(a, mid, white(0.0), white(0.16));
-    stroke(mid, b, white(0.16), white(0.0));
 }
 
 #[cfg(test)]

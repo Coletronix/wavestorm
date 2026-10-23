@@ -38,6 +38,10 @@ pub fn bevel(p: &egui::Painter, rect: Rect, raised: bool, t: &Tokens) {
 
 /// A sunken field background (text boxes, lists, the diagram).
 pub fn sunken(p: &egui::Painter, rect: Rect, fill: Color32, t: &Tokens) {
+    if t.glass {
+        crate::glass::well(p, rect, t.radius as f32, fill);
+        return;
+    }
     p.rect_filled(rect, t.radius as f32, fill);
     bevel(p, rect, false, t);
 }
@@ -114,8 +118,9 @@ pub fn tool_button(ui: &mut Ui, tip: &str, selected: bool, draw: impl FnOnce(&eg
         if selected || resp.is_pointer_button_down_on() {
             crate::glass::glow(p, rect.center(), size * 0.9, crate::glass::alpha(crate::glass::IRIS[2], 0.22));
             crate::glass::surface(p, rect, 9.0, crate::glass::Surface::Selected, &t);
-        } else if resp.hovered() {
-            crate::glass::surface(p, rect, 9.0, crate::glass::Surface::Hover, &t);
+        } else {
+            let kind = if resp.hovered() { crate::glass::Surface::Hover } else { crate::glass::Surface::Key };
+            crate::glass::surface(p, rect, 9.0, kind, &t);
         }
         draw(p, rect.shrink(6.0), &t);
     } else if ui.is_rect_visible(rect) {
@@ -316,7 +321,7 @@ pub fn list_table_menu(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: 
             for (j, (_, w, numeric)) in cols.iter().enumerate() {
                 let cell = Rect::from_min_size(pos2(cx, r.min.y), vec2(*w, row_h));
                 cx += w;
-                p.rect_filled(cell, 0.0, if sel { t.select } else { t.field });
+                p.rect_filled(cell, 0.0, if sel { t.select } else if t.glass { Color32::TRANSPARENT } else { t.field });
                 p.line_segment([cell.right_top(), cell.right_bottom()], Stroke::new(1.0, t.face));
                 p.line_segment([cell.left_bottom(), cell.right_bottom()], Stroke::new(1.0, t.face));
                 let text = row.get(j).map(String::as_str).unwrap_or("");
@@ -448,7 +453,16 @@ pub fn text_field(ui: &mut Ui, label: &str, text: &mut String, width: f32) -> bo
 pub fn combo<T: PartialEq + Clone>(ui: &mut Ui, id: &str, current: &mut T, options: &[(T, String)], width: f32) -> bool {
     let shown = options.iter().find(|(v, _)| v == current).map(|(_, l)| l.clone()).unwrap_or_default();
     let mut changed = false;
-    egui::ComboBox::from_id_salt(ui.id().with(id)).width(width - 8.0).selected_text(shown).show_ui(ui, |ui| {
+    let t = Tokens::get(ui.ctx());
+    // egui draws the combo button itself; in the glass theme a raised slab goes underneath it,
+    // placed where the button was last frame (its rect is stable).
+    let rect_key = ui.id().with(id).with("glass-rect");
+    if t.glass
+        && let Some(r) = ui.data(|d| d.get_temp::<Rect>(rect_key))
+    {
+        crate::glass::surface(ui.painter(), r, t.radius as f32, crate::glass::Surface::Rail, &t);
+    }
+    let resp = egui::ComboBox::from_id_salt(ui.id().with(id)).width(width - 8.0).selected_text(shown).show_ui(ui, |ui| {
         for (v, label) in options {
             if ui.selectable_label(v == current, label).clicked() && v != current {
                 *current = v.clone();
@@ -456,6 +470,13 @@ pub fn combo<T: PartialEq + Clone>(ui: &mut Ui, id: &str, current: &mut T, optio
             }
         }
     });
+    if t.glass {
+        let r = resp.response.rect;
+        if ui.data(|d| d.get_temp::<Rect>(rect_key)) != Some(r) {
+            ui.data_mut(|d| d.insert_temp(rect_key, r));
+            ui.ctx().request_repaint();
+        }
+    }
     changed
 }
 
@@ -486,8 +507,10 @@ pub fn check(ui: &mut Ui, on: &mut bool, label: &str) -> Response {
         if *on {
             crate::glass::surface(p, b, 4.0, crate::glass::Surface::Selected, &t);
         } else {
-            p.rect_filled(b, 4.0, t.field);
-            p.rect_stroke(b, 4.0, Stroke::new(1.0, if resp.hovered() { crate::glass::IRIS[2] } else { crate::theme::white(0.28) }), StrokeKind::Inside);
+            crate::glass::well(p, b, 4.0, t.field);
+            if resp.hovered() {
+                p.rect_stroke(b, 4.0, Stroke::new(1.0, crate::glass::IRIS[2]), StrokeKind::Inside);
+            }
         }
     } else {
         sunken(p, b, t.field, &t);
@@ -509,15 +532,18 @@ pub fn radio(ui: &mut Ui, selected: bool, label: &str) -> Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(18.0 + tw, 18.0), Sense::click());
     let p = ui.painter();
     let c = rect.left_center() + vec2(6.5, 0.0);
-    p.circle_filled(c, 6.0, t.field);
     if t.glass {
-        let ring = if selected { crate::glass::IRIS[2] } else if resp.hovered() { crate::glass::IRIS[1] } else { crate::theme::white(0.28) };
-        p.circle_stroke(c, 6.0, Stroke::new(1.2, ring));
+        // A sunken socket; selected holds a glowing glass bead.
+        crate::glass::socket(p, c, 6.5, t.field);
+        if resp.hovered() && !selected {
+            p.circle_stroke(c, 6.5, Stroke::new(1.0, crate::glass::IRIS[1]));
+        }
         if selected {
-            crate::glass::glow(p, c, 9.0, crate::glass::alpha(crate::glass::IRIS[2], 0.35));
-            p.circle_filled(c, 3.0, crate::glass::IRIS[0]);
+            crate::glass::glow(p, c, 10.0, crate::glass::alpha(crate::glass::IRIS[2], 0.35));
+            crate::glass::bead(p, c, 4.0, crate::glass::IRIS[0]);
         }
     } else {
+        p.circle_filled(c, 6.0, t.field);
         p.circle_stroke(c, 6.0, Stroke::new(1.0, t.shadow));
         if selected {
             p.circle_filled(c, 2.5, t.text);
@@ -548,7 +574,10 @@ pub fn group<R>(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
             path.extend_from_slice(&gapped[start..]);
             path.extend_from_slice(&gapped[..start]);
             path.push(pos2(gap.0, r.min.y));
-            p.add(egui::Shape::line(path, Stroke::new(1.0, crate::theme::white(0.11))));
+            // An engraved groove: a shadowed line with a lit edge just below/right of it.
+            let lit: Vec<Pos2> = path.iter().map(|q| *q + vec2(0.8, 0.8)).collect();
+            p.add(egui::Shape::line(lit, Stroke::new(1.0, crate::theme::white(0.10))));
+            p.add(egui::Shape::line(path, Stroke::new(1.0, crate::glass::alpha(Color32::BLACK, 0.55))));
         }
         p.text(pos2(gap.0 + 2.0, r.min.y), Align2::LEFT_CENTER, title, font, t.text_dim);
         return inner.inner;
@@ -595,8 +624,7 @@ pub fn tabs(ui: &mut Ui, names: &[&str], selected: &mut usize) -> bool {
         // A segmented control: one track, the selected segment lit.
         if let (Some(first), Some(last)) = (rects.first(), rects.last()) {
             let track = Rect::from_min_max(first.min, last.max).expand(1.0);
-            p.rect_filled(track, 9.0, crate::theme::white(0.04));
-            p.rect_stroke(track, 9.0, Stroke::new(1.0, crate::theme::white(0.08)), StrokeKind::Inside);
+            crate::glass::well(&p, track, 9.0, t.field);
         }
         for (i, (r, name)) in rects.iter().zip(names).enumerate() {
             let resp = ui.interact(*r, ui.id().with(("tab", i)), Sense::click());
@@ -758,7 +786,7 @@ pub fn grid(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>,
             for (j, c) in cols.iter().enumerate() {
                 let cell = Rect::from_min_size(pos2(cx, row_rect.min.y), vec2(c.width, row_h));
                 cx += c.width;
-                let bg = if is_sel { t.select } else { t.field };
+                let bg = if is_sel { t.select } else if t.glass { Color32::TRANSPARENT } else { t.field };
                 let fg = if is_sel { t.select_text } else { t.text };
                 p.rect_filled(cell, 0.0, bg);
                 p.line_segment([cell.right_top(), cell.right_bottom()], Stroke::new(1.0, t.face));

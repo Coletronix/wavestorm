@@ -410,10 +410,18 @@ fn draw_arrows(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: 
             if let Some((a, b)) = arrow_geom(doc, canvas, n.id, k) {
                 let (s, dashed) = route_stroke(k, t, doc.view.zoom);
                 if t.glass {
-                    // A soft glow under the line, like light in a glass tube.
+                    // A glass tube: a glow around it, a shadow cast below, the line, and a
+                    // highlight along its upper edge.
                     p.line_segment([a, b], Stroke::new(s.width * 5.0, crate::glass::alpha(s.color, 0.12)));
+                    let drop = vec2(0.8, 2.5);
+                    line(p, a + drop, b + drop, Stroke::new(s.width + 1.0, crate::glass::alpha(Color32::BLACK, 0.55)), dashed);
+                    arrow_head(p, b + drop, b - a, head, Stroke::new(1.0, crate::glass::alpha(Color32::BLACK, 0.55)), t);
                 }
                 line(p, a, b, s, dashed);
+                if t.glass && !dashed {
+                    let lift = vec2(-0.3, -0.5);
+                    p.line_segment([a + lift, b + lift], Stroke::new((s.width * 0.4).max(0.6), crate::theme::white(0.6)));
+                }
                 arrow_head(p, b, b - a, head, s, t);
             }
         }
@@ -454,7 +462,13 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
                 let size = tx.size * doc.view.zoom;
                 let galley = p.layout(tx.text.clone(), FontId::proportional(size.max(4.0)), t.label_text, f32::INFINITY);
                 let r = Rect::from_center_size(c, galley.size() + vec2(8.0, 6.0));
-                if tx.border || sel {
+                if t.glass {
+                    // A glass plaque (when bordered) and lettering with a cast shadow.
+                    if tx.border || sel {
+                        crate::glass::surface(p, r, 6.0, if sel { crate::glass::Surface::Selected } else { crate::glass::Surface::Key }, t);
+                    }
+                    p.galley_with_override_text_color(r.min + vec2(4.8, 4.4), galley.clone(), crate::glass::alpha(Color32::BLACK, 0.75));
+                } else if tx.border || sel {
                     p.rect_stroke(r, 0.0, Stroke::new(if sel { 2.0 } else { 1.0 }, if sel { t.select } else { t.shadow }), egui::StrokeKind::Inside);
                 }
                 p.galley(r.min + vec2(4.0, 3.0), galley, t.label_text);
@@ -467,8 +481,12 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
                 icons::draw_node_ex(p, n.node_type(), c, d, &n.label(), sel, external, problem, t);
                 if !n.name.is_empty() {
                     let galley = p.layout(n.name.clone(), FontId::proportional(font * 0.85), t.label_text, d * 3.2);
-                    let top = c.y + d * 0.5 + 3.0 + if external { d * 0.24 } else { 0.0 };
-                    p.galley(pos2(c.x - galley.size().x / 2.0, top), galley, t.label_text);
+                    let top = c.y + d * 0.5 + 3.0 + if external { d * 0.24 } else { 0.0 } + if t.glass { d * 0.09 } else { 0.0 };
+                    let at = pos2(c.x - galley.size().x / 2.0, top);
+                    if t.glass {
+                        p.galley_with_override_text_color(at + vec2(0.7, 1.2), galley.clone(), crate::glass::alpha(Color32::BLACK, 0.8));
+                    }
+                    p.galley(at, galley, t.label_text);
                 }
             }
         }
@@ -834,8 +852,8 @@ fn overlay_scrollbars(ui: &mut Ui, doc: &mut Doc, vbar: Rect, hbar: Rect, conten
         };
         let resp = ui.interact(thumb.expand(3.0), ui.id().with(("glass-thumb", vertical)), Sense::drag());
         let hot = resp.hovered() || resp.dragged();
-        let thin = if hot { thumb } else if vertical { thumb.shrink2(vec2(1.5, 0.0)) } else { thumb.shrink2(vec2(0.0, 1.5)) };
-        ui.painter().rect_filled(thin, 4.0, crate::theme::white(if hot { 0.38 } else { 0.18 }));
+        let t = Tokens::get(ui.ctx());
+        crate::glass::surface(ui.painter(), thumb, 4.0, if hot { crate::glass::Surface::Hover } else { crate::glass::Surface::Key }, &t);
         if resp.dragged() {
             let delta = if vertical { resp.drag_delta().y } else { resp.drag_delta().x };
             let screen = delta / len * span * doc.view.zoom;

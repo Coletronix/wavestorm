@@ -82,6 +82,10 @@ pub fn draw_node_ex(p: &Painter, t: NodeType, c: Pos2, d: f32, label: &str, sele
     if !label.is_empty() {
         let size = (d * 0.34).clamp(7.0, 28.0) * if label.chars().count() > 3 { 0.75 } else { 1.0 };
         let dy = if t == NodeType::Pond { d * 0.14 } else { 0.0 };
+        if tok.glass {
+            // Lettering embossed on the glass: a dark shadow under it.
+            p.text(c + vec2(0.6, dy + 1.2), Align2::CENTER_CENTER, label, FontId::proportional(size), glass::alpha(Color32::BLACK, 0.7));
+        }
         p.text(c + vec2(0.0, dy), Align2::CENTER_CENTER, label, FontId::proportional(size), tok.node_text);
     }
 }
@@ -128,15 +132,49 @@ fn draw_glass_node(p: &Painter, t: NodeType, c: Pos2, d: f32, selected: bool, pr
     } else if selected {
         glass::glow(p, c, d * 0.9, glass::alpha(hue, 0.38));
     }
-    let (top, bottom) = (glass::alpha(hue, 0.38), glass::alpha(hue, 0.08));
+    // A block of tinted glass: drop shadow, the extruded sides (faces turned toward the viewer
+    // below and right are shaded by how much they face away from the top-left light), the
+    // translucent top face with a sheen, a bevel highlight and a specular glint.
+    let depth = (d * 0.09).clamp(2.0, 7.0);
+    let dy = vec2(depth * 0.35, depth);
+    glass::glow(p, c + vec2(depth * 0.6, d * 0.42 + depth), d * 0.55, glass::alpha(Color32::BLACK, 0.5));
+    let centre = pts.iter().fold(vec2(0.0, 0.0), |s, q| s + q.to_vec2()) / pts.len().max(1) as f32;
+    let dark_hue = crate::widgets::lerp_color(hue, Color32::BLACK, 0.55);
+    for i in 0..pts.len() {
+        let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+        let e = b - a;
+        let mut n = vec2(e.y, -e.x).normalized();
+        if n.dot((a + e * 0.5).to_vec2() - centre) < 0.0 {
+            n = -n;
+        }
+        if n.dot(dy.normalized()) > 0.02 {
+            let shade = 0.35 + 0.45 * n.dot(vec2(-0.6, -0.8)).abs().min(1.0);
+            let side = crate::widgets::lerp_color(dark_hue, Color32::BLACK, 1.0 - shade);
+            p.add(Shape::convex_polygon(vec![a, b, b + dy, a + dy], glass::alpha(side, 0.95), Stroke::new(0.5, glass::alpha(side, 0.95))));
+        }
+    }
+    // The bottom edge of the block catches a rainbow, as in thick glass.
+    let base: Vec<Pos2> = pts.iter().map(|q| *q + dy).collect();
+    p.add(Shape::Path(PathShape::closed_line(base, glass::iris_stroke(1.0, 0.45))));
+    let (top, bottom) = (glass::alpha(hue, 0.55), glass::alpha(crate::widgets::lerp_color(hue, Color32::BLACK, 0.5), 0.85));
     if t == NodeType::Link {
-        link_fill(p, &pts, glass::alpha(hue, 0.2));
+        link_fill(p, &pts, glass::alpha(crate::widgets::lerp_color(hue, Color32::BLACK, 0.35), 0.85));
     } else {
         glass::gradient_fill(p, &pts, top, bottom);
         let cut = c.y - d * 0.08;
         let sheen: Vec<Pos2> = pts.iter().map(|q| pos2(q.x, q.y.min(cut))).collect();
-        glass::gradient_fill(p, &sheen, white(0.20), white(0.02));
+        glass::gradient_fill(p, &sheen, white(0.30), white(0.02));
     }
+    // Bevel: a lit inner edge along the top-left facing sides.
+    let inner: Vec<Pos2> = pts.iter().map(|q| *q + (pos2(centre.x, centre.y) - *q).normalized() * 1.5).collect();
+    p.add(Shape::Path(PathShape::closed_line(
+        inner,
+        PathStroke::new_uv(1.0, move |r, q| {
+            let f = (((q.x - r.min.x) / r.width().max(1.0)) * 0.4 + ((q.y - r.min.y) / r.height().max(1.0)) * 0.6).clamp(0.0, 1.0);
+            white(0.55 * (1.0 - f * 1.6).max(0.0))
+        }),
+    )));
+    glass::glow(p, c + vec2(-d * 0.16, -d * 0.2), d * 0.12, white(0.45));
     let width = if selected { (d * 0.05).clamp(1.8, 3.2) } else { (d * 0.025).clamp(1.0, 1.8) };
     p.add(Shape::closed_line(pts.clone(), Stroke::new(width, if selected { lift(hue) } else { hue })));
     p.add(Shape::Path(PathShape::closed_line(pts, glass::iris_stroke(1.0, if selected { 0.9 } else { 0.55 }))));
@@ -461,19 +499,31 @@ impl Pen<'_> {
             glass::iris(0.05 + f * 0.8)
         })
     }
+    /// Strokes `pts` as a lit glass tube: a drop shadow below, the iridescent body, and a thin
+    /// white highlight along its upper-left side.
+    fn tube(&self, pts: Vec<Pos2>, closed: bool) {
+        let shift = |d: egui::Vec2| pts.iter().map(|q| *q + d).collect::<Vec<Pos2>>();
+        let make = |v: Vec<Pos2>, s: PathStroke| Shape::Path(if closed { PathShape::closed_line(v, s) } else { PathShape::line(v, s) });
+        self.p.add(make(shift(vec2(0.4, 1.4)), PathStroke::new(self.w + 0.8, glass::alpha(Color32::BLACK, 0.55))));
+        self.p.add(make(pts.clone(), self.stroke()));
+        self.p.add(make(shift(vec2(-0.3, -0.4)), PathStroke::new((self.w * 0.35).max(0.6), white(0.55))));
+    }
     fn line(&self, pts: Vec<Pos2>) {
-        self.p.add(Shape::Path(PathShape::line(pts, self.stroke())));
+        self.tube(pts, false);
     }
     fn seg(&self, a: Pos2, b: Pos2) {
         self.line(vec![a, b]);
     }
-    /// A closed outline with a glass body (`pts` convex).
+    /// A closed outline with a thick glass body (`pts` convex): a darker underside offset below
+    /// gives it depth, then a translucent face with a sheen.
     fn shape(&self, pts: Vec<Pos2>) {
-        glass::gradient_fill(self.p, &pts, white(0.22), white(0.04));
-        self.p.add(Shape::Path(PathShape::closed_line(pts, self.stroke())));
+        let under: Vec<Pos2> = pts.iter().map(|q| *q + vec2(0.0, 1.6)).collect();
+        glass::gradient_fill(self.p, &under, glass::alpha(Color32::from_rgb(40, 30, 90), 0.55), glass::alpha(Color32::BLACK, 0.6));
+        glass::gradient_fill(self.p, &pts, white(0.30), white(0.05));
+        self.tube(pts, true);
     }
     fn outline(&self, pts: Vec<Pos2>) {
-        self.p.add(Shape::Path(PathShape::closed_line(pts, self.stroke())));
+        self.tube(pts, true);
     }
     fn circle(&self, c: Pos2, rad: f32, body: bool) {
         let pts = arc(c, rad, 0.0, std::f32::consts::TAU, 24);
@@ -484,7 +534,7 @@ impl Pen<'_> {
         if body { self.shape(pts) } else { self.outline(pts) }
     }
     fn dot(&self, c: Pos2, rad: f32) {
-        self.p.circle_filled(c, rad, glass::iris(((c.x - self.r.min.x) / self.r.width().max(1.0)).clamp(0.0, 1.0)));
+        glass::bead(self.p, c, rad.max(1.2), glass::iris(((c.x - self.r.min.x) / self.r.width().max(1.0)).clamp(0.0, 1.0)));
     }
     /// A white specular glint.
     fn glint(&self, c: Pos2, rad: f32) {

@@ -70,6 +70,14 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 - A background image or PDF underlay with two-point scale calibration. You can trace
   subcatchment outlines on it, and the areas are measured automatically.
 
+**Themes** (View > Theme)
+- **Classic**: the familiar engineering-software look, with bevelled grey dialogs.
+- **Modern Light** and **Modern Dark**: flat versions of the same layout.
+- **Iridescent Glass**: a dark theme where every surface has depth. Panels and buttons are raised
+  glass slabs, fields and the diagram are sunken wells, and nodes are extruded glass blocks.
+  Routing arrows and icons are lit glass tubes with iridescent rims. It uses its own
+  modernised layout: a single header bar, glass rails and a floating tool dock on the diagram.
+
 ## Screenshots
 
 | | |
@@ -77,6 +85,7 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 | ![3-D hydrograph](docs/screenshots/hydrograph.png) **Pond hydrograph**: inflow and outflow in 3-D. | ![Reach summary](docs/screenshots/reach-summary.png) **Reach summary** with the cross-section at peak depth. |
 | ![Project reports](docs/screenshots/project-reports.png) **Project Reports**: pollutant loading by land use. | ![Storm viewer](docs/screenshots/storms.png) **Storm distributions**: the built-in NRCS curves. |
 | ![Outlets](docs/screenshots/outlets.png) **Pond outlets**: the outlet device list. | ![Chamber wizard](docs/screenshots/chamber-wizard.png) **Chamber Wizard**: underground storage layout. |
+| ![Iridescent Glass theme](docs/screenshots/glass.png) **Iridescent Glass theme**: the modernised layout. | ![Glass report](docs/screenshots/glass-report.png) **Glass theme**: a comparison report. |
 
 The screenshots are rendered from the built-in sample project
 (`cargo run -p wavestorm-ui --example snapshot`; see [Development](#development)).

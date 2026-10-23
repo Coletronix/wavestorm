@@ -134,6 +134,8 @@ impl<'a> Win<'a> {
             let sheen = Rect::from_min_size(rect.min, vec2(rect.width(), 40.0_f32.min(rect.height())));
             let pts: Vec<egui::Pos2> = crate::glass::rounded(rect, 14.0).into_iter().map(|q| pos2(q.x, q.y.min(sheen.max.y))).collect();
             crate::glass::gradient_fill(&p, &pts, crate::theme::white(0.05), crate::theme::white(0.0));
+            crate::glass::bevel(&p, rect, 14.0, 0.4, 0.5);
+            crate::glass::lip(&p, rect, 14.0, 4.0);
             p.add(egui::Shape::Path(egui::epaint::PathShape::closed_line(crate::glass::rounded(rect, 14.0), crate::glass::iris_stroke(1.0, 0.6))));
         }
         if self.min_max {
@@ -177,8 +179,8 @@ fn caption_box(ui: &mut Ui, center: egui::Pos2, key: &str, glyph: impl FnOnce(&e
     if t.glass {
         // Round, borderless boxes that light up on hover (close turns rose).
         if resp.hovered() {
-            let c = if key == "close" { crate::glass::alpha(crate::glass::IRIS[3], 0.85) } else { crate::theme::white(0.14) };
-            p.circle_filled(b.center(), 9.0, c);
+            let c = if key == "close" { crate::glass::IRIS[3] } else { egui::Color32::from_rgb(70, 80, 120) };
+            crate::glass::bead(p, b.center(), 8.5, c);
         }
         glyph(p, b.center(), Stroke::new(1.4, if resp.hovered() { t.text } else { t.text_dim }));
         return resp.clicked();
@@ -202,11 +204,10 @@ fn caption(ui: &mut Ui, title: &str, closable: bool, shape: Option<Shape>) -> Ca
     if t.glass {
         // A glowing iridescent bead instead of the water drop, and quiet title text.
         let c = rect.left_center() + vec2(8.0, 0.0);
-        crate::glass::glow(p, c, 9.0, crate::glass::alpha(crate::glass::IRIS[2], 0.5));
-        p.circle_filled(c, 3.5, crate::glass::IRIS[0]);
-        p.circle_stroke(c, 3.5, Stroke::new(1.0, crate::theme::white(0.6)));
+        crate::glass::glow(p, c, 10.0, crate::glass::alpha(crate::glass::IRIS[2], 0.5));
+        crate::glass::bead(p, c, 4.5, crate::glass::IRIS[0]);
         p.with_clip_rect(rect.shrink2(vec2(22.0, 0.0))).text(pos2(rect.min.x + 22.0, rect.center().y), Align2::LEFT_CENTER, title, FontId::proportional(13.5), t.text);
-        crate::glass::divider(p, rect.left_bottom() + vec2(0.0, 2.0), rect.right_bottom() + vec2(0.0, 2.0));
+        crate::glass::groove(p, rect.left_bottom() + vec2(0.0, 2.0), rect.right_bottom() + vec2(0.0, 2.0));
     } else {
         if t.bevel {
             crate::widgets::caption_bar(p, rect, "", &t);
