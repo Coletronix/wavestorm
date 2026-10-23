@@ -80,7 +80,7 @@ fn tab_button(ui: &mut Ui, label: &str, on: bool) -> bool {
     resp.clicked()
 }
 
-const COLORS: [Color32; 6] = [
+pub(crate) const COLORS: [Color32; 6] = [
     Color32::from_rgb(40, 200, 60),
     Color32::from_rgb(160, 160, 160),
     Color32::from_rgb(30, 120, 255),
@@ -255,7 +255,7 @@ fn profile_view(ui: &mut Ui, prof: &stormwaves_core::profile::Profile, size: egu
 }
 
 /// A sunken, scrolling table of numbers. The returned response takes right-clicks for menus.
-fn data_table(ui: &mut Ui, heads: &[String], cols: &[Vec<f64>], height: f32, bold_max: bool) -> egui::Response {
+pub(crate) fn data_table(ui: &mut Ui, heads: &[String], cols: &[Vec<f64>], height: f32, bold_max: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     widgets::sunken(ui.painter(), rect, t.field, &t);
@@ -1025,109 +1025,5 @@ pub fn show_messages(ctx: &egui::Context, doc: &mut Doc, actions: &mut Vec<Windo
 
 // ---------------------------------------------------------------- storms and unit hydrographs
 
-pub struct CurveState {
-    pub storms: bool,
-    pub checked: Vec<String>,
-    pub view: ChartView,
-    pub intensity: bool,
-}
-
-impl CurveState {
-    pub fn storms() -> Self {
-        CurveState { storms: true, checked: vec!["Type II 24-hr".into()], view: ChartView::default(), intensity: false }
-    }
-    pub fn uhs() -> Self {
-        CurveState { storms: false, checked: vec!["SCS".into(), "Gamma-284".into()], view: ChartView::default(), intensity: true }
-    }
-}
-
-pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, actions: &mut Vec<crate::windows::WindowAction>) -> bool {
-    let mut open = true;
-    let title = if st.storms { "Storm Distribution Report" } else { "Unit Hydrograph Report" };
-    crate::frame::Win::new(title).open(&mut open).default_size(vec2(720.0, 440.0)).resizable(true).min_max().show(ctx, |ui| {
-        // Built-in, project and rainfall-library curves.
-        let names: Vec<String> = if st.storms { crate::library::storm_names(&doc.project) } else { crate::library::uh_names(&doc.project) };
-        ui.horizontal(|ui| {
-            if widgets::button(ui, "Import Files...", 100.0).on_hover_text("Add rainfall files (.hcr, .huh, .idf, *-Rain.txt) to the rainfall library").clicked() {
-                actions.push(crate::windows::WindowAction::PickFile(crate::platform::Purpose::RainLib));
-            }
-            if widgets::button(ui, "Save File...", 90.0).on_hover_text(if st.storms { "Save the first checked storm as a rainfall (.hcr) file" } else { "Save the first checked unit hydrograph as a (.huh) file" }).clicked() {
-                if let Some(first) = st.checked.first() {
-                    if st.storms {
-                        if let Some(s) = crate::library::find_storm(&doc.project, first) {
-                            actions.push(crate::windows::WindowAction::SaveFile { name: format!("{}.hcr", s.name), bytes: stormwaves_core::rainlib::write_hcr(&s).into_bytes(), ext: "hcr" });
-                        }
-                    } else if let Some(u) = crate::library::find_uh(&doc.project, first) {
-                        actions.push(crate::windows::WindowAction::SaveFile { name: format!("{}.huh", u.name), bytes: stormwaves_core::rainlib::write_huh(&u).into_bytes(), ext: "huh" });
-                    }
-                }
-            }
-            if st.storms {
-                if widgets::button(ui, "New...", 60.0).clicked() {
-                    doc.windows.push(crate::windows::Window::StormEdit(crate::dialogs::storm::StormEditor::default()));
-                }
-                if widgets::button(ui, "Copy & Edit", 90.0).on_hover_text("Edit a copy of the first checked storm").clicked() {
-                    if let Some(s) = st.checked.first().and_then(|n| crate::library::find_storm(&doc.project, n)) {
-                        let mut ed = crate::dialogs::storm::StormEditor::from_storm(&s);
-                        ed.name = format!("{} (custom)", s.name);
-                        doc.windows.push(crate::windows::Window::StormEdit(ed));
-                    }
-                }
-                if widgets::radio(ui, !st.intensity, "Depth").clicked() {
-                    st.intensity = false;
-                }
-                if widgets::radio(ui, st.intensity, "Intensity").clicked() {
-                    st.intensity = true;
-                }
-            }
-        });
-        let avail = ui.available_size();
-        ui.horizontal(|ui| {
-            let mut series = Vec::new();
-            for (i, name) in st.checked.iter().enumerate() {
-                let color = COLORS[(i + 2) % COLORS.len()];
-                if st.storms {
-                    if let Some(s) = crate::library::find_storm(&doc.project, name) {
-                        let n = 400;
-                        let xs: Vec<f64> = (0..=n).map(|k| s.duration * k as f64 / n as f64).collect();
-                        let ys: Vec<f64> = if st.intensity {
-                            let h = s.duration / n as f64;
-                            xs.iter().map(|x| (s.fraction_at(x + h / 2.0) - s.fraction_at(x - h / 2.0)) / h).collect()
-                        } else {
-                            xs.iter().map(|x| s.fraction_at(*x)).collect()
-                        };
-                        series.push(Series { name: name.clone(), color, x: xs, y: ys, peak_label: None });
-                    }
-                } else if let Some(u) = crate::library::find_uh(&doc.project, name) {
-                    let k = u.peak_factor() / stormwaves_core::uh::CFS_PER_SQMI_INCH_PER_HR;
-                    let xs: Vec<f64> = (0..=200).map(|j| j as f64 * u.base().min(8.0) / 200.0).collect();
-                    let ys = xs.iter().map(|x| u.ordinate(*x) * k).collect();
-                    series.push(Series { name: name.clone(), color, x: xs, y: ys, peak_label: None });
-                }
-            }
-            let (title, xl, yl) = if st.storms {
-                if st.intensity { ("Rainfall Intensity vs. Time", "Elapsed Time (hours)", "Fraction of Depth per Hour") } else { ("Rainfall Depth vs. Time", "Elapsed Time (hours)", "Fractional Rainfall Depth") }
-            } else {
-                ("Unit Hydrograph Intensity vs. Time", "Relative Time (Tp)", "Relative Intensity (K)")
-            };
-            let spec = ChartSpec { title, subtitle: "", x_label: xl, y_label: yl, series: &series, summary: &[], three_d: false, marks: &[] };
-            chart::chart(ui, &spec, &mut st.view, vec2((avail.x - 210.0).max(200.0), avail.y.max(200.0)));
-            ui.vertical(|ui| {
-                ui.set_width(200.0);
-                egui::ScrollArea::vertical().max_height(avail.y).show(ui, |ui| {
-                    for name in names {
-                        let mut on = st.checked.contains(&name);
-                        if widgets::check(ui, &mut on, &name).changed() {
-                            if on {
-                                st.checked.push(name.clone());
-                            } else {
-                                st.checked.retain(|c| c != &name);
-                            }
-                        }
-                    }
-                });
-            });
-        });
-    });
-    open
-}
+mod curves;
+pub use curves::{CurveKind, CurveState, show_curves};
