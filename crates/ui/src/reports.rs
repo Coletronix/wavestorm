@@ -777,9 +777,9 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
             }),
         };
         let name = PROJECT_TABS.get(st.tab).copied().unwrap_or("Listing");
-        let avail = ui.available_size();
+        let col_key = ui.id().with("project-report-col");
+        let body = vec2(widgets::body_width(ui, col_key, 104.0), (ui.available_height() - 6.0).max(120.0));
         ui.horizontal(|ui| {
-            let body = vec2((avail.x - 112.0).max(200.0), (avail.y - 6.0).max(120.0));
             ui.vertical(|ui| {
                 ui.set_width(body.x);
                 match &listing {
@@ -788,7 +788,7 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
                     Listing::Table(t) => report_table_with(ui, body, &t.heads, &t.rows, &|c| t.is_text(c), t.total),
                 }
             });
-            ui.vertical(|ui| {
+            let col = ui.vertical(|ui| {
                 // The reference's options sit above its usual button column.
                 ui.spacing_mut().item_spacing.y = 4.0;
                 if widgets::radio(ui, !st.selected_only, "All Nodes").clicked() {
@@ -828,6 +828,7 @@ pub fn show_project_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ProjectR
                     actions.push(WindowAction::Help("project-reports"));
                 }
             });
+            widgets::remember_column(ui, col_key, col.response.rect);
         });
     });
     open
@@ -872,14 +873,14 @@ pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState, a
             });
         });
         ui.add_space(4.0);
-        let avail = ui.available_size();
-        let body = vec2((avail.x - 70.0).max(200.0), (avail.y - 6.0).max(150.0));
+        let col_key = ui.id().with("compare-col");
+        let body = vec2(widgets::body_width(ui, col_key, 62.0), (ui.available_height() - 6.0).max(150.0));
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(body.x);
                 compare_body(ui, doc, st, body);
             });
-            ui.vertical(|ui| {
+            let col = ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
                 let graph = st.tab == 1;
                 if widgets::toggle_button(ui, "Table", 62.0, st.table && graph, graph).clicked() {
@@ -915,6 +916,7 @@ pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState, a
                     widgets::request_help(ui.ctx(), "print");
                 }
             });
+            widgets::remember_column(ui, col_key, col.response.rect);
         });
     });
     open

@@ -127,6 +127,19 @@ pub fn with_tip<R>(ui: &mut Ui, tip: &str, add: impl FnOnce(&mut Ui) -> R) -> R 
     inner.inner
 }
 
+/// Width left for a window's main body beside a right-hand column, using the column's width
+/// measured last frame (`col_guess` before that). Sizing the body as "available − a guessed
+/// constant" makes resizable windows creep wider each frame whenever the guess is short.
+pub fn body_width(ui: &Ui, key: egui::Id, col_guess: f32) -> f32 {
+    let col = ui.ctx().data(|d| d.get_temp::<f32>(key)).unwrap_or(col_guess);
+    (ui.available_width() - col - ui.spacing().item_spacing.x - 1.0).max(200.0)
+}
+
+/// Records the right-hand column's width for [`body_width`].
+pub fn remember_column(ui: &Ui, key: egui::Id, rect: egui::Rect) {
+    ui.ctx().data_mut(|d| d.insert_temp(key, rect.width()));
+}
+
 fn in_tip_id() -> egui::Id {
     egui::Id::new("inside-tip")
 }

@@ -341,9 +341,11 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, acti
         });
         ui.add_space(2.0);
         let avail = ui.available_size();
+        let col_key = ui.id().with("curves-col");
+        let body_w = widgets::body_width(ui, col_key, 210.0);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
-                let size = vec2((avail.x - 214.0).max(200.0), (avail.y - 26.0).max(160.0));
+                let size = vec2(body_w, (avail.y - 26.0).max(160.0));
                 ui.set_width(size.x);
                 widgets::tabs(ui, &["Graph", "Table"], &mut st.tab);
                 if st.tab == 1 {
@@ -359,7 +361,7 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, acti
                     chart::chart(ui, &spec, &mut st.view, size);
                 }
             });
-            ui.vertical(|ui| {
+            let col = ui.vertical(|ui| {
                 ui.set_width(200.0);
                 let h = (avail.y - 66.0).max(100.0);
                 egui::ScrollArea::vertical().max_height(h).min_scrolled_height(h).auto_shrink([false, false]).show(ui, |ui| {
@@ -370,6 +372,7 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, acti
                 });
                 buttons(ui, doc, st, actions, &mut ok);
             });
+            widgets::remember_column(ui, col_key, col.response.rect);
         });
     });
     open && !ok
