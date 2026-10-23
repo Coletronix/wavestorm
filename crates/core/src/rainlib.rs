@@ -722,9 +722,14 @@ pub fn parse_idf(text: &str) -> Result<IdfFile, String> {
 }
 
 /// Writes an IDF file in the format read by [`parse_idf`] (minutes, inches per hour).
+/// Shown wherever `.idf` files are read or written: no real `.idf` file has been available to
+/// check against, so the layout is our own guess and may not match other programs' files.
+pub const IDF_PROVISIONAL: &str =
+    "IDF (.idf) support is provisional: the file layout is Stormwaves' own and has not been verified against real .idf files from other programs.";
+
 pub fn write_idf(idf: &IdfFile) -> String {
     let clean = |s: &str| s.replace(['\r', '\n'], " ");
-    let mut out = String::from("// Stormwaves IDF curve file\n\n");
+    let mut out = format!("// Stormwaves IDF curve file (PROVISIONAL FORMAT)\n// {IDF_PROVISIONAL}\n\n");
     out.push_str(&format!("name={}\n", clean(&idf.name)));
     if !idf.comment.is_empty() {
         out.push_str(&format!("comment={}\n", clean(&idf.comment)));

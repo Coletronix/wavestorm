@@ -149,7 +149,7 @@ pub fn general(ctx: &egui::Context, st: &mut GeneralState, actions: &mut Vec<Win
                 }
             });
             let t = Tokens::get(ui.ctx());
-            ui.label(RichText::new(format!("{} storms, {} unit hydrographs, {} IDF files, {} lookup tables loaded", lib.storms.len(), lib.uhs.len(), lib.idfs.len(), lib.tables.len())).color(t.text_dim));
+            ui.label(RichText::new(format!("{} storms, {} unit hydrographs, {} IDF files (provisional format), {} lookup tables loaded", lib.storms.len(), lib.uhs.len(), lib.idfs.len(), lib.tables.len())).color(t.text_dim));
             for p in lib.problems.iter().take(3) {
                 ui.colored_label(t.warning, p);
             }

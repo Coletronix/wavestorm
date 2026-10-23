@@ -211,11 +211,11 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
             ui.horizontal(|ui| {
                 let import = widgets::button(ui, "Import Events From...", 150.0);
                 egui::Popup::menu(&import).show(|ui| {
-                    if ui.button("County rainfall table / IDF file / NOAA table...").on_hover_text("Create events from a county table, an IDF curve file or a NOAA Atlas 14 table").clicked() {
+                    if ui.button("County rainfall table / IDF file / NOAA table...").on_hover_text("Create events from a county table, an IDF curve file (provisional format) or a NOAA Atlas 14 table").clicked() {
                         actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
                         ui.close();
                     }
-                    if ui.button("IDF file...").on_hover_text("Create events (depth = intensity x duration) from an IDF curve file").clicked() {
+                    if ui.button("IDF file (provisional)...").on_hover_text(stormwaves_core::rainlib::IDF_PROVISIONAL).clicked() {
                         actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
                         actions.push(WindowAction::PickFile(crate::platform::Purpose::NoaaCsv));
                         ui.close();

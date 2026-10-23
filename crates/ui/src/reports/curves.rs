@@ -398,7 +398,7 @@ fn buttons(ui: &mut Ui, doc: &Doc, st: &mut CurveState, actions: &mut Vec<Window
             let tip = match st.kind {
                 CurveKind::Storm => "Save the first checked storm as a rainfall (.hcr) file",
                 CurveKind::Uh => "Save the first checked unit hydrograph as a (.huh) file",
-                CurveKind::Idf => "Save the IDF curve as an (.idf) file",
+                CurveKind::Idf => "Save the IDF curve as an (.idf) file. PROVISIONAL: the .idf layout is our own and not yet verified against real .idf files.",
             };
             if ui.button("Save Curve File...").on_hover_text(tip).clicked() {
                 match st.kind {

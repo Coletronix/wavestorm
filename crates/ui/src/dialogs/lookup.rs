@@ -316,6 +316,7 @@ fn table_pane(ui: &mut Ui, st: &mut EventLookup, table: &RainTable, storm_names:
 /// IDF file: depth = intensity at the storm duration x duration, for every event in the file.
 fn idf_pane(ui: &mut Ui, st: &mut EventLookup, idf: &IdfFile, storm_opts: &[(String, String)]) -> Candidates {
     let t = Tokens::get(ui.ctx());
+    ui.label(RichText::new(format!("PROVISIONAL: {}", stormwaves_core::rainlib::IDF_PROVISIONAL)).color(t.warning));
     ui.label(RichText::new(if idf.comment.is_empty() { idf.name.clone() } else { format!("{}: {}", idf.name, idf.comment) }).color(t.text_dim));
     ui.horizontal(|ui| {
         widgets::num_field(ui, "lk-idf-h", "Storm Duration:", "hours", &mut st.idf_hours, 2, 110.0);

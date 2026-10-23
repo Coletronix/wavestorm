@@ -90,6 +90,9 @@ pub fn import(name: &str, bytes: &[u8]) -> String {
             }
         }
     }
+    if name.to_ascii_lowercase().ends_with(".idf") {
+        return format!("Imported {name} (PROVISIONAL: .idf layout not yet verified against real files)");
+    }
     format!("Imported {name}")
 }
 
