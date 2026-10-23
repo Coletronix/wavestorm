@@ -4,6 +4,19 @@
 use crate::theme::Tokens;
 use egui::{Align2, Color32, FontId, Id, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
+/// A grid header or row-number cell: a raised bevel in the classic themes, a flat tinted cell
+/// with a hairline under it in the glass theme.
+pub fn header_cell(p: &egui::Painter, rect: Rect, t: &Tokens) {
+    if t.glass {
+        p.rect_filled(rect, 0.0, t.light.gamma_multiply(0.7));
+        p.line_segment([rect.left_bottom() - vec2(0.0, 0.5), rect.right_bottom() - vec2(0.0, 0.5)], Stroke::new(1.0, crate::theme::white(0.06)));
+        p.line_segment([rect.right_top() - vec2(0.5, 0.0), rect.right_bottom() - vec2(0.5, 0.0)], Stroke::new(1.0, crate::theme::white(0.05)));
+    } else {
+        p.rect_filled(rect, 0.0, t.face);
+        bevel(p, rect, true, t);
+    }
+}
+
 /// Draws a Windows-classic 2-pixel bevel (or a flat border in modern themes).
 pub fn bevel(p: &egui::Painter, rect: Rect, raised: bool, t: &Tokens) {
     if !t.bevel {
@@ -53,6 +66,21 @@ fn push_button(ui: &mut Ui, label: &str, width: f32, enabled: bool, latched: boo
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
         let pressed = resp.is_pointer_button_down_on() || latched;
+        if t.glass {
+            let kind = if pressed && enabled {
+                crate::glass::Surface::Selected
+            } else if resp.hovered() && enabled {
+                crate::glass::Surface::Hover
+            } else {
+                crate::glass::Surface::Rail
+            };
+            crate::glass::surface(p, rect, t.radius as f32, kind, &t);
+            p.text(rect.center(), Align2::CENTER_CENTER, label, font, if enabled { t.text } else { t.text_disabled });
+            if resp.has_focus() {
+                p.rect_stroke(rect.expand(1.5), t.radius as f32 + 1.5, Stroke::new(1.5, crate::glass::IRIS[0]), StrokeKind::Outside);
+            }
+            return resp;
+        }
         let fill = if latched && t.bevel {
             // The classic latched look: a lighter, dithered-looking face.
             t.light.gamma_multiply(0.9)
@@ -79,8 +107,18 @@ fn push_button(ui: &mut Ui, label: &str, width: f32, enabled: bool, latched: boo
 /// A small square icon button for toolbars; `draw` paints the icon inside `rect`.
 pub fn tool_button(ui: &mut Ui, tip: &str, selected: bool, draw: impl FnOnce(&egui::Painter, Rect, &Tokens)) -> Response {
     let t = Tokens::get(ui.ctx());
-    let (rect, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
-    if ui.is_rect_visible(rect) {
+    let size = if t.glass { 30.0 } else { 24.0 };
+    let (rect, resp) = ui.allocate_exact_size(vec2(size, size), Sense::click());
+    if ui.is_rect_visible(rect) && t.glass {
+        let p = ui.painter();
+        if selected || resp.is_pointer_button_down_on() {
+            crate::glass::glow(p, rect.center(), size * 0.9, crate::glass::alpha(crate::glass::IRIS[2], 0.22));
+            crate::glass::surface(p, rect, 9.0, crate::glass::Surface::Selected, &t);
+        } else if resp.hovered() {
+            crate::glass::surface(p, rect, 9.0, crate::glass::Surface::Hover, &t);
+        }
+        draw(p, rect.shrink(6.0), &t);
+    } else if ui.is_rect_visible(rect) {
         let p = ui.painter();
         if selected || resp.is_pointer_button_down_on() {
             p.rect_filled(rect, t.radius as f32, if t.bevel { t.light.gamma_multiply(0.6) } else { t.shadow });
@@ -250,8 +288,7 @@ pub fn list_table_menu(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: 
     let mut x = inner.min.x;
     for (title, w) in std::iter::once(("#", num_w)).chain(cols.iter().map(|c| (c.0, c.1))) {
         let r = Rect::from_min_size(pos2(x, inner.min.y), vec2(w, row_h + 1.0));
-        p.rect_filled(r, 0.0, t.face);
-        bevel(&p, r, true, &t);
+        header_cell(&p, r, &t);
         p.with_clip_rect(r.shrink(1.0).intersect(inner)).text(r.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, title, font.clone(), t.text);
         x += w;
     }
@@ -264,8 +301,7 @@ pub fn list_table_menu(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: 
             let (r, resp) = ui.allocate_exact_size(vec2(width - 18.0, row_h), Sense::click());
             let p = ui.painter();
             let num = Rect::from_min_size(r.min, vec2(num_w, row_h));
-            p.rect_filled(num, 0.0, t.face);
-            bevel(p, num, true, &t);
+            header_cell(p, num, &t);
             p.text(num.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, format!("{}", i + 1), font.clone(), t.text);
             if resp.secondary_clicked() {
                 *selected = Some(i);
@@ -358,8 +394,14 @@ pub fn num_box(ui: &mut Ui, id: Id, value: &mut f64, decimals: usize, width: f32
         for (r, dir) in [(up, 1.0), (down, -1.0)] {
             let resp = ui.interact(r, id.with(dir as i32), Sense::click());
             let p = ui.painter();
-            p.rect_filled(r, 0.0, t.face);
-            bevel(p, r, !resp.is_pointer_button_down_on(), &t);
+            if t.glass {
+                if resp.hovered() {
+                    p.rect_filled(r.shrink(0.5), 4.0, crate::theme::white(if resp.is_pointer_button_down_on() { 0.2 } else { 0.1 }));
+                }
+            } else {
+                p.rect_filled(r, 0.0, t.face);
+                bevel(p, r, !resp.is_pointer_button_down_on(), &t);
+            }
             let c = r.center();
             let tri = if dir > 0.0 {
                 vec![pos2(c.x - 3.0, c.y + 1.5), pos2(c.x + 3.0, c.y + 1.5), pos2(c.x, c.y - 1.5)]
@@ -440,7 +482,16 @@ pub fn check(ui: &mut Ui, on: &mut bool, label: &str) -> Response {
     }
     let p = ui.painter();
     let b = Rect::from_min_size(rect.min + vec2(0.0, 2.0), vec2(13.0, 13.0));
-    sunken(p, b, t.field, &t);
+    if t.glass {
+        if *on {
+            crate::glass::surface(p, b, 4.0, crate::glass::Surface::Selected, &t);
+        } else {
+            p.rect_filled(b, 4.0, t.field);
+            p.rect_stroke(b, 4.0, Stroke::new(1.0, if resp.hovered() { crate::glass::IRIS[2] } else { crate::theme::white(0.28) }), StrokeKind::Inside);
+        }
+    } else {
+        sunken(p, b, t.field, &t);
+    }
     if *on {
         let c = b.center();
         p.line_segment([pos2(c.x - 3.5, c.y), pos2(c.x - 1.0, c.y + 2.5)], Stroke::new(2.0, t.text));
@@ -459,9 +510,18 @@ pub fn radio(ui: &mut Ui, selected: bool, label: &str) -> Response {
     let p = ui.painter();
     let c = rect.left_center() + vec2(6.5, 0.0);
     p.circle_filled(c, 6.0, t.field);
-    p.circle_stroke(c, 6.0, Stroke::new(1.0, t.shadow));
-    if selected {
-        p.circle_filled(c, 2.5, t.text);
+    if t.glass {
+        let ring = if selected { crate::glass::IRIS[2] } else if resp.hovered() { crate::glass::IRIS[1] } else { crate::theme::white(0.28) };
+        p.circle_stroke(c, 6.0, Stroke::new(1.2, ring));
+        if selected {
+            crate::glass::glow(p, c, 9.0, crate::glass::alpha(crate::glass::IRIS[2], 0.35));
+            p.circle_filled(c, 3.0, crate::glass::IRIS[0]);
+        }
+    } else {
+        p.circle_stroke(c, 6.0, Stroke::new(1.0, t.shadow));
+        if selected {
+            p.circle_filled(c, 2.5, t.text);
+        }
     }
     p.text(pos2(c.x + 11.0, c.y), Align2::LEFT_CENTER, label, font, t.text);
     resp
@@ -479,6 +539,20 @@ pub fn group<R>(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
     let font = FontId::proportional(12.5);
     let tw = ui.fonts_mut(|f| f.layout_no_wrap(title.to_string(), font.clone(), t.text).size().x);
     let gap = (r.min.x + 6.0, r.min.x + 10.0 + tw);
+    if t.glass {
+        // A faint rounded outline with the title, in muted text, breaking its top edge.
+        let pts = crate::glass::rounded(r, 8.0);
+        let gapped: Vec<Pos2> = pts.into_iter().filter(|q| !(q.y < r.min.y + 0.5 && q.x > gap.0 && q.x < gap.1)).collect();
+        if let Some(start) = gapped.iter().position(|q| q.y < r.min.y + 0.5 && q.x >= gap.1) {
+            let mut path = vec![pos2(gap.1, r.min.y)];
+            path.extend_from_slice(&gapped[start..]);
+            path.extend_from_slice(&gapped[..start]);
+            path.push(pos2(gap.0, r.min.y));
+            p.add(egui::Shape::line(path, Stroke::new(1.0, crate::theme::white(0.11))));
+        }
+        p.text(pos2(gap.0 + 2.0, r.min.y), Align2::LEFT_CENTER, title, font, t.text_dim);
+        return inner.inner;
+    }
     let etch = |p: &egui::Painter, off: f32, c: Color32| {
         let r = r.translate(vec2(off, off));
         p.line_segment([pos2(r.min.x, r.min.y), pos2(gap.0, r.min.y)], Stroke::new(1.0, c));
@@ -517,6 +591,23 @@ pub fn tabs(ui: &mut Ui, names: &[&str], selected: &mut usize) -> bool {
     let width = ui.available_width();
     let (strip, _) = ui.allocate_exact_size(vec2(width, h + 2.0), Sense::hover());
     let p = ui.painter().clone();
+    if t.glass {
+        // A segmented control: one track, the selected segment lit.
+        if let (Some(first), Some(last)) = (rects.first(), rects.last()) {
+            let track = Rect::from_min_max(first.min, last.max).expand(1.0);
+            p.rect_filled(track, 9.0, crate::theme::white(0.04));
+            p.rect_stroke(track, 9.0, Stroke::new(1.0, crate::theme::white(0.08)), StrokeKind::Inside);
+        }
+        for (i, (r, name)) in rects.iter().zip(names).enumerate() {
+            let resp = ui.interact(*r, ui.id().with(("tab", i)), Sense::click());
+            if resp.clicked() && *selected != i {
+                *selected = i;
+                changed = true;
+            }
+            pill_tab(&p, *r, i == *selected, resp.hovered(), name, font.clone(), &t);
+        }
+        return changed;
+    }
     let base_y = strip.max.y - 0.5;
     p.line_segment([pos2(strip.min.x, base_y), pos2(strip.max.x, base_y)], Stroke::new(1.0, if t.bevel { t.light } else { t.shadow }));
     for (i, (r, name)) in rects.iter().zip(names).enumerate() {
@@ -538,6 +629,20 @@ pub fn tabs(ui: &mut Ui, names: &[&str], selected: &mut usize) -> bool {
     changed
 }
 
+/// A glass-theme tab: a lit pill with an iridescent underline when selected, a faint sheen when
+/// hovered, plain muted text otherwise.
+pub fn pill_tab(p: &egui::Painter, r: Rect, on: bool, hovered: bool, label: &str, font: FontId, t: &Tokens) {
+    if on {
+        crate::glass::surface(p, r.shrink(1.0), 8.0, crate::glass::Surface::Hover, t);
+        let y = r.max.y - 2.5;
+        let pts = vec![pos2(r.min.x + 8.0, y), pos2(r.max.x - 8.0, y)];
+        p.add(egui::Shape::Path(egui::epaint::PathShape::line(pts, crate::glass::iris_stroke(2.0, 1.0))));
+    } else if hovered {
+        p.rect_filled(r.shrink(1.0), 8.0, crate::theme::white(0.06));
+    }
+    p.text(r.center(), Align2::CENTER_CENTER, label, font, if on || hovered { t.text } else { t.text_dim });
+}
+
 fn draw_tab(p: &egui::Painter, r: Rect, selected: bool, t: &Tokens) {
     let l = if t.bevel { t.light } else { t.shadow };
     let r = r.shrink(0.5);
@@ -555,6 +660,10 @@ pub fn tab_body<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     let inner = egui::Frame::NONE.inner_margin(egui::Margin::same(8)).show(ui, add);
     let r = inner.response.rect;
     let p = ui.painter();
+    if t.glass {
+        p.rect_stroke(r, 10.0, Stroke::new(1.0, crate::theme::white(0.08)), StrokeKind::Inside);
+        return inner.inner;
+    }
     let l = if t.bevel { t.light } else { t.shadow };
     p.line_segment([r.left_top(), r.left_bottom()], Stroke::new(1.0, l));
     p.line_segment([r.left_bottom(), r.right_bottom()], Stroke::new(1.0, t.dark));
@@ -602,7 +711,7 @@ pub fn grid(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>,
     let mut x = inner.min.x;
     for (k, (title, w, tip)) in std::iter::once(("#", num_w, None)).chain(cols.iter().map(|c| (c.title, c.width, c.tip))).enumerate() {
         let r = Rect::from_min_size(pos2(x, head.min.y), vec2(w, head.height()));
-        bevel(child.painter(), r, true, &t);
+        header_cell(child.painter(), r, &t);
         child.painter().with_clip_rect(r.shrink(1.0)).text(r.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, title, font.clone(), t.text);
         if let Some(tip) = tip {
             let resp = child.interact(r, gid.with(("head", k)), Sense::hover());
@@ -622,8 +731,7 @@ pub fn grid(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>,
             let (row_rect, _) = ui.allocate_exact_size(vec2(inner.width() - 14.0, row_h), Sense::hover());
             let p = ui.painter().clone();
             let num_rect = Rect::from_min_size(row_rect.min, vec2(num_w, row_h));
-            p.rect_filled(num_rect, 0.0, t.face);
-            bevel(&p, num_rect, true, &t);
+            header_cell(&p, num_rect, &t);
             let is_sel = *selected == Some(i);
             p.text(num_rect.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, format!("{}", i + 1), font.clone(), t.text);
             let num_resp = ui.interact(num_rect, gid.with(("num", i)), Sense::click());

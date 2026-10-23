@@ -74,6 +74,10 @@ fn tab_button(ui: &mut Ui, label: &str, on: bool) -> bool {
     let w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), t.text).size().x) + 14.0;
     let (r, resp) = ui.allocate_exact_size(vec2(w, 22.0), Sense::click());
     let p = ui.painter();
+    if t.glass {
+        widgets::pill_tab(p, r, on, resp.hovered(), label, font, &t);
+        return resp.clicked();
+    }
     p.rect_filled(r, t.radius as f32, if on { t.light.gamma_multiply(0.9) } else { t.face });
     widgets::bevel(p, r, !on, &t);
     p.text(r.center() + if on { vec2(1.0, 1.0) } else { vec2(0.0, 0.0) }, Align2::CENTER_CENTER, label, font, t.text);
@@ -214,16 +218,15 @@ fn profile_view(ui: &mut Ui, prof: &wavestorm_core::profile::Profile, size: egui
     let inner = egui::Rect::from_min_max(rect.min + vec2(16.0, 36.0), rect.max - vec2(16.0, 16.0));
     let (w, h) = ((x1 - x0).max(1e-6), (y1 - y0).max(1e-6));
     let map = |[x, y]: [f64; 2]| egui::pos2(inner.left() + ((x - x0) / w) as f32 * inner.width(), inner.bottom() - ((y - y0) / h) as f32 * inner.height());
-    let dark = t.kind == crate::theme::ThemeKind::ModernDark;
-    let water = if dark { Color32::from_rgb(0, 150, 170) } else { Color32::from_rgb(0, 235, 245) };
+    let water = if t.is_dark() { Color32::from_rgb(0, 150, 170) } else { Color32::from_rgb(0, 235, 245) };
     let painter = ui.painter().with_clip_rect(rect.shrink(2.0));
     for s in &prof.shapes {
         let pts: Vec<egui::Pos2> = s.points.iter().map(|p| map(*p)).collect();
         let color = match s.ink {
-            Ink::FlowPath => Color32::from_rgb(30, 60, 220),
+            Ink::FlowPath => crate::icons::ink(&t, Color32::from_rgb(30, 60, 220)),
             Ink::Structure => t.text,
             Ink::Water | Ink::Outlet => water,
-            Ink::Device => Color32::from_rgb(220, 30, 30),
+            Ink::Device => crate::icons::ink(&t, Color32::from_rgb(220, 30, 30)),
         };
         if s.filled {
             painter.add(egui::Shape::convex_polygon(pts, color, Stroke::new(1.0, t.text)));
@@ -426,7 +429,7 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
                     text_area(ui, &lines, (size.y - sec_h - 4.0).max(40.0));
                     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), sec_h), Sense::hover());
                     widgets::sunken(ui.painter(), rect, t.field, &t);
-                    let water = if t.kind == crate::theme::ThemeKind::ModernDark { Color32::from_rgb(0, 150, 170) } else { Color32::from_rgb(95, 215, 230) };
+                    let water = if t.is_dark() { Color32::from_rgb(0, 150, 170) } else { Color32::from_rgb(95, 215, 230) };
                     let painter = ui.painter().with_clip_rect(rect.shrink(2.0));
                     crate::section_view::draw(&painter, rect.shrink(4.0), sec, Some(depth), t.text, water, 1.5);
                 }
@@ -1003,7 +1006,7 @@ pub fn show_messages(ctx: &egui::Context, doc: &mut Doc, actions: &mut Vec<Windo
         let lines = report::message_lines(&doc.project, &doc.results);
         let h = (ui.available_height() - 30.0).max(80.0);
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::hover());
-        widgets::sunken(ui.painter(), rect, Color32::from_rgb(255, 255, 255), &t);
+        widgets::sunken(ui.painter(), rect, t.field, &t);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(4.0)));
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(&mut child, |ui| {
             for (m, (sev, line)) in doc.results.messages.iter().zip(lines) {

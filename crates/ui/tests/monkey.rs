@@ -43,9 +43,20 @@ fn drag(h: &mut egui_kittest::Harness<'static, WaveStormApp>, a: Pos2, b: Pos2, 
 
 #[test]
 fn random_input_never_panics() {
+    random_input_in_theme("");
+}
+
+/// The glass theme has its own layout (header, rails, floating dock), so it gets its own run.
+#[test]
+fn random_input_never_panics_in_glass() {
+    random_input_in_theme("theme:glass");
+}
+
+fn random_input_in_theme(theme: &str) {
     let windows = ["", "report:1P", "report:1S", "report:1R", "report:1L", "edit:1S", "edit:1P", "edit:1R", "edit:1L", "settings", "units", "messages", "project-report", "storms", "uhs", "compare", "general"];
     for (round, w) in windows.iter().enumerate() {
         let mut h = harness();
+        script(h.state_mut(), theme);
         h.run_steps(3);
         script(h.state_mut(), w);
         h.run_steps(2);
@@ -102,4 +113,30 @@ fn palette_drop_creates_a_node() {
     let doc = h.state_mut().doc();
     assert!(doc.undo());
     assert_eq!(doc.project.nodes.len(), before);
+}
+
+#[test]
+fn glass_palette_and_dock_work() {
+    let mut h = harness();
+    script(h.state_mut(), "theme:glass");
+    h.run_steps(4);
+    let before = h.state_mut().doc().project.nodes.len();
+    // The Reach tile is the second glass tile in the left rail.
+    drag(&mut h, pos2(52.0, 194.0), pos2(640.0, 520.0), Modifiers::NONE);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().doc().project.nodes.len(), before + 1, "glass palette drag should create a node");
+    // The dock floats at the bottom centre of the diagram; its first button is Select and
+    // its second Trace, which becomes the active tool.
+    let zoom = h.state_mut().doc().view.zoom;
+    let mut found = false;
+    for x in (360..920).step_by(6) {
+        press(&mut h, pos2(x as f32, 728.0), PointerButton::Primary, Modifiers::NONE);
+        h.run_steps(1);
+        if h.state_mut().tool.name() == "Trace Subcatchment" {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "a dock button should start tracing");
+    assert_eq!(h.state_mut().doc().view.zoom, zoom, "scanning the tool group doesn't zoom");
 }

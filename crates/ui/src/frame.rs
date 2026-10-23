@@ -89,7 +89,11 @@ impl<'a> Win<'a> {
         // Stagger new windows so they don't open exactly on top of each other.
         let k = (id.value() % 7) as f32;
         let default_pos = area.min + vec2(30.0 + 26.0 * k, 20.0 + 22.0 * k);
-        let frame = egui::Frame::window(&ctx.global_style()).fill(t.face).corner_radius(t.radius).inner_margin(egui::Margin { left: 4, right: 4, top: 2, bottom: 6 }).stroke(Stroke::new(1.0, t.dark));
+        let frame = if t.glass {
+            egui::Frame::window(&ctx.global_style()).fill(t.face).corner_radius(14).inner_margin(egui::Margin { left: 8, right: 8, top: 4, bottom: 8 }).stroke(Stroke::NONE)
+        } else {
+            egui::Frame::window(&ctx.global_style()).fill(t.face).corner_radius(t.radius).inner_margin(egui::Margin { left: 4, right: 4, top: 2, bottom: 6 }).stroke(Stroke::new(1.0, t.dark))
+        };
         let shape_id = id.with("shape");
         let shape = if self.min_max { ctx.data(|d| d.get_temp::<Shape>(shape_id)).unwrap_or(Shape::Normal) } else { Shape::Normal };
         let minimized = shape == Shape::Minimized;
@@ -121,6 +125,17 @@ impl<'a> Win<'a> {
             ui.add_space(4.0);
             Some(add(ui))
         });
+        if t.glass
+            && let Some(r) = &r
+        {
+            // Rim and sheen over the finished window (its own layer, so it stays on top).
+            let p = ctx.layer_painter(r.response.layer_id);
+            let rect = r.response.rect;
+            let sheen = Rect::from_min_size(rect.min, vec2(rect.width(), 40.0_f32.min(rect.height())));
+            let pts: Vec<egui::Pos2> = crate::glass::rounded(rect, 14.0).into_iter().map(|q| pos2(q.x, q.y.min(sheen.max.y))).collect();
+            crate::glass::gradient_fill(&p, &pts, crate::theme::white(0.05), crate::theme::white(0.0));
+            p.add(egui::Shape::Path(egui::epaint::PathShape::closed_line(crate::glass::rounded(rect, 14.0), crate::glass::iris_stroke(1.0, 0.6))));
+        }
         if self.min_max {
             let rect = r.as_ref().map(|r| r.response.rect);
             let next = match (shape, buttons.minimize, buttons.maximize) {
@@ -159,6 +174,15 @@ fn caption_box(ui: &mut Ui, center: egui::Pos2, key: &str, glyph: impl FnOnce(&e
     let b = Rect::from_center_size(center, vec2(16.0, 14.0));
     let resp = ui.interact(b, ui.id().with(key), Sense::click());
     let p = ui.painter();
+    if t.glass {
+        // Round, borderless boxes that light up on hover (close turns rose).
+        if resp.hovered() {
+            let c = if key == "close" { crate::glass::alpha(crate::glass::IRIS[3], 0.85) } else { crate::theme::white(0.14) };
+            p.circle_filled(b.center(), 9.0, c);
+        }
+        glyph(p, b.center(), Stroke::new(1.4, if resp.hovered() { t.text } else { t.text_dim }));
+        return resp.clicked();
+    }
     let hot = !t.bevel && resp.hovered();
     p.rect_filled(b, 0.0, if hot && key == "close" { egui::Color32::from_rgb(220, 60, 60) } else if hot { t.light } else { t.face });
     if t.bevel {
@@ -173,20 +197,30 @@ fn caption_box(ui: &mut Ui, center: egui::Pos2, key: &str, glyph: impl FnOnce(&e
 fn caption(ui: &mut Ui, title: &str, closable: bool, shape: Option<Shape>) -> CaptionButtons {
     let t = Tokens::get(ui.ctx());
     let width = ui.available_width().max(160.0);
-    let (rect, _) = ui.allocate_exact_size(vec2(width, 20.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, if t.glass { 24.0 } else { 20.0 }), Sense::hover());
     let p = ui.painter();
-    if t.bevel {
-        crate::widgets::caption_bar(p, rect, "", &t);
+    if t.glass {
+        // A glowing iridescent bead instead of the water drop, and quiet title text.
+        let c = rect.left_center() + vec2(8.0, 0.0);
+        crate::glass::glow(p, c, 9.0, crate::glass::alpha(crate::glass::IRIS[2], 0.5));
+        p.circle_filled(c, 3.5, crate::glass::IRIS[0]);
+        p.circle_stroke(c, 3.5, Stroke::new(1.0, crate::theme::white(0.6)));
+        p.with_clip_rect(rect.shrink2(vec2(22.0, 0.0))).text(pos2(rect.min.x + 22.0, rect.center().y), Align2::LEFT_CENTER, title, FontId::proportional(13.5), t.text);
+        crate::glass::divider(p, rect.left_bottom() + vec2(0.0, 2.0), rect.right_bottom() + vec2(0.0, 2.0));
     } else {
-        p.rect_filled(rect, t.radius as f32, t.face);
-        p.line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(1.0, t.shadow));
+        if t.bevel {
+            crate::widgets::caption_bar(p, rect, "", &t);
+        } else {
+            p.rect_filled(rect, t.radius as f32, t.face);
+            p.line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(1.0, t.shadow));
+        }
+        // A small water-drop emblem.
+        let c = rect.left_center() + vec2(10.0, 0.0);
+        p.circle_filled(c + vec2(0.0, 2.0), 4.5, egui::Color32::from_rgb(90, 170, 240));
+        p.add(egui::Shape::convex_polygon(vec![c + vec2(0.0, -6.0), c + vec2(4.2, 0.5), c + vec2(-4.2, 0.5)], egui::Color32::from_rgb(90, 170, 240), Stroke::NONE));
+        let text_color = if t.bevel { t.caption_text } else { t.text };
+        p.with_clip_rect(rect.shrink2(vec2(22.0, 0.0))).text(pos2(rect.min.x + 22.0, rect.center().y), Align2::LEFT_CENTER, title, FontId::proportional(13.0), text_color);
     }
-    // A small water-drop emblem.
-    let c = rect.left_center() + vec2(10.0, 0.0);
-    p.circle_filled(c + vec2(0.0, 2.0), 4.5, egui::Color32::from_rgb(90, 170, 240));
-    p.add(egui::Shape::convex_polygon(vec![c + vec2(0.0, -6.0), c + vec2(4.2, 0.5), c + vec2(-4.2, 0.5)], egui::Color32::from_rgb(90, 170, 240), Stroke::NONE));
-    let text_color = if t.bevel { t.caption_text } else { t.text };
-    p.with_clip_rect(rect.shrink2(vec2(22.0, 0.0))).text(pos2(rect.min.x + 22.0, rect.center().y), Align2::LEFT_CENTER, title, FontId::proportional(13.0), text_color);
     let mut out = CaptionButtons::default();
     if !closable {
         return out;

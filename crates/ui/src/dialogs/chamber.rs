@@ -126,8 +126,8 @@ fn layout_sketch(ui: &mut Ui, f: &Field, size: egui::Vec2) {
     let t = Tokens::get(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, 0.0, Color32::WHITE);
-    p.rect_stroke(rect, 0.0, Stroke::new(1.0, t.shadow), egui::StrokeKind::Inside);
+    p.rect_filled(rect, t.radius as f32, t.field);
+    p.rect_stroke(rect, t.radius as f32, Stroke::new(1.0, t.shadow), egui::StrokeKind::Inside);
     let l = f.layout();
     let m = &f.model;
     let (spacing, side, end) = if f.typical { (m.row_spacing, m.side_stone, m.end_stone) } else { (f.row_spacing, f.side_stone, f.end_stone) };
@@ -136,8 +136,8 @@ fn layout_sketch(ui: &mut Ui, f: &Field, size: egui::Vec2) {
     if !(s.is_finite() && s > 0.0) {
         return;
     }
-    let ink = Color32::from_rgb(20, 20, 160);
-    let water = Color32::from_rgb(0, 230, 255);
+    let ink = crate::icons::ink(&t, Color32::from_rgb(20, 20, 160));
+    let water = if t.is_dark() { Color32::from_rgb(0, 130, 150) } else { Color32::from_rgb(0, 230, 255) };
     let w = (l.base_width * s) as f32;
     let h = (l.base_length * s) as f32;
     let bed = Rect::from_center_size(plan_area.center(), vec2(w, h));

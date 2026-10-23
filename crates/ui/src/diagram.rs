@@ -148,7 +148,11 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
     let mut actions = Vec::new();
     let (canvas, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
     let painter = ui.painter_at(canvas);
-    painter.rect_filled(canvas, 0.0, t.canvas);
+    if t.glass {
+        crate::glass::canvas(&painter, canvas, &t);
+    } else {
+        painter.rect_filled(canvas, 0.0, t.canvas);
+    }
     let d = doc.project.diagram.symbol_size as f32;
     if doc.fit_pending && canvas.width() > 50.0 {
         fit_view(doc, canvas, None);
@@ -351,11 +355,13 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
     }
 }
 
-fn arrow_head(p: &egui::Painter, tip: Pos2, dir: Vec2, size: f32, stroke: Stroke) {
+/// A routing arrowhead: white with a coloured edge, or solid colour in the glass theme.
+fn arrow_head(p: &egui::Painter, tip: Pos2, dir: Vec2, size: f32, stroke: Stroke, t: &Tokens) {
     let dir = dir.normalized();
     let side = vec2(-dir.y, dir.x);
     let back = tip - dir * size;
-    p.add(Shape::convex_polygon(vec![tip, back + side * size * 0.45, back - side * size * 0.45], Color32::WHITE, stroke));
+    let fill = if t.glass { stroke.color } else { Color32::WHITE };
+    p.add(Shape::convex_polygon(vec![tip, back + side * size * 0.45, back - side * size * 0.45], fill, stroke));
 }
 
 /// Screen geometry of node `n`'s outflow `k`: (start, end) with `end` at the arrowhead.
@@ -398,13 +404,17 @@ fn draw_arrows(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: 
                 let a = to_screen(&doc.view, canvas, wp(n.pos));
                 let (s, dashed) = route_stroke(k, t, doc.view.zoom);
                 line(p, a, *at, s, dashed);
-                arrow_head(p, *at, *at - a, head, s);
+                arrow_head(p, *at, *at - a, head, s, t);
                 continue;
             }
             if let Some((a, b)) = arrow_geom(doc, canvas, n.id, k) {
                 let (s, dashed) = route_stroke(k, t, doc.view.zoom);
+                if t.glass {
+                    // A soft glow under the line, like light in a glass tube.
+                    p.line_segment([a, b], Stroke::new(s.width * 5.0, crate::glass::alpha(s.color, 0.12)));
+                }
                 line(p, a, b, s, dashed);
-                arrow_head(p, b, b - a, head, s);
+                arrow_head(p, b, b - a, head, s, t);
             }
         }
     }
@@ -471,7 +481,7 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
                     let (s, dashed) = route_stroke(k, t, doc.view.zoom);
                     let from = boundary_point(n.node_type(), c, d, h);
                     line(p, from, h, s, dashed);
-                    arrow_head(p, h, h - c, (d * 0.2).clamp(6.0, 14.0), s);
+                    arrow_head(p, h, h - c, (d * 0.2).clamp(6.0, 14.0), s, t);
                 }
             }
         }
@@ -603,7 +613,9 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
         *b = p;
         let (a, b2) = (it.rubber.map(|r| r.0).unwrap_or(p), p);
         let r = Rect::from_two_pos(a, b2);
-        ui.painter().rect(r, 0.0, Color32::from_rgba_unmultiplied(10, 36, 106, 20), Stroke::new(1.0, Color32::from_rgb(10, 36, 106)), egui::StrokeKind::Inside);
+        let t = Tokens::get(ui.ctx());
+        let edge = if t.is_dark() { t.hint } else { Color32::from_rgb(10, 36, 106) };
+        ui.painter().rect(r, if t.glass { 4.0 } else { 0.0 }, Color32::from_rgba_unmultiplied(edge.r(), edge.g(), edge.b(), 24), Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     }
 
     // Drag end.
@@ -723,6 +735,10 @@ pub fn scrollbars(ui: &mut Ui, doc: &mut Doc, canvas: Rect, vbar: Rect, hbar: Re
     if let (Some(u), Some(tex)) = (&doc.project.diagram.underlay, &doc.underlay_tex) {
         content = content.union(Rect::from_min_size(wp(u.origin), tex.size_vec2() * u.scale as f32));
     }
+    if t.glass {
+        overlay_scrollbars(ui, doc, vbar, hbar, content, view_world);
+        return;
+    }
     for (bar, vertical) in [(vbar, true), (hbar, false)] {
         let p = ui.painter();
         p.rect_filled(bar, 0.0, t.face.gamma_multiply(0.92));
@@ -791,6 +807,39 @@ pub fn scrollbars(ui: &mut Ui, doc: &mut Doc, canvas: Rect, vbar: Rect, hbar: Re
             let before = if vertical { pp.y < thumb.min.y } else { pp.x < thumb.min.x };
             let page = if vertical { canvas.height() } else { canvas.width() } * 0.9 * if before { -1.0 } else { 1.0 };
             if vertical { doc.view.offset.y -= page } else { doc.view.offset.x -= page }
+        }
+    }
+}
+
+/// Glass-theme scrollbars: thin pill thumbs over the canvas edges, no arrows or track; they
+/// brighten under the pointer and drag like the classic thumbs.
+fn overlay_scrollbars(ui: &mut Ui, doc: &mut Doc, vbar: Rect, hbar: Rect, content: Rect, view_world: Rect) {
+    for (bar, vertical) in [(vbar, true), (hbar, false)] {
+        let (c0, c1, v0, v1) = if vertical {
+            (content.min.y, content.max.y, view_world.min.y, view_world.max.y)
+        } else {
+            (content.min.x, content.max.x, view_world.min.x, view_world.max.x)
+        };
+        let span = (c1 - c0).max(1e-3);
+        let len = if vertical { bar.height() } else { bar.width() };
+        let start = (v0 - c0) / span * len;
+        let size = ((v1 - v0) / span * len).max(24.0).min(len);
+        if size >= len - 0.5 {
+            continue;
+        }
+        let thumb = if vertical {
+            Rect::from_min_size(pos2(bar.min.x, bar.min.y + start), vec2(bar.width(), size))
+        } else {
+            Rect::from_min_size(pos2(bar.min.x + start, bar.min.y), vec2(size, bar.height()))
+        };
+        let resp = ui.interact(thumb.expand(3.0), ui.id().with(("glass-thumb", vertical)), Sense::drag());
+        let hot = resp.hovered() || resp.dragged();
+        let thin = if hot { thumb } else if vertical { thumb.shrink2(vec2(1.5, 0.0)) } else { thumb.shrink2(vec2(0.0, 1.5)) };
+        ui.painter().rect_filled(thin, 4.0, crate::theme::white(if hot { 0.38 } else { 0.18 }));
+        if resp.dragged() {
+            let delta = if vertical { resp.drag_delta().y } else { resp.drag_delta().x };
+            let screen = delta / len * span * doc.view.zoom;
+            if vertical { doc.view.offset.y -= screen } else { doc.view.offset.x -= screen }
         }
     }
 }

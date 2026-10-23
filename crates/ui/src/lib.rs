@@ -7,6 +7,7 @@ pub mod diagram;
 pub mod dialogs;
 pub mod doc;
 pub mod frame;
+pub mod glass;
 pub mod help;
 pub mod icons;
 pub mod library;
@@ -960,138 +961,152 @@ impl WaveStormApp {
 
     // ---------------------------------------------------------------- toolbars
 
-    fn toolbar(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 1.0;
-            let tb = |ui: &mut Ui, g: Glyph, tip: &str| widgets::tool_button(ui, tip, false, |p, r, t| icons::draw_glyph(p, g, r, t)).clicked();
-            if tb(ui, Glyph::ZoomIn, "Zoom In") {
-                self.zoom(1.25);
+    /// Whether a tool command is the current tool (drawn latched).
+    fn cmd_active(&self, c: Cmd) -> bool {
+        match c {
+            Cmd::Select => self.tool == Tool::Select,
+            Cmd::Calibrate => matches!(self.tool, Tool::Calibrate { .. }),
+            Cmd::Trace => matches!(self.tool, Tool::Trace { .. }),
+            Cmd::Measure => matches!(self.tool, Tool::Measure { .. }),
+            _ => false,
+        }
+    }
+
+    /// Runs a toolbar / dock command.
+    fn run(&mut self, c: Cmd) {
+        match c {
+            Cmd::ZoomIn => self.zoom(1.25),
+            Cmd::ZoomOut => self.zoom(0.8),
+            Cmd::ZoomAll => self.zoom_all(false),
+            Cmd::ZoomSelected | Cmd::Find => self.zoom_all(true),
+            Cmd::Delete => self.delete_selection(),
+            Cmd::Edit => {
+                if let Some(id) = self.doc().selection.first().copied() {
+                    self.open_edit(id);
+                }
             }
-            if tb(ui, Glyph::ZoomOut, "Zoom Out") {
-                self.zoom(0.8);
+            Cmd::Report => {
+                if let Some(id) = self.doc().selection.first().copied() {
+                    self.open_report(id);
+                }
             }
-            if tb(ui, Glyph::ZoomFit, "Zoom All") {
-                self.zoom_all(false);
-            }
-            if tb(ui, Glyph::ZoomSelected, "Zoom Selected") {
-                self.zoom_all(true);
-            }
-            separator(ui);
-            if tb(ui, Glyph::Find, "Find node (select and zoom)") {
-                self.zoom_all(true);
-            }
-            if tb(ui, Glyph::Delete, "Delete selected node(s)") {
-                self.delete_selection();
-            }
-            if tb(ui, Glyph::Edit, "Edit selected node")
-                && let Some(id) = self.doc().selection.first().copied()
-            {
-                self.open_edit(id);
-            }
-            separator(ui);
-            if tb(ui, Glyph::Report, "Node Report")
-                && let Some(id) = self.doc().selection.first().copied()
-            {
-                self.open_report(id);
-            }
-            if tb(ui, Glyph::Compare, "Comparison Report") {
+            Cmd::Compare => {
                 let sel = self.doc().selection.clone();
                 self.open_window(Window::Compare(reports::CompareState::new(sel)));
             }
-            if tb(ui, Glyph::ProjectReport, "Project Reports") {
-                self.open_window(Window::ProjectReport(reports::ProjectReportState::default()));
-            }
-            separator(ui);
-            if tb(ui, Glyph::Print, "Print report (PDF)") {
-                self.open_window(Window::Print(dialogs::misc::PrintState::default()));
-            }
-            if tb(ui, Glyph::PrintDiagram, "Print routing diagram (PDF)") {
+            Cmd::ProjectReports => self.open_window(Window::ProjectReport(reports::ProjectReportState::default())),
+            Cmd::Print => self.open_window(Window::Print(dialogs::misc::PrintState::default())),
+            Cmd::PrintDiagram => {
                 let o = wavestorm_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new() };
                 self.print_pdf(&o);
             }
-            separator(ui);
-            if tb(ui, Glyph::Notes, "Project Notes") {
+            Cmd::Notes => {
                 let st = dialogs::misc::NotesState::new(&self.doc().project);
                 self.open_window(Window::Notes(st));
             }
-            if tb(ui, Glyph::Calculator, "Calculation Settings") {
+            Cmd::Calculation => {
                 let st = dialogs::settings::SettingsState::new(&self.doc().project);
                 self.open_window(Window::Settings(st));
             }
-            ui.add_space(6.0);
-            // Rainfall event selector.
-            let doc = self.doc();
-            let events: Vec<(usize, String)> = doc.project.settings.events.iter().enumerate().map(|(i, e)| (i, e.name.clone())).collect();
-            let mut cur = doc.project.settings.current_event;
-            if widgets::combo(ui, "event", &mut cur, &events, 120.0) {
-                doc.edit("Select Event", |p| p.settings.current_event = cur);
+            Cmd::Help => self.open_window(Window::Help(help::HelpState::topic("start"))),
+            Cmd::Select => self.tool = Tool::Select,
+            Cmd::Units => {
+                let st = dialogs::misc::UnitsState::new(&self.doc().project);
+                self.open_window(Window::Units(st));
+            }
+            Cmd::LandUse => {
+                let st = dialogs::misc::LandUseState::new(&self.doc().project);
+                self.open_window(Window::LandUse(st));
+            }
+            Cmd::Diagram => {
+                let st = dialogs::misc::DiagramState::new(&self.doc().project);
+                self.open_window(Window::Diagram(st));
+            }
+            Cmd::General => {
+                let st = dialogs::misc::GeneralState { draft: self.prefs.clone() };
+                self.open_window(Window::General(st));
+            }
+            Cmd::Idf => {
+                let st = dialogs::storm::IdfEditor::new(self.doc());
+                self.open_window(Window::Idf(st));
+            }
+            Cmd::Messages => self.open_window(Window::Messages),
+            Cmd::Underlay => self.platform.pick(Purpose::Underlay),
+            Cmd::Calibrate => {
+                self.tool = Tool::Calibrate { points: Vec::new() };
+                self.status = "Click two points a known distance apart on the background".into();
+            }
+            Cmd::Trace => self.start_trace(),
+            Cmd::Measure => {
+                self.tool = Tool::Measure { points: Vec::new() };
+                self.status = "Click points along the path; double-click or Enter to finish".into();
+            }
+            Cmd::Undo => {
+                self.doc().undo();
+            }
+            Cmd::Redo => {
+                self.doc().redo();
+            }
+        }
+    }
+
+    /// A tool button for `c`; runs it when clicked.
+    fn cmd_button(&mut self, ui: &mut Ui, c: Cmd) {
+        if widgets::tool_button(ui, c.tip(), self.cmd_active(c), |p, r, t| icons::draw_glyph(p, c.glyph(), r, t)).clicked() {
+            self.run(c);
+        }
+    }
+
+    /// The rainfall event selector.
+    fn event_combo(&mut self, ui: &mut Ui, width: f32) {
+        let doc = self.doc();
+        let events: Vec<(usize, String)> = doc.project.settings.events.iter().enumerate().map(|(i, e)| (i, e.name.clone())).collect();
+        let mut cur = doc.project.settings.current_event;
+        if widgets::combo(ui, "event", &mut cur, &events, width) {
+            doc.edit("Select Event", |p| p.settings.current_event = cur);
+        }
+    }
+
+    fn toolbar(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 1.0;
+            let groups: [&[Cmd]; 5] = [
+                &[Cmd::ZoomIn, Cmd::ZoomOut, Cmd::ZoomAll, Cmd::ZoomSelected],
+                &[Cmd::Find, Cmd::Delete, Cmd::Edit],
+                &[Cmd::Report, Cmd::Compare, Cmd::ProjectReports],
+                &[Cmd::Print, Cmd::PrintDiagram],
+                &[Cmd::Notes, Cmd::Calculation],
+            ];
+            for (i, group) in groups.into_iter().enumerate() {
+                if i > 0 {
+                    separator(ui);
+                }
+                for c in group {
+                    self.cmd_button(ui, *c);
+                }
             }
             ui.add_space(6.0);
-            if tb(ui, Glyph::Help, "Help") {
-                self.open_window(Window::Help(help::HelpState::topic("start")));
-            }
+            self.event_combo(ui, 120.0);
+            ui.add_space(6.0);
+            self.cmd_button(ui, Cmd::Help);
         });
     }
 
     fn right_toolbar(&mut self, ui: &mut Ui) {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
-            let tool = self.tool.clone();
-            let tb = |ui: &mut Ui, g: Glyph, tip: &str, on: bool| widgets::tool_button(ui, tip, on, |p, r, t| icons::draw_glyph(p, g, r, t)).clicked();
-            if tb(ui, Glyph::Pointer, "Select", tool == Tool::Select) {
-                self.tool = Tool::Select;
-            }
-            if tb(ui, Glyph::Units, "Units", false) {
-                let st = dialogs::misc::UnitsState::new(&self.doc().project);
-                self.open_window(Window::Units(st));
-            }
-            if tb(ui, Glyph::LandUse, "Land-Use Settings", false) {
-                let st = dialogs::misc::LandUseState::new(&self.doc().project);
-                self.open_window(Window::LandUse(st));
-            }
-            if tb(ui, Glyph::Calculator, "Calculation Settings", false) {
-                let st = dialogs::settings::SettingsState::new(&self.doc().project);
-                self.open_window(Window::Settings(st));
-            }
-            if tb(ui, Glyph::DiagramSettings, "Diagram Settings", false) {
-                let st = dialogs::misc::DiagramState::new(&self.doc().project);
-                self.open_window(Window::Diagram(st));
-            }
-            if tb(ui, Glyph::General, "General Settings", false) {
-                let st = dialogs::misc::GeneralState { draft: self.prefs.clone() };
-                self.open_window(Window::General(st));
-            }
-            if tb(ui, Glyph::Idf, "IDF Curve", false) {
-                let st = dialogs::storm::IdfEditor::new(self.doc());
-                self.open_window(Window::Idf(st));
-            }
-            if tb(ui, Glyph::Print, "Print report (PDF)", false) {
-                self.open_window(Window::Print(dialogs::misc::PrintState::default()));
-            }
-            if tb(ui, Glyph::Messages, "Messages", false) {
-                self.open_window(Window::Messages);
-            }
-            ui.add_space(6.0);
-            if tb(ui, Glyph::Underlay, "Load background image or PDF", false) {
-                self.platform.pick(Purpose::Underlay);
-            }
-            if tb(ui, Glyph::Calibrate, "Calibrate background scale", matches!(tool, Tool::Calibrate { .. })) {
-                self.tool = Tool::Calibrate { points: Vec::new() };
-                self.status = "Click two points a known distance apart on the background".into();
-            }
-            if tb(ui, Glyph::Trace, "Trace a subcatchment outline", matches!(tool, Tool::Trace { .. })) {
-                self.start_trace();
-            }
-            if tb(ui, Glyph::Measure, "Measure length",matches!(tool, Tool::Measure { .. })) {
-                self.tool = Tool::Measure { points: Vec::new() };
-                self.status = "Click points along the path; double-click or Enter to finish".into();
-            }
-            ui.add_space(6.0);
-            if tb(ui, Glyph::Undo, "Undo", false) {
-                self.doc().undo();
-            }
-            if tb(ui, Glyph::Redo, "Redo", false) {
-                self.doc().redo();
+            let groups: [&[Cmd]; 3] = [
+                &[Cmd::Select, Cmd::Units, Cmd::LandUse, Cmd::Calculation, Cmd::Diagram, Cmd::General, Cmd::Idf, Cmd::Print, Cmd::Messages],
+                &[Cmd::Underlay, Cmd::Calibrate, Cmd::Trace, Cmd::Measure],
+                &[Cmd::Undo, Cmd::Redo],
+            ];
+            for (i, group) in groups.into_iter().enumerate() {
+                if i > 0 {
+                    ui.add_space(6.0);
+                }
+                for c in group {
+                    self.cmd_button(ui, *c);
+                }
             }
         });
     }
@@ -1099,13 +1114,11 @@ impl WaveStormApp {
     fn palette(&mut self, ui: &mut Ui) {
         let t = Tokens::get(ui.ctx());
         ui.vertical_centered(|ui| {
-            ui.spacing_mut().item_spacing.y = 6.0;
+            ui.spacing_mut().item_spacing.y = if t.glass { 8.0 } else { 6.0 };
             for nt in [NodeType::Subcat, NodeType::Reach, NodeType::Pond, NodeType::Link, NodeType::Text] {
-                let (rect, resp) = ui.allocate_exact_size(vec2(52.0, 46.0), Sense::click_and_drag());
+                let size = if t.glass { vec2(62.0, 60.0) } else { vec2(52.0, 46.0) };
+                let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
                 let p = ui.painter();
-                if resp.hovered() {
-                    widgets::bevel(p, rect, true, &t);
-                }
                 let caption = match nt {
                     NodeType::Subcat => "Subcat",
                     NodeType::Reach => "Reach",
@@ -1113,8 +1126,19 @@ impl WaveStormApp {
                     NodeType::Link => "Link",
                     NodeType::Text => "Text",
                 };
-                icons::draw_node(p, nt, rect.center(), 44.0, "", false, false, &t);
-                p.text(rect.center() + vec2(0.0, if nt == NodeType::Pond { 6.0 } else { 0.0 }), Align2::CENTER_CENTER, caption, FontId::proportional(11.0), t.node_text);
+                if t.glass {
+                    // A glass tile: the symbol above its caption.
+                    let kind = if resp.hovered() { glass::Surface::Hover } else { glass::Surface::Rail };
+                    glass::surface(p, rect, 12.0, kind, &t);
+                    icons::draw_node(p, nt, rect.center() - vec2(0.0, 7.0), 32.0, "", resp.hovered(), false, &t);
+                    p.text(pos2(rect.center().x, rect.max.y - 9.0), Align2::CENTER_CENTER, caption, FontId::proportional(11.0), if resp.hovered() { t.text } else { t.text_dim });
+                } else {
+                    if resp.hovered() {
+                        widgets::bevel(p, rect, true, &t);
+                    }
+                    icons::draw_node(p, nt, rect.center(), 44.0, "", false, false, &t);
+                    p.text(rect.center() + vec2(0.0, if nt == NodeType::Pond { 6.0 } else { 0.0 }), Align2::CENTER_CENTER, caption, FontId::proportional(11.0), t.node_text);
+                }
                 if resp.drag_started() {
                     self.palette_drag = Some(nt);
                 }
@@ -1172,15 +1196,23 @@ impl WaveStormApp {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             let mut switch = None;
+            if t.glass {
+                ui.spacing_mut().item_spacing.x = 4.0;
+            }
             for (i, d) in self.docs.iter().enumerate() {
-                let label = format!("{}{}", d.title(), if d.dirty { " *" } else { "" });
-                let w = ui.fonts_mut(|f| f.layout_no_wrap(label.clone(), FontId::proportional(12.5), t.text).size().x) + 18.0;
-                let (r, resp) = ui.allocate_exact_size(vec2(w, 20.0), Sense::click());
+                let mark = if !d.dirty { "" } else if t.glass { " •" } else { " *" };
+                let label = format!("{}{mark}", d.title());
+                let w = ui.fonts_mut(|f| f.layout_no_wrap(label.clone(), FontId::proportional(12.5), t.text).size().x) + if t.glass { 24.0 } else { 18.0 };
+                let (r, resp) = ui.allocate_exact_size(vec2(w, if t.glass { 28.0 } else { 20.0 }), Sense::click());
                 let p = ui.painter();
                 let active = i == self.active;
-                p.rect_filled(r, 0.0, if active { t.face } else { t.face.gamma_multiply(0.94) });
-                widgets::bevel(p, r, !active, &t);
-                p.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.5), t.text);
+                if t.glass {
+                    widgets::pill_tab(p, r, active, resp.hovered(), &label, FontId::proportional(12.5), &t);
+                } else {
+                    p.rect_filled(r, 0.0, if active { t.face } else { t.face.gamma_multiply(0.94) });
+                    widgets::bevel(p, r, !active, &t);
+                    p.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.5), t.text);
+                }
                 if resp.clicked() {
                     switch = Some(i);
                 }
@@ -1384,6 +1416,222 @@ impl WaveStormApp {
         }
     }
 
+    /// Draws the diagram into `inner` with scrollbars in `vbar`/`hbar`; `full` is the area
+    /// windows are kept inside.
+    fn canvas(&mut self, ui: &mut Ui, ctx: &egui::Context, full: Rect, inner: Rect, vbar: Rect, hbar: Rect) -> Vec<CanvasAction> {
+        let mut actions = Vec::new();
+        self.canvas_rect = inner;
+        frame::set_canvas(ctx, full);
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+        let idx = self.active.min(self.docs.len().saturating_sub(1));
+        if let Some(doc) = self.docs.get_mut(idx) {
+            actions = diagram::show(&mut child, doc, &mut self.tool, &mut self.interaction, &mut self.palette_drag);
+            diagram::scrollbars(ui, doc, inner, vbar, hbar);
+        }
+        if self.palette_drag.is_some() && !ctx.input(|i| i.pointer.any_down()) {
+            self.palette_drag = None;
+        }
+        actions
+    }
+
+    /// The classic layout: menu bar, toolbar, node palette, settings column, diagram with
+    /// classic scrollbars, project tabs and a bevelled status bar.
+    fn classic_chrome(&mut self, ui: &mut Ui, ctx: &egui::Context, t: &Tokens) -> Vec<CanvasAction> {
+        egui::Panel::top("menu").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 1))).show(ui, |ui| self.menu_bar(ui));
+        egui::Panel::top("toolbar").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 3))).show(ui, |ui| self.toolbar(ui));
+        egui::Panel::bottom("status").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 2))).show(ui, |ui| self.status_bar(ui));
+        egui::Panel::bottom("tabs").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin { left: 64, right: 2, top: 0, bottom: 2 })).show(ui, |ui| self.project_tabs(ui));
+        egui::Panel::left("palette").exact_size(64.0).resizable(false).frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 6))).show(ui, |ui| self.palette(ui));
+        egui::Panel::right("settings-bar").exact_size(34.0).resizable(false).frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 6))).show(ui, |ui| self.right_toolbar(ui));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::same(2)))
+            .show(ui, |ui| {
+                let outer = ui.available_rect_before_wrap();
+                widgets::bevel(ui.painter(), outer, false, t);
+                let full = outer.shrink(2.0);
+                let sb = 16.0;
+                let inner = Rect::from_min_max(full.min, pos2(full.max.x - sb, full.max.y - sb));
+                let vbar = Rect::from_min_max(pos2(inner.max.x, full.min.y), pos2(full.max.x, inner.max.y));
+                let hbar = Rect::from_min_max(pos2(full.min.x, inner.max.y), pos2(inner.max.x, full.max.y));
+                ui.painter().rect_filled(Rect::from_min_max(inner.max, full.max), 0.0, t.face);
+                self.canvas(ui, ctx, full, inner, vbar, hbar)
+            })
+            .inner
+    }
+
+    /// The glass layout (modernised, glass theme only). Rounded glass islands float over an
+    /// aurora backdrop: a header (logo, menus, project tabs, event, undo/redo, help), the node
+    /// palette as glass tiles on the left, the settings column on the right, and the diagram
+    /// between them with a floating tool dock at its bottom edge (the canvas-first pattern that
+    /// docks panels and floats only the tool bar). The status line is plain text with a
+    /// clickable messages chip.
+    fn glass_chrome(&mut self, ui: &mut Ui, ctx: &egui::Context, t: &Tokens) -> Vec<CanvasAction> {
+        glass::backdrop(&ctx.layer_painter(egui::LayerId::background()), ctx.content_rect());
+        let island = |l: i8, r: i8, top: i8, b: i8| egui::Frame::NONE.inner_margin(egui::Margin { left: l, right: r, top, bottom: b });
+        egui::Panel::top("glass-header").exact_size(56.0).frame(island(8, 8, 8, 4)).show(ui, |ui| {
+            let rect = ui.max_rect();
+            glass::surface(ui.painter(), rect, 16.0, glass::Surface::Rail, t);
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(12.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+            self.glass_header(&mut child);
+        });
+        egui::Panel::bottom("glass-status").exact_size(26.0).frame(island(16, 16, 0, 4)).show(ui, |ui| self.glass_status(ui));
+        egui::Panel::left("glass-palette").exact_size(86.0).resizable(false).frame(island(8, 4, 4, 4)).show(ui, |ui| {
+            let rect = ui.max_rect();
+            glass::surface(ui.painter(), rect, 16.0, glass::Surface::Rail, t);
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(0.0, 10.0))));
+            child.vertical_centered(|ui| ui.label(egui::RichText::new("NODES").size(10.0).color(t.text_dim)));
+            child.add_space(2.0);
+            self.palette(&mut child);
+        });
+        egui::Panel::right("glass-settings").exact_size(58.0).resizable(false).frame(island(4, 8, 4, 4)).show(ui, |ui| {
+            let rect = ui.max_rect();
+            glass::surface(ui.painter(), rect, 16.0, glass::Surface::Rail, t);
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(0.0, 10.0))).layout(egui::Layout::top_down(egui::Align::Center)));
+            child.spacing_mut().item_spacing.y = 4.0;
+            for c in [Cmd::Units, Cmd::LandUse, Cmd::Calculation, Cmd::Diagram, Cmd::General, Cmd::Idf] {
+                self.cmd_button(&mut child, c);
+            }
+            let y = child.cursor().min.y + 6.0;
+            glass::divider(child.painter(), pos2(rect.min.x + 10.0, y), pos2(rect.max.x - 10.0, y));
+            child.add_space(12.0);
+            for c in [Cmd::Notes, Cmd::Messages, Cmd::Print] {
+                self.cmd_button(&mut child, c);
+            }
+        });
+        egui::CentralPanel::default()
+            .frame(island(4, 4, 4, 4))
+            .show(ui, |ui| {
+                let full = ui.available_rect_before_wrap();
+                let sb = 8.0;
+                let vbar = Rect::from_min_max(pos2(full.max.x - sb - 3.0, full.min.y + 14.0), pos2(full.max.x - 3.0, full.max.y - sb - 6.0));
+                let hbar = Rect::from_min_max(pos2(full.min.x + 14.0, full.max.y - sb - 3.0), pos2(full.max.x - sb - 6.0, full.max.y - 3.0));
+                let actions = self.canvas(ui, ctx, full, full, vbar, hbar);
+                ui.painter().add(egui::Shape::Path(egui::epaint::PathShape::closed_line(glass::rounded(full, 16.0), glass::iris_stroke(1.0, 0.35))));
+                self.glass_dock(ui, full);
+                actions
+            })
+            .inner
+    }
+
+    /// The glass header: logo, menus, project tabs; event, undo/redo and help on the right.
+    fn glass_header(&mut self, ui: &mut Ui) {
+        let t = Tokens::get(ui.ctx());
+        if let Some(tex) = logo::texture(ui.ctx(), true) {
+            let size = tex.size_vec2();
+            ui.add(egui::Image::new(&tex).fit_to_exact_size(vec2(40.0 * size.x / size.y, 40.0)));
+        }
+        ui.add_space(6.0);
+        // The menu bar takes all the width it is given, so give it just its buttons' width.
+        let font = egui::TextStyle::Button.resolve(ui.style());
+        let pad = 4.0 + ui.spacing().item_spacing.x;
+        let menus_w: f32 = ["Project", "Diagram", "Node", "View", "Print", "Settings", "Help"].iter().map(|s| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), font.clone(), t.text).size().x) + pad).sum();
+        let (r, _) = ui.allocate_exact_size(vec2(menus_w, 28.0), Sense::hover());
+        let mut menus = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        self.menu_bar(&mut menus);
+        let (r, _) = ui.allocate_exact_size(vec2(14.0, 28.0), Sense::hover());
+        ui.painter().line_segment([pos2(r.center().x, r.min.y + 4.0), pos2(r.center().x, r.max.y - 4.0)], Stroke::new(1.0, theme::white(0.12)));
+        self.project_tabs(ui);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            self.cmd_button(ui, Cmd::Help);
+            self.cmd_button(ui, Cmd::Redo);
+            self.cmd_button(ui, Cmd::Undo);
+            ui.add_space(8.0);
+            self.event_combo(ui, 140.0);
+            ui.label(egui::RichText::new("Event").size(12.0).color(t.text_dim));
+        });
+    }
+
+    /// The floating tool dock centred on the bottom edge of the diagram.
+    fn glass_dock(&mut self, ui: &mut Ui, canvas: Rect) {
+        let t = Tokens::get(ui.ctx());
+        let groups: [&[Cmd]; 4] = [
+            &[Cmd::Select, Cmd::Trace, Cmd::Measure, Cmd::Calibrate, Cmd::Underlay],
+            &[Cmd::ZoomOut, Cmd::ZoomIn, Cmd::ZoomAll, Cmd::ZoomSelected],
+            &[Cmd::Edit, Cmd::Delete],
+            &[Cmd::Report, Cmd::Compare, Cmd::ProjectReports, Cmd::PrintDiagram],
+        ];
+        let buttons: usize = groups.iter().map(|g| g.len()).sum();
+        let zoom_w = 46.0;
+        let width = buttons as f32 * 34.0 + (groups.len() - 1) as f32 * 15.0 + zoom_w + 16.0;
+        let rect = Rect::from_center_size(pos2(canvas.center().x, canvas.max.y - 34.0), vec2(width.min(canvas.width() - 24.0), 44.0));
+        glass::surface(ui.painter(), rect, 18.0, glass::Surface::Float, &t);
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(8.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        child.spacing_mut().item_spacing.x = 4.0;
+        for (i, group) in groups.into_iter().enumerate() {
+            if i > 0 {
+                let (r, _) = child.allocate_exact_size(vec2(11.0, 26.0), Sense::hover());
+                child.painter().line_segment([pos2(r.center().x, r.min.y), pos2(r.center().x, r.max.y)], Stroke::new(1.0, theme::white(0.14)));
+            }
+            for c in group {
+                self.cmd_button(&mut child, *c);
+                if *c == Cmd::ZoomIn {
+                    let zoom = self.doc().view.zoom;
+                    let (r, resp) = child.allocate_exact_size(vec2(zoom_w, 24.0), Sense::click());
+                    child.painter().rect_filled(r, 8.0, theme::white(if resp.hovered() { 0.1 } else { 0.05 }));
+                    child.painter().text(r.center(), Align2::CENTER_CENTER, format!("{:.0}%", zoom * 100.0), FontId::proportional(12.0), t.text_dim);
+                    if resp.on_hover_text("Zoom to 100%").clicked() {
+                        let factor = 1.0 / zoom.max(1e-3);
+                        self.zoom(factor);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The glass status line: the current status or hint, then the tool, node count, messages
+    /// chip (opens Messages) and pointer coordinates.
+    fn glass_status(&mut self, ui: &mut Ui) {
+        let t = Tokens::get(ui.ctx());
+        let doc = self.doc();
+        let count = doc.project.nodes.iter().filter(|n| n.node_type() != NodeType::Text).count();
+        let (warnings, errors) = doc.results.messages.iter().fold((0, 0), |(w, e), m| match m.severity {
+            wavestorm_core::calc::Severity::Warning => (w + 1, e),
+            s if s >= wavestorm_core::calc::Severity::Error => (w, e + 1),
+            _ => (w, e),
+        });
+        let scale = doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit);
+        let coords = match (self.interaction.hover_world, scale) {
+            (Some(w), Some(s)) => format!("X {:.1}'   Y {:.1}'", w.x as f64 * s, w.y as f64 * s),
+            (Some(w), None) => format!("X {:.2}   Y {:.2}", w.x / 100.0, w.y / 100.0),
+            _ => String::new(),
+        };
+        let hint = widgets::take_status_hint(ui.ctx());
+        let status = hint.unwrap_or_else(|| self.status.clone());
+        let tool = self.tool.name();
+        let mut open_messages = false;
+        ui.horizontal_centered(|ui| {
+            let font = FontId::proportional(12.0);
+            ui.add(egui::Label::new(egui::RichText::new(status).font(font.clone()).color(t.text_dim)).truncate());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 14.0;
+                ui.label(egui::RichText::new(coords).font(font.clone()).color(t.text_dim));
+                // Messages chip.
+                let (dot, text) = if errors > 0 {
+                    (t.error, format!("{errors} error{}", if errors == 1 { "" } else { "s" }))
+                } else if warnings > 0 {
+                    (t.warning, format!("{warnings} warning{}", if warnings == 1 { "" } else { "s" }))
+                } else {
+                    (t.subcat.1, "No warnings".to_string())
+                };
+                let w = ui.fonts_mut(|f| f.layout_no_wrap(text.clone(), font.clone(), t.text).size().x) + 28.0;
+                let (r, resp) = ui.allocate_exact_size(vec2(w, 20.0), Sense::click());
+                let p = ui.painter();
+                p.rect_filled(r, 10.0, theme::white(if resp.hovered() { 0.12 } else { 0.06 }));
+                p.rect_stroke(r, 10.0, Stroke::new(1.0, glass::alpha(dot, 0.5)), egui::StrokeKind::Inside);
+                glass::glow(p, pos2(r.min.x + 11.0, r.center().y), 7.0, glass::alpha(dot, 0.5));
+                p.circle_filled(pos2(r.min.x + 11.0, r.center().y), 3.0, dot);
+                p.text(pos2(r.min.x + 20.0, r.center().y), Align2::LEFT_CENTER, text, font.clone(), t.text);
+                open_messages = resp.on_hover_text("Show calculation messages").clicked();
+                ui.label(egui::RichText::new(format!("{count} nodes")).font(font.clone()).color(t.text_dim));
+                ui.label(egui::RichText::new(tool).font(font.clone()).color(t.text_dim));
+            });
+        });
+        if open_messages {
+            self.open_window(Window::Messages);
+        }
+    }
+
     /// Draws the whole application.
     pub fn draw(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
@@ -1398,34 +1646,7 @@ impl WaveStormApp {
         self.autosave(&ctx);
         self.shortcuts(&ctx);
 
-        egui::Panel::top("menu").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 1))).show(ui, |ui| self.menu_bar(ui));
-        egui::Panel::top("toolbar").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 3))).show(ui, |ui| self.toolbar(ui));
-        egui::Panel::bottom("status").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 2))).show(ui, |ui| self.status_bar(ui));
-        egui::Panel::bottom("tabs").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin { left: 64, right: 2, top: 0, bottom: 2 })).show(ui, |ui| self.project_tabs(ui));
-        egui::Panel::left("palette").exact_size(64.0).resizable(false).frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 6))).show(ui, |ui| self.palette(ui));
-        egui::Panel::right("settings-bar").exact_size(34.0).resizable(false).frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 6))).show(ui, |ui| self.right_toolbar(ui));
-        let mut actions = Vec::new();
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::same(2))).show(ui, |ui| {
-            let outer = ui.available_rect_before_wrap();
-            widgets::bevel(ui.painter(), outer, false, &t);
-            let full = outer.shrink(2.0);
-            let sb = 16.0;
-            let inner = Rect::from_min_max(full.min, pos2(full.max.x - sb, full.max.y - sb));
-            let vbar = Rect::from_min_max(pos2(inner.max.x, full.min.y), pos2(full.max.x, inner.max.y));
-            let hbar = Rect::from_min_max(pos2(full.min.x, inner.max.y), pos2(inner.max.x, full.max.y));
-            ui.painter().rect_filled(Rect::from_min_max(inner.max, full.max), 0.0, t.face);
-            self.canvas_rect = inner;
-            frame::set_canvas(&ctx, full);
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-            let idx = self.active.min(self.docs.len().saturating_sub(1));
-            if let Some(doc) = self.docs.get_mut(idx) {
-                actions = diagram::show(&mut child, doc, &mut self.tool, &mut self.interaction, &mut self.palette_drag);
-                diagram::scrollbars(ui, doc, inner, vbar, hbar);
-            }
-            if self.palette_drag.is_some() && !ctx.input(|i| i.pointer.any_down()) {
-                self.palette_drag = None;
-            }
-        });
+        let actions = if t.glass { self.glass_chrome(ui, &ctx, &t) } else { self.classic_chrome(ui, &ctx, &t) };
         self.canvas_actions(actions, &ctx);
         self.context_menu(&ctx);
         let idx = self.active.min(self.docs.len().saturating_sub(1));
@@ -1443,6 +1664,107 @@ impl WaveStormApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         let _ = Stroke::NONE;
         let _ = Color32::BLACK;
+    }
+}
+
+/// Commands behind the toolbar, settings column and glass dock buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Cmd {
+    ZoomIn,
+    ZoomOut,
+    ZoomAll,
+    ZoomSelected,
+    Find,
+    Delete,
+    Edit,
+    Report,
+    Compare,
+    ProjectReports,
+    Print,
+    PrintDiagram,
+    Notes,
+    Calculation,
+    Help,
+    Select,
+    Units,
+    LandUse,
+    Diagram,
+    General,
+    Idf,
+    Messages,
+    Underlay,
+    Calibrate,
+    Trace,
+    Measure,
+    Undo,
+    Redo,
+}
+
+impl Cmd {
+    fn glyph(self) -> Glyph {
+        match self {
+            Cmd::ZoomIn => Glyph::ZoomIn,
+            Cmd::ZoomOut => Glyph::ZoomOut,
+            Cmd::ZoomAll => Glyph::ZoomFit,
+            Cmd::ZoomSelected => Glyph::ZoomSelected,
+            Cmd::Find => Glyph::Find,
+            Cmd::Delete => Glyph::Delete,
+            Cmd::Edit => Glyph::Edit,
+            Cmd::Report => Glyph::Report,
+            Cmd::Compare => Glyph::Compare,
+            Cmd::ProjectReports => Glyph::ProjectReport,
+            Cmd::Print => Glyph::Print,
+            Cmd::PrintDiagram => Glyph::PrintDiagram,
+            Cmd::Notes => Glyph::Notes,
+            Cmd::Calculation => Glyph::Calculator,
+            Cmd::Help => Glyph::Help,
+            Cmd::Select => Glyph::Pointer,
+            Cmd::Units => Glyph::Units,
+            Cmd::LandUse => Glyph::LandUse,
+            Cmd::Diagram => Glyph::DiagramSettings,
+            Cmd::General => Glyph::General,
+            Cmd::Idf => Glyph::Idf,
+            Cmd::Messages => Glyph::Messages,
+            Cmd::Underlay => Glyph::Underlay,
+            Cmd::Calibrate => Glyph::Calibrate,
+            Cmd::Trace => Glyph::Trace,
+            Cmd::Measure => Glyph::Measure,
+            Cmd::Undo => Glyph::Undo,
+            Cmd::Redo => Glyph::Redo,
+        }
+    }
+
+    fn tip(self) -> &'static str {
+        match self {
+            Cmd::ZoomIn => "Zoom In",
+            Cmd::ZoomOut => "Zoom Out",
+            Cmd::ZoomAll => "Zoom All",
+            Cmd::ZoomSelected => "Zoom Selected",
+            Cmd::Find => "Find node (select and zoom)",
+            Cmd::Delete => "Delete selected node(s)",
+            Cmd::Edit => "Edit selected node",
+            Cmd::Report => "Node Report",
+            Cmd::Compare => "Comparison Report",
+            Cmd::ProjectReports => "Project Reports",
+            Cmd::Print => "Print report (PDF)",
+            Cmd::PrintDiagram => "Print routing diagram (PDF)",
+            Cmd::Notes => "Project Notes",
+            Cmd::Calculation => "Calculation Settings",
+            Cmd::Help => "Help",
+            Cmd::Select => "Select",
+            Cmd::Units => "Units",
+            Cmd::LandUse => "Land-Use Settings",
+            Cmd::Diagram => "Diagram Settings",
+            Cmd::General => "General Settings",
+            Cmd::Idf => "IDF Curve",
+            Cmd::Messages => "Messages",
+            Cmd::Underlay => "Load background image or PDF",
+            Cmd::Calibrate => "Calibrate background scale",
+            Cmd::Trace => "Trace a subcatchment outline",
+            Cmd::Measure => "Measure length",
+            Cmd::Undo => "Undo",
+            Cmd::Redo => "Redo",
+        }
     }
 }
 
@@ -1469,7 +1791,7 @@ impl eframe::App for WaveStormApp {
 
 /// Drives the app from a short command (used by the offscreen snapshot tool and tests):
 /// `report:1P`, `edit:1S`, `tab:<n>`, `select:1R`, `settings`, `settings-tab:<n>`, `messages`,
-/// `project-report`, `storms`, `uhs`, `units`, `theme:<classic|modern|dark>`, `compare`, `new`,
+/// `project-report`, `storms`, `uhs`, `units`, `theme:<classic|modern|dark|glass>`, `compare`, `new`,
 /// `table`, `inflows` (tabular hydrograph with inflow columns), `general`,
 /// `profile:<labels,…>`, `import-tr20:<path>` and `lookup:<NOAA csv path>` (desktop).
 pub fn script(app: &mut WaveStormApp, cmd: &str) {
@@ -1625,6 +1947,7 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
             app.theme = match arg {
                 "modern" => ThemeKind::Modern,
                 "dark" => ThemeKind::ModernDark,
+                "glass" => ThemeKind::Glass,
                 _ => ThemeKind::Classic,
             };
             app.styled = false;

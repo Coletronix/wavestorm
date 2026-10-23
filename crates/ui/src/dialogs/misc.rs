@@ -213,9 +213,11 @@ pub fn notes(ctx: &egui::Context, doc: &mut Doc, st: &mut NotesState) -> bool {
 pub fn about(ctx: &egui::Context) -> bool {
     let mut open = true;
     crate::frame::Win::new("About WAVEStorm").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+        // Wide enough for the description lines on one line each.
+        ui.set_min_width(400.0);
         ui.vertical_centered(|ui| {
             ui.add_space(4.0);
-            crate::logo::show(ui, 320.0);
+            crate::logo::show(ui, 360.0);
             ui.add_space(4.0);
             ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
             ui.add_space(6.0);

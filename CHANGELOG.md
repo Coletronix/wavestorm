@@ -13,6 +13,18 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
   `wavestorm-web`), the `WAVESTORM_RAIN_LIB` variable and the saved-settings keys. Settings saved
   by 0.1.0 under the old name are not carried over.
 - New logo, drawn with a transparent background and a lightened variant for dark themes.
+- Modern Dark theme: lighter borders, disabled text, routing colours, chart series and error
+  text for at least 3:1 (graphics) / 4.5:1 (text) contrast; toolbar glyph inks are lifted on
+  dark faces; the Messages window, chart legend, peak tags, profile and Chamber Wizard
+  sketches no longer use fixed white/black.
+
+### Added
+- **Iridescent Glass** theme (View > Theme, Settings > General): dark glass surfaces with
+  iridescent rims over an aurora backdrop, a new line-icon set, glowing routing arrows, glass
+  node symbols, and a modernised layout — one header bar with the logo, menus, project tabs,
+  event selector and undo/redo; glass node tiles and settings rails; a floating tool dock on
+  the diagram with a zoom readout; overlay scrollbars; a status line with a messages chip.
+  The other themes keep their layout.
 
 ## [0.1.0] - 2026-10-23
 

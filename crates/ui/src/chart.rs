@@ -187,9 +187,10 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
             p.line_segment([pos2(plot.min.x, py), pos2(plot.max.x, py)], Stroke::new(1.0, Color32::from_rgba_unmultiplied(200, 60, 60, 160)));
             // Labels at the same height are spread to the right.
             let x = stacked.iter().filter(|(y, _)| (*y - py).abs() < 12.0).map(|(_, x)| *x).fold(plot.min.x + 4.0, f32::max);
-            let g = p.layout_no_wrap(label.clone(), font.clone(), Color32::from_rgb(160, 30, 30));
+            let mark_text = if t.is_dark() { t.error } else { Color32::from_rgb(160, 30, 30) };
+            let g = p.layout_no_wrap(label.clone(), font.clone(), mark_text);
             let w = g.size().x;
-            p.galley(pos2(x, py - 2.0 - g.size().y), g, Color32::from_rgb(160, 30, 30));
+            p.galley(pos2(x, py - 2.0 - g.size().y), g, mark_text);
             stacked.push((py, x + w + 12.0));
         }
     }
@@ -251,6 +252,9 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
             all_pts.extend(pts.iter().copied());
             all_pts.extend(pts.iter().map(|q| *q + rib));
         } else {
+            if t.glass {
+                clip.add(Shape::line(pts.clone(), Stroke::new(7.0, crate::glass::alpha(s.color, 0.12))));
+            }
             clip.add(Shape::line(pts.clone(), Stroke::new(2.0, s.color)));
             all_pts.extend(pts.iter().copied());
         }
@@ -301,10 +305,12 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
         let _ = summary_w;
     }
 
-    // Peak labels, nudged apart vertically.
+    // Peak labels, nudged apart vertically. Light themes use the classic yellow tag; dark
+    // themes a dark tag edged in the series colour.
+    let (tag_fill, tag_text) = if t.is_dark() { (t.chart_bg, t.text) } else { (Color32::from_rgb(255, 255, 220), Color32::BLACK) };
     let mut placed: Vec<Rect> = Vec::new();
     for (at, label, color) in peak_boxes {
-        let g = p.layout_no_wrap(label.clone(), FontId::proportional(11.5), Color32::BLACK);
+        let g = p.layout_no_wrap(label.clone(), FontId::proportional(11.5), tag_text);
         let mut r = Rect::from_min_size(at + vec2(4.0, -g.size().y - 8.0), g.size() + vec2(8.0, 4.0));
         if r.max.x > plot.max.x {
             r = r.translate(vec2(plot.max.x - r.max.x, 0.0));
@@ -321,9 +327,10 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
             }
         }
         placed.push(r);
-        p.rect_filled(r, 0.0, Color32::from_rgb(255, 255, 220));
-        p.rect_stroke(r, 0.0, Stroke::new(1.0, color.gamma_multiply(0.8)), egui::StrokeKind::Inside);
-        p.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(11.5), Color32::BLACK);
+        let radius = if t.glass { 4.0 } else { 0.0 };
+        p.rect_filled(r, radius, tag_fill);
+        p.rect_stroke(r, radius, Stroke::new(1.0, color.gamma_multiply(0.8)), egui::StrokeKind::Inside);
+        p.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(11.5), tag_text);
     }
 
     // Legend.
@@ -331,14 +338,16 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
         let lx = rect.max.x - legend_w + 4.0;
         let mut ly = top + 4.0;
         let lr = Rect::from_min_size(pos2(lx, ly), vec2(legend_w - 10.0, 4.0 + 15.0 * spec.series.len() as f32));
-        p.rect_filled(lr, 0.0, Color32::WHITE);
-        p.rect_stroke(lr, 0.0, Stroke::new(1.0, t.dark), egui::StrokeKind::Inside);
+        let (fill, ink, edge) = if t.is_dark() { (t.chart_plot, t.text, t.shadow) } else { (Color32::WHITE, Color32::BLACK, t.dark) };
+        let radius = if t.glass { 6.0 } else { 0.0 };
+        p.rect_filled(lr, radius, fill);
+        p.rect_stroke(lr, radius, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
         for s in spec.series {
             ly += 2.0;
             let sw = Rect::from_min_size(pos2(lx + 4.0, ly + 2.0), vec2(10.0, 10.0));
-            p.rect_filled(sw, 0.0, s.color);
-            p.rect_stroke(sw, 0.0, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Inside);
-            p.text(pos2(sw.max.x + 4.0, sw.center().y), Align2::LEFT_CENTER, &s.name, FontId::proportional(11.0), Color32::BLACK);
+            p.rect_filled(sw, radius / 2.0, s.color);
+            p.rect_stroke(sw, radius / 2.0, Stroke::new(1.0, if t.is_dark() { s.color } else { Color32::BLACK }), egui::StrokeKind::Inside);
+            p.text(pos2(sw.max.x + 4.0, sw.center().y), Align2::LEFT_CENTER, &s.name, FontId::proportional(11.0), ink);
             ly += 13.0;
         }
     }
@@ -348,7 +357,7 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     {
         let _ = a;
         let origin = ui.ctx().data(|d| d.get_temp::<Pos2>(resp.id.with("origin"))).unwrap_or(b);
-        ui.painter().rect_stroke(Rect::from_two_pos(origin, b), 0.0, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Inside);
+        ui.painter().rect_stroke(Rect::from_two_pos(origin, b), 0.0, Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
     }
     if resp.drag_started()
         && let Some(p0) = resp.interact_pointer_pos()
