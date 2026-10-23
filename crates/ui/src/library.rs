@@ -200,7 +200,8 @@ fn scan(_folder: &str) -> RainLibrary {
 pub fn storm_names(p: &Project) -> Vec<String> {
     let mut v: Vec<String> = builtin_storms().into_iter().map(|s| s.name).collect();
     for n in p.storms.iter().map(|s| s.name.clone()).chain(current().storms.iter().map(|s| s.name.clone())) {
-        if !v.contains(&n) {
+        // Library files pad names for sorting ("Type II  6-hr"); treat those as the same storm.
+        if !v.iter().any(|x| same_name(x, &n)) {
             v.push(n);
         }
     }
@@ -220,7 +221,14 @@ pub fn uh_names(p: &Project) -> Vec<String> {
 
 /// A storm from the project, the built-in list or the library.
 pub fn find_storm(p: &Project, name: &str) -> Option<Storm> {
-    p.storm(name).or_else(|| current().storms.iter().find(|s| s.name == name).cloned())
+    p.storm(name)
+        .or_else(|| current().storms.iter().find(|s| s.name == name).cloned())
+        .or_else(|| builtin_storms().into_iter().chain(p.storms.iter().cloned()).chain(current().storms.iter().cloned()).find(|s| same_name(&s.name, name)))
+}
+
+/// Names equal apart from runs of whitespace.
+fn same_name(a: &str, b: &str) -> bool {
+    a.split_whitespace().eq(b.split_whitespace())
 }
 
 /// A unit hydrograph from the project, the built-in list or the library.
