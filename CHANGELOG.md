@@ -7,6 +7,29 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-23
+
+### Added
+- Tc flow paths are lettered A, B, C… on the diagram, and the segments measured from a path
+  are described "A to B", "B to D", and so on. When sheet flow ends partway along a leg, a new
+  point is added there, so the letters always match the segments.
+- **Recent projects** under Project > Open… and on the start page, in the browser too (kept
+  as copies in browser storage). Projects whose files have moved or been deleted are reported
+  and removed from the list.
+- **Reopen the last session:** the projects open when the app last closed are reopened
+  (saved files from disk; unsaved changes and browser projects from local storage). If none
+  were open, or none can be found, the app starts with no project open and shows a start page
+  (New, Open, Open Sample Project, recent projects).
+
+### Changed
+- Closing the last project leaves nothing open instead of creating an empty one.
+- Opening a file that is already open switches to its tab.
+
+### Fixed
+- Deleting the Tc segments measured from a drawn flow path now removes the path from the
+  subcatchment and the diagram (once none of its segments is left). "Remove Drawn Path" on the
+  Tc tab removes it while keeping the segments.
+
 ## [0.3.0] - 2026-10-23
 
 ### Added
@@ -124,7 +147,8 @@ First tagged release.
 - Stor-Ind+Trans reach attenuation can differ from the reference application (~2 % vs ~4 % on
   one published example).
 
-[Unreleased]: https://github.com/Coletronix/wavestorm/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Coletronix/wavestorm/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Coletronix/wavestorm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Coletronix/wavestorm/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Coletronix/wavestorm/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Coletronix/wavestorm/compare/v0.2.0...v0.2.1
