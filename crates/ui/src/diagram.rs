@@ -682,6 +682,7 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
     }
     let color = t.hint;
     let leg_color = |i: usize| flows.get(i).copied().flatten().map_or(color, |f| flow_color(f, t));
+    let stroke = Stroke::new(2.0, color);
     for (i, w) in s.windows(2).enumerate() {
         if t.glass {
             p.extend(Shape::dashed_line(&[w[0] + vec2(0.8, 2.0), w[1] + vec2(0.8, 2.0)], Stroke::new(2.5, crate::glass::alpha(Color32::BLACK, 0.5)), 8.0, 5.0));
@@ -690,18 +691,14 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
         p.extend(Shape::dashed_line(&[w[0], w[1]], Stroke::new(if typed { 2.6 } else { 2.0 }, leg_color(i)), 8.0, 5.0));
     }
     // Segment ends are lettered A, B, C, … (the Tc segments are described "A to B", …).
-    // Point markers are a fixed size on the diagram, so they scale exactly with the zoom like
-    // the symbols; only the letters keep a constant on-screen size.
-    let zoom = doc.view.zoom;
-    let mark = 3.5 * zoom;
     for (i, q) in s.iter().enumerate().take(pts.len()) {
         let Some(Some(label)) = labels.get(i) else {
-            p.circle_filled(*q, 2.0 * zoom, color);
+            p.circle_filled(*q, 2.0, color);
             continue;
         };
-        p.circle_filled(*q, mark, t.canvas);
-        p.circle_stroke(*q, mark, Stroke::new(1.5 * zoom, color));
-        let at = *q + vec2(mark + 2.5, -mark - 2.5);
+        p.circle_filled(*q, 3.5, t.canvas);
+        p.circle_stroke(*q, 3.5, stroke);
+        let at = *q + vec2(6.0, -6.0);
         let font = FontId::proportional(12.5);
         p.text(at + vec2(1.0, 1.0), Align2::LEFT_BOTTOM, label, font.clone(), if t.is_dark() { Color32::BLACK } else { Color32::WHITE });
         p.text(at, Align2::LEFT_BOTTOM, label, font, color);
@@ -709,7 +706,7 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
     if let [.., a, b] = s.as_slice()
         && (*b - *a).length() > 1.0
     {
-        arrow_head(p, *b, *b - *a, 10.0 * zoom, Stroke::new(1.5 * zoom, leg_color(s.len().saturating_sub(2))), t);
+        arrow_head(p, *b, *b - *a, 10.0, Stroke::new(2.0, leg_color(s.len().saturating_sub(2))), t);
     }
 }
 
