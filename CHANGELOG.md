@@ -7,6 +7,37 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
 
 ## [Unreleased]
 
+### Added
+- **Sub-areas drawn inside a subcatchment's outline** (Draw Sub-Area in the dock, the
+  right-click menu or the Area tab).
+  - Points are kept inside the outline and snap to nearby corners and edges. Sub-areas
+    can't overlap each other.
+  - Each drawn area is measured, and the remainder row is the outline's area less the drawn
+    sub-areas, so the rows always add up to the outline.
+  - Drawn sub-areas are coloured on the diagram, with their CN, and on the Area tab, which
+    has swatches and a Source column.
+  - Subcatchments without drawn sub-areas work as before.
+- **Editing drawings:** select a subcatchment to see the points of its outline, sub-areas
+  and Tc path.
+  - Drag a point to move it, drag an edge's middle to add a point, right-click a point to
+    delete it.
+  - Areas, the remainder and Tc segment lengths update intelligently: types, slopes and
+    surfaces are kept, and segments follow inserted or removed points.
+  - Edits that would push a sub-area outside its outline are undone.
+  - Outlines can be drawn for an existing subcatchment or redrawn (Draw / Redraw Outline).
+  - Outline corners snap to neighbouring outlines' corners.
+- **Place Background:** drag the background to move it, or a corner to resize it.
+  - A newly loaded background is sized to the diagram in view, and placement starts
+    automatically.
+  - Drawings move and scale with it, and the calibration follows the size, so measured areas
+    and lengths don't change. The Background Settings scale field does the same.
+  - The background can be locked in Background Settings.
+
+### Changed
+- Drawn areas and Tc path lengths are re-measured when the background is calibrated.
+- Moving a subcatchment's symbol moves its sub-areas and Tc path with its outline.
+- Concave outlines are filled correctly on the diagram.
+
 ## [0.5.0] - 2026-10-23
 
 ### Changed

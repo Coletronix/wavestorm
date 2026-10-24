@@ -4,6 +4,7 @@ use crate::doc::{Doc, View};
 use crate::icons;
 use crate::theme::Tokens;
 use egui::{Align2, Color32, FontId, Key, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
+use wavestorm_core::drawing::{self, Pt};
 use wavestorm_core::project::{NodeData, NodeId, NodeType, Project};
 
 /// The active diagram tool.
@@ -13,15 +14,19 @@ pub enum Tool {
     Select,
     /// Pick two points on the background, then enter the real distance between them.
     Calibrate { points: Vec<Pos2> },
-    /// Click the corners of a subcatchment outline; close to create the subcatchment.
-    Trace { points: Vec<Pos2> },
+    /// Click the corners of a subcatchment outline; close to create the subcatchment (or, with
+    /// `node`, to give that subcatchment this outline).
+    Trace { points: Vec<Pos2>, node: Option<NodeId> },
     /// Measure a polyline length.
     Measure { points: Vec<Pos2> },
     /// Draw subcatchment `node`'s Tc flow path, from its most distant point to the outlet; each
     /// clicked point can start a new Tc segment.
     TcPath { node: NodeId, points: Vec<Pos2> },
-    /// Drag the background image.
-    MoveUnderlay,
+    /// Draw a sub-area inside subcatchment `node`'s outline (points are kept inside it and snap
+    /// to nearby corners and edges).
+    SubArea { node: NodeId, points: Vec<Pos2> },
+    /// Move the background (drag it) or resize it (drag a corner); drawings follow it.
+    PlaceUnderlay,
 }
 
 impl Tool {
@@ -29,12 +34,45 @@ impl Tool {
         match self {
             Tool::Select => "Select",
             Tool::Calibrate { .. } => "Calibrate",
-            Tool::Trace { .. } => "Trace Subcatchment",
+            Tool::Trace { node: None, .. } => "Trace Subcatchment",
+            Tool::Trace { node: Some(_), .. } => "Draw Outline",
             Tool::Measure { .. } => "Measure",
             Tool::TcPath { .. } => "Tc Flow Path",
-            Tool::MoveUnderlay => "Move Background",
+            Tool::SubArea { .. } => "Draw Sub-Area",
+            Tool::PlaceUnderlay => "Place Background",
         }
     }
+}
+
+/// A drawn shape of a subcatchment that can be edited point by point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeRef {
+    Outline,
+    /// The drawn sub-area in row `i` of the Area tab.
+    SubArea(usize),
+    TcPath,
+}
+
+impl ShapeRef {
+    fn closed(self) -> bool {
+        !matches!(self, ShapeRef::TcPath)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            ShapeRef::Outline => "Edit Outline",
+            ShapeRef::SubArea(_) => "Edit Sub-Area",
+            ShapeRef::TcPath => "Edit Tc Path",
+        }
+    }
+}
+
+/// Which handle of the background is being dragged in [`Tool::PlaceUnderlay`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlaceMode {
+    Move,
+    /// Uniform resize about the opposite corner (world position).
+    Resize { anchor: Pos2, start_dist: f32 },
 }
 
 /// Transient interaction state (not saved).
@@ -52,7 +90,11 @@ pub enum Drag {
     /// Dragging the head of node `from`'s outflow `k`.
     Reroute { from: NodeId, k: usize, at: Pos2 },
     Pan,
-    Underlay { last: Pos2, before: Project },
+    /// Moving or resizing the background: the transform so far is `k` (scale about the anchor)
+    /// or the last pointer position (move).
+    Underlay { mode: PlaceMode, last: Pos2, k: f32, before: Project },
+    /// Dragging point `index` of a drawn shape of subcatchment `node`.
+    Vertex { node: NodeId, shape: ShapeRef, index: usize, before: Project },
 }
 
 /// Requests from the canvas to the app.
@@ -64,11 +106,18 @@ pub enum CanvasAction {
     ContextNode(NodeId),
     /// Finished calibration: two world points.
     Calibrated(Pos2, Pos2),
-    /// Finished trace: outline in world coordinates.
-    Traced(Vec<Pos2>),
+    /// Finished trace: outline in world coordinates, for a new subcatchment or the given one.
+    Traced(Option<NodeId>, Vec<Pos2>),
     Measured(Vec<Pos2>),
     /// Finished Tc flow path for a subcatchment (world coordinates, upstream end first).
     TcPath(NodeId, Vec<Pos2>),
+    /// Finished sub-area inside a subcatchment's outline (already checked).
+    SubArea(NodeId, Vec<Pos2>),
+    /// A drawn shape of this subcatchment was edited on the diagram (areas and Tc lengths are
+    /// already updated); open dialogs should pick it up.
+    ShapeEdited(NodeId),
+    /// A message for the status line.
+    Message(String),
     Convert(NodeId, NodeType),
     ClearOutflows(NodeId),
 }
@@ -217,6 +266,9 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
     }
     draw_arrows(&painter, doc, canvas, it, &t);
     draw_nodes(&painter, doc, canvas, it, &t);
+    if matches!(tool, Tool::Select) {
+        draw_shape_handles(&painter, doc, canvas, &t);
+    }
 
     let view = doc.view;
     let world_ptr = pointer.map(|p| to_world(&view, canvas, p));
@@ -237,7 +289,7 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
 
     match tool {
         Tool::Select => select_tool(ui, doc, canvas, &resp, it, &mut actions),
-        Tool::MoveUnderlay => move_underlay(ui, doc, canvas, &resp, it),
+        Tool::PlaceUnderlay => place_underlay(ui, doc, canvas, &resp, it, &painter, &t, &mut actions),
         Tool::Calibrate { .. } | Tool::Measure { .. } => {
             let calibrate = matches!(tool, Tool::Calibrate { .. });
             let mut finished = None;
@@ -280,33 +332,270 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
                 *tool = Tool::Select;
             }
         }
-        Tool::Trace { points } => {
-            let mut close = false;
-            if let Some(w) = world_ptr {
-                let near_first = points.len() >= 3 && (to_screen(&doc.view, canvas, points[0]) - to_screen(&doc.view, canvas, w)).length() < 8.0;
-                if resp.double_clicked() && points.len() >= 3 {
-                    close = true;
-                } else if resp.clicked() {
-                    if near_first { close = true } else { points.push(w) }
-                }
-            }
-            if ui.input(|i| i.key_pressed(Key::Enter)) && points.len() >= 3 {
-                close = true;
-            }
-            if ui.input(|i| i.key_pressed(Key::Backspace)) {
-                points.pop();
-            }
-            draw_polyline(&painter, doc, canvas, points, if close { None } else { world_ptr }, true, t.subcat.1);
+        Tool::Trace { points, node } => {
+            // Corners snap to other outlines' corners, so neighbouring subcatchments can share them.
+            let cursor = world_ptr.map(|w| snap_to_drawings(doc, canvas, w, None, None));
+            let close = closing(ui, doc, canvas, &resp, points, cursor) && points.len() >= 3;
+            draw_polyline(&painter, doc, canvas, points, if close { None } else { cursor }, true, t.subcat.1);
             if close {
-                actions.push(CanvasAction::Traced(points.clone()));
+                actions.push(CanvasAction::Traced(*node, points.clone()));
                 *tool = Tool::Select;
             }
         }
+        Tool::SubArea { node, points } => {
+            let id = *node;
+            let outline: Vec<Pt> = doc.project.node(id).and_then(|n| n.outline.clone()).unwrap_or_default();
+            if outline.len() < 3 {
+                actions.push(CanvasAction::Message("Draw the subcatchment's outline before its sub-areas.".into()));
+                *tool = Tool::Select;
+            } else {
+                // Points stay inside the outline and snap to nearby corners and edges.
+                let cursor = world_ptr.map(|w| wp(drawing::clamp_inside(pt(snap_to_drawings(doc, canvas, w, Some(id), None)), &outline)));
+                let mut close = closing(ui, doc, canvas, &resp, points, cursor);
+                if close {
+                    let shape: Vec<Pt> = points.iter().map(|q| pt(*q)).collect();
+                    let others = subarea_outlines(doc, id, None);
+                    let others: Vec<&[Pt]> = others.iter().map(Vec::as_slice).collect();
+                    if let Some(problem) = drawing::subarea_problem(&shape, &outline, &others) {
+                        actions.push(CanvasAction::Message(format!("{problem} Adjust the points (Backspace removes the last) or press Esc.")));
+                        close = false;
+                    }
+                }
+                let next = match doc.project.node(id).map(|n| &n.data) {
+                    Some(NodeData::Subcat(sc)) => sc.areas.len(),
+                    _ => 0,
+                };
+                draw_polyline(&painter, doc, canvas, points, if close { None } else { cursor }, true, subarea_color(next, &t));
+                if close {
+                    actions.push(CanvasAction::SubArea(id, points.clone()));
+                    *tool = Tool::Select;
+                }
+            }
+        }
+    }
+    if *tool == Tool::PlaceUnderlay && ui.input(|i| i.key_pressed(Key::Enter)) && it.drag.is_none() {
+        *tool = Tool::Select;
+        actions.push(CanvasAction::Message("Background placed".into()));
     }
     if ui.input(|i| i.key_pressed(Key::Escape)) && *tool != Tool::Select {
         *tool = Tool::Select;
     }
     actions
+}
+
+fn pt(p: Pos2) -> Pt {
+    [p.x as f64, p.y as f64]
+}
+
+/// Click handling shared by the polygon tools: a click adds `cursor` as a point (or closes the
+/// polygon when it lands on the first point); a double-click or Enter closes it; Backspace
+/// removes the last point. Returns true when the polygon should close.
+fn closing(ui: &Ui, doc: &Doc, canvas: Rect, resp: &Response, points: &mut Vec<Pos2>, cursor: Option<Pos2>) -> bool {
+    let mut close = false;
+    if let Some(w) = cursor {
+        let near_first = points.len() >= 3 && (to_screen(&doc.view, canvas, points[0]) - to_screen(&doc.view, canvas, w)).length() < 8.0;
+        if resp.double_clicked() && points.len() >= 3 {
+            close = true;
+        } else if resp.clicked() {
+            if near_first {
+                close = true;
+            } else if points.last().is_none_or(|l| (to_screen(&doc.view, canvas, *l) - to_screen(&doc.view, canvas, w)).length() > 3.0) {
+                points.push(w);
+            }
+        }
+    }
+    if ui.input(|i| i.key_pressed(Key::Enter)) && points.len() >= 3 {
+        close = true;
+    }
+    if ui.input(|i| i.key_pressed(Key::Backspace)) {
+        points.pop();
+    }
+    close
+}
+
+/// The colour of the drawn sub-area in Area row `i` (the remainder uses the subcatchment colour).
+pub fn subarea_color(i: usize, t: &Tokens) -> Color32 {
+    const PALETTE: [Color32; 8] = [
+        Color32::from_rgb(245, 158, 11),
+        Color32::from_rgb(59, 130, 246),
+        Color32::from_rgb(168, 85, 247),
+        Color32::from_rgb(236, 72, 153),
+        Color32::from_rgb(20, 184, 166),
+        Color32::from_rgb(132, 204, 22),
+        Color32::from_rgb(249, 115, 22),
+        Color32::from_rgb(14, 165, 233),
+    ];
+    icons::ink(t, PALETTE[i % PALETTE.len()])
+}
+
+/// The drawn sub-area outlines of subcatchment `id`, except row `skip`.
+fn subarea_outlines(doc: &Doc, id: NodeId, skip: Option<usize>) -> Vec<Vec<Pt>> {
+    match doc.project.node(id).map(|n| &n.data) {
+        Some(NodeData::Subcat(sc)) => sc.areas.iter().enumerate().filter(|(i, _)| Some(*i) != skip).filter_map(|(_, a)| a.outline.clone()).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The points of one of a node's drawn shapes.
+pub fn shape_points(n: &wavestorm_core::project::Node, s: ShapeRef) -> Option<&Vec<Pt>> {
+    match s {
+        ShapeRef::Outline => n.outline.as_ref(),
+        ShapeRef::TcPath => n.tc_path.as_ref(),
+        ShapeRef::SubArea(i) => match &n.data {
+            NodeData::Subcat(sc) => sc.areas.get(i).and_then(|a| a.outline.as_ref()),
+            _ => None,
+        },
+    }
+}
+
+fn shape_points_mut(n: &mut wavestorm_core::project::Node, s: ShapeRef) -> Option<&mut Vec<Pt>> {
+    match s {
+        ShapeRef::Outline => n.outline.as_mut(),
+        ShapeRef::TcPath => n.tc_path.as_mut(),
+        ShapeRef::SubArea(i) => match &mut n.data {
+            NodeData::Subcat(sc) => sc.areas.get_mut(i).and_then(|a| a.outline.as_mut()),
+            _ => None,
+        },
+    }
+}
+
+/// The shapes of a node that can be edited, in drawing order.
+fn shapes_of(n: &wavestorm_core::project::Node) -> Vec<ShapeRef> {
+    let mut v = Vec::new();
+    if n.outline.is_some() {
+        v.push(ShapeRef::Outline);
+    }
+    if let NodeData::Subcat(sc) = &n.data {
+        v.extend(sc.areas.iter().enumerate().filter(|(_, a)| a.outline.is_some()).map(|(i, _)| ShapeRef::SubArea(i)));
+    }
+    if n.tc_path.is_some() {
+        v.push(ShapeRef::TcPath);
+    }
+    v
+}
+
+/// Snaps `w` to a corner of a drawn outline or sub-area within 8 px (any subcatchment's, so
+/// neighbours can share corners), else to an edge of `node`'s own drawings within 6 px. `skip`
+/// leaves out the point being dragged.
+fn snap_to_drawings(doc: &Doc, canvas: Rect, w: Pos2, node: Option<NodeId>, skip: Option<(NodeId, ShapeRef, usize)>) -> Pos2 {
+    let s = to_screen(&doc.view, canvas, w);
+    let near = |q: Pos2| (to_screen(&doc.view, canvas, q) - s).length();
+    let mut best: Option<(f32, Pos2)> = None;
+    for n in &doc.project.nodes {
+        for shape in shapes_of(n).into_iter().filter(|sh| *sh != ShapeRef::TcPath) {
+            let Some(pts) = shape_points(n, shape) else { continue };
+            for (i, q) in pts.iter().enumerate() {
+                if skip == Some((n.id, shape, i)) {
+                    continue;
+                }
+                let d = near(wp(*q));
+                if d < 8.0 && best.is_none_or(|(b, _)| d < b) {
+                    best = Some((d, wp(*q)));
+                }
+            }
+        }
+    }
+    if let Some((_, q)) = best {
+        return q;
+    }
+    if let Some(n) = node.and_then(|id| doc.project.node(id)) {
+        for shape in shapes_of(n).into_iter().filter(|sh| *sh != ShapeRef::TcPath) {
+            if skip.is_some_and(|(id, sh, _)| id == n.id && sh == shape) {
+                continue;
+            }
+            let Some(pts) = shape_points(n, shape) else { continue };
+            let q = wp(drawing::nearest_on_boundary(pt(w), pts));
+            let d = near(q);
+            if d < 6.0 && best.is_none_or(|(b, _)| d < b) {
+                best = Some((d, q));
+            }
+        }
+    }
+    best.map_or(w, |(_, q)| q)
+}
+
+/// The background image's rectangle in diagram units.
+fn underlay_rect(doc: &Doc) -> Option<Rect> {
+    let (u, tex) = (doc.project.diagram.underlay.as_ref()?, doc.underlay_tex.as_ref()?);
+    Some(Rect::from_min_size(wp(u.origin), tex.size_vec2() * u.scale as f32))
+}
+
+/// Moves or resizes the background with the pointer: drag inside it to move, drag a corner to
+/// resize (keeping its proportions, about the opposite corner). Every drawing moves and scales
+/// with it so it stays registered, and the calibration is kept (real sizes do not change).
+#[allow(clippy::too_many_arguments)]
+fn place_underlay(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &mut Interaction, painter: &egui::Painter, t: &Tokens, actions: &mut Vec<CanvasAction>) {
+    let Some(rect) = underlay_rect(doc) else { return };
+    if doc.project.diagram.underlay.as_ref().is_some_and(|u| u.locked) {
+        actions.push(CanvasAction::Message("The background is locked (Background Settings).".into()));
+        return;
+    }
+    let corners = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()];
+    let screen: Vec<Pos2> = corners.iter().map(|c| to_screen(&doc.view, canvas, *c)).collect();
+    // Frame and corner handles.
+    let r = Rect::from_two_pos(screen[0], screen[2]);
+    painter.rect_stroke(r, 0.0, Stroke::new(1.5, t.hint), egui::StrokeKind::Middle);
+    for c in &screen {
+        let h = Rect::from_center_size(*c, vec2(10.0, 10.0));
+        painter.rect_filled(h, 2.0, t.canvas);
+        painter.rect_stroke(h, 2.0, Stroke::new(1.5, t.hint), egui::StrokeKind::Inside);
+    }
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    let corner_at = |p: Pos2| screen.iter().position(|c| (*c - p).length() < 9.0);
+    if it.drag.is_none()
+        && let Some(hp) = ui.input(|i| i.pointer.hover_pos())
+    {
+        if corner_at(hp).is_some() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+        } else if r.contains(hp) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
+        }
+    }
+    if resp.drag_started_by(egui::PointerButton::Primary)
+        && let Some(p0) = ui.input(|i| i.pointer.press_origin())
+    {
+        let mode = match corner_at(p0) {
+            Some(i) => {
+                let (corner, anchor) = (corners[i], corners[(i + 2) % 4]);
+                Some(PlaceMode::Resize { anchor, start_dist: (corner - anchor).length().max(1e-3) })
+            }
+            None if r.contains(p0) => Some(PlaceMode::Move),
+            None => None,
+        };
+        if let Some(mode) = mode {
+            it.drag = Some(Drag::Underlay { mode, last: to_world(&doc.view, canvas, p0), k: 1.0, before: doc.project.clone() });
+        }
+    }
+    if let (Some(Drag::Underlay { mode, last, k, .. }), Some(p)) = (&mut it.drag, pointer) {
+        let w = to_world(&doc.view, canvas, p);
+        // The change since the last frame, as a scale `inc` about `about` plus a shift.
+        let (about, inc, shift) = match *mode {
+            PlaceMode::Move => {
+                let d = w - *last;
+                *last = w;
+                (Pos2::ZERO, 1.0f64, [d.x as f64, d.y as f64])
+            }
+            PlaceMode::Resize { anchor, start_dist } => {
+                let k_new = ((w - anchor).length() / start_dist).max(0.02);
+                let inc = (k_new / *k) as f64;
+                *k = k_new;
+                (anchor, inc, [0.0, 0.0])
+            }
+        };
+        let a = pt(about);
+        let f = move |q: Pt| [a[0] + (q[0] - a[0]) * inc + shift[0], a[1] + (q[1] - a[1]) * inc + shift[1]];
+        if let Some(u) = &mut doc.project.diagram.underlay {
+            u.origin = f(u.origin);
+            u.scale *= inc;
+            u.feet_per_unit = u.feet_per_unit.map(|fpu| fpu / inc);
+        }
+        drawing::transform(&mut doc.project, &f);
+    }
+    if (resp.drag_stopped() || (matches!(it.drag, Some(Drag::Underlay { .. })) && !ui.input(|i| i.pointer.any_down())))
+        && let Some(Drag::Underlay { mode, before, .. }) = it.drag.take()
+    {
+        doc.commit_from(if mode == PlaceMode::Move { "Move Background" } else { "Resize Background" }, before);
+    }
 }
 
 fn snap(doc: &Doc, w: Pos2) -> Pos2 {
@@ -385,6 +674,21 @@ fn draw_underlay(p: &egui::Painter, doc: &Doc, canvas: Rect) {
     p.image(tex.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
 }
 
+/// Fills a simple (possibly concave) polygon given in diagram units.
+fn fill_polygon(p: &egui::Painter, doc: &Doc, canvas: Rect, poly: &[Pt], fill: Color32) {
+    let mut mesh = egui::Mesh::default();
+    for q in poly {
+        mesh.colored_vertex(to_screen(&doc.view, canvas, wp(*q)), fill);
+    }
+    for [a, b, c] in drawing::triangulate(poly) {
+        mesh.add_triangle(a as u32, b as u32, c as u32);
+    }
+    p.add(Shape::mesh(mesh));
+}
+
+/// Subcatchment outlines and their drawn sub-areas. The outline's fill (the subcatchment
+/// colour) shows the remainder; each drawn sub-area has its own colour (as on the Area tab)
+/// and, when there is room, its curve number.
 fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
     for n in &doc.project.nodes {
         let Some(o) = &n.outline else { continue };
@@ -393,18 +697,24 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
         }
         let pts: Vec<Pos2> = o.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
         let sel = doc.is_selected(n.id);
-        let fill = Color32::from_rgba_unmultiplied(t.subcat.1.r(), t.subcat.1.g(), t.subcat.1.b(), if sel { 60 } else { 34 });
-        // Fill via triangle fan (outlines may be concave; fan from centroid is a fair approximation).
-        let c = to_screen(&doc.view, canvas, polygon_centroid(&o.iter().map(|q| wp(*q)).collect::<Vec<_>>()));
-        let mut mesh = egui::Mesh::default();
-        mesh.colored_vertex(c, fill);
-        for q in &pts {
-            mesh.colored_vertex(*q, fill);
+        let a = |c: Color32, k: u8| Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), k);
+        fill_polygon(p, doc, canvas, o, a(t.subcat.1, if sel { 60 } else { 34 }));
+        if let NodeData::Subcat(sc) = &n.data {
+            for (i, area) in sc.areas.iter().enumerate() {
+                let Some(so) = &area.outline else { continue };
+                let c = subarea_color(i, t);
+                fill_polygon(p, doc, canvas, so, a(c, if sel { 110 } else { 80 }));
+                let sp: Vec<Pos2> = so.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
+                p.add(Shape::closed_line(sp.clone(), Stroke::new(1.5, c)));
+                let r = Rect::from_points(&sp);
+                if r.width() > 44.0 && r.height() > 22.0 {
+                    let at = to_screen(&doc.view, canvas, wp(drawing::centroid(so)));
+                    let label = format!("CN {}", wavestorm_core::units::group(area.cn, 0));
+                    p.text(at + vec2(0.8, 0.8), Align2::CENTER_CENTER, &label, FontId::proportional(11.0), if t.is_dark() { Color32::BLACK } else { Color32::WHITE });
+                    p.text(at, Align2::CENTER_CENTER, label, FontId::proportional(11.0), if t.is_dark() { Color32::WHITE } else { icons::ink(t, Color32::from_rgb(20, 20, 20)) });
+                }
+            }
         }
-        for i in 0..pts.len() as u32 {
-            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % pts.len() as u32);
-        }
-        p.add(Shape::mesh(mesh));
         p.add(Shape::closed_line(pts, Stroke::new(if sel { 2.5 } else { 1.5 }, t.subcat.1)));
     }
 }
@@ -736,6 +1046,110 @@ fn draw_polyline(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], curso
     }
 }
 
+/// A handle of a drawn shape: a point, or the middle of an edge (dragging it adds a point).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Handle {
+    Vertex(NodeId, ShapeRef, usize),
+    /// The middle of edge `i` (from point `i` to the next).
+    Mid(NodeId, ShapeRef, usize),
+}
+
+/// The subcatchment whose drawings can be edited: the only selected node, if it has drawings.
+fn editable_node(doc: &Doc) -> Option<&wavestorm_core::project::Node> {
+    match doc.selection.as_slice() {
+        [id] => doc.project.node(*id).filter(|n| !shapes_of(n).is_empty()),
+        _ => None,
+    }
+}
+
+/// The midpoints of a shape's edges (the closing edge too for polygons).
+fn midpoints(pts: &[Pt], closed: bool) -> Vec<Pt> {
+    let n = pts.len();
+    let edges = if closed { n } else { n.saturating_sub(1) };
+    (0..edges).map(|i| (pts[i], pts[(i + 1) % n])).map(|(a, b)| [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]).collect()
+}
+
+/// The shape handle under screen point `p` (points first; the Tc path and sub-areas before
+/// the outline they lie on).
+fn shape_handle_at(doc: &Doc, canvas: Rect, p: Pos2) -> Option<Handle> {
+    let n = editable_node(doc)?;
+    let mut shapes = shapes_of(n);
+    shapes.reverse();
+    let near = |q: Pt, r: f32| (to_screen(&doc.view, canvas, wp(q)) - p).length() < r;
+    for s in &shapes {
+        if let Some(i) = shape_points(n, *s).and_then(|pts| pts.iter().position(|q| near(*q, 7.0))) {
+            return Some(Handle::Vertex(n.id, *s, i));
+        }
+    }
+    for s in &shapes {
+        if let Some(i) = shape_points(n, *s).and_then(|pts| midpoints(pts, s.closed()).iter().position(|q| near(*q, 6.0))) {
+            return Some(Handle::Mid(n.id, *s, i));
+        }
+    }
+    None
+}
+
+/// The colour of a drawn shape of node `n`.
+fn shape_color(s: ShapeRef, t: &Tokens) -> Color32 {
+    match s {
+        ShapeRef::Outline => t.subcat.1,
+        ShapeRef::SubArea(i) => subarea_color(i, t),
+        ShapeRef::TcPath => t.hint,
+    }
+}
+
+/// Point and midpoint handles of the editable subcatchment's drawings.
+fn draw_shape_handles(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
+    let Some(n) = editable_node(doc) else { return };
+    for s in shapes_of(n) {
+        let Some(pts) = shape_points(n, s) else { continue };
+        let c = shape_color(s, t);
+        for q in midpoints(pts, s.closed()) {
+            p.circle_filled(to_screen(&doc.view, canvas, wp(q)), 2.5, crate::glass::alpha(c, 0.55));
+        }
+        for q in pts {
+            let r = Rect::from_center_size(to_screen(&doc.view, canvas, wp(*q)), vec2(7.0, 7.0));
+            p.rect_filled(r, 1.0, t.canvas);
+            p.rect_stroke(r, 1.0, Stroke::new(1.5, c), egui::StrokeKind::Inside);
+        }
+    }
+}
+
+/// Why a subcatchment's drawings are not acceptable after an edit, if they are not: every
+/// drawn sub-area must lie inside the outline without overlapping another.
+pub fn drawings_problem(n: &wavestorm_core::project::Node) -> Option<&'static str> {
+    let NodeData::Subcat(sc) = &n.data else { return None };
+    let outline = n.outline.as_deref()?;
+    let shapes: Vec<&[Pt]> = sc.areas.iter().filter_map(|a| a.outline.as_deref()).collect();
+    (0..shapes.len()).find_map(|i| {
+        let others: Vec<&[Pt]> = shapes.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, s)| *s).collect();
+        drawing::subarea_problem(shapes[i], outline, &others)
+    })
+}
+
+/// Settles an edit of a drawn shape: undoes it if a sub-area would leave the outline or
+/// overlap another; otherwise re-measures (a changed outline scales an undrawn subcatchment's
+/// areas, a drawn one recomputes its remainder; Tc segments take their new lengths) and
+/// records one undo step.
+fn finish_shape_edit(doc: &mut Doc, node: NodeId, shape: ShapeRef, before: Project, actions: &mut Vec<CanvasAction>) {
+    if let Some(problem) = doc.project.node(node).and_then(drawings_problem) {
+        doc.project = before;
+        actions.push(CanvasAction::Message(format!("{problem} The edit was undone.")));
+        return;
+    }
+    let fpu = drawing::feet_per_unit(&doc.project);
+    let old = before.node(node).and_then(|b| b.outline.as_deref()).map(|o| drawing::polygon_area(o) * fpu * fpu).unwrap_or(0.0);
+    if let Some(n) = doc.project.node_mut(node) {
+        let outline = n.outline.clone();
+        if let (ShapeRef::Outline, Some(o), NodeData::Subcat(sc)) = (shape, &outline, &mut n.data) {
+            drawing::outline_changed(sc, o, old, fpu);
+        }
+        drawing::sync_node(n, fpu);
+    }
+    doc.commit_from(shape.label(), before);
+    actions.push(CanvasAction::ShapeEdited(node));
+}
+
 fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &mut Interaction, actions: &mut Vec<CanvasAction>) {
     let d = doc.project.diagram.symbol_size as f32;
     let (pointer, mods) = ui.input(|i| (i.pointer.interact_pos(), i.modifiers));
@@ -751,7 +1165,24 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
         // button went down, not where the pointer is now. Arrowheads come before node bodies.
         let start = ui.input(|i| i.pointer.press_origin()).unwrap_or(p);
         let start_world = to_world(&doc.view, canvas, start);
-        if let Some((from, k)) = handle_at(doc, canvas, start) {
+        if let Some(h) = shape_handle_at(doc, canvas, start) {
+            // A point of a drawn shape: drag it; a midpoint inserts a new point there first.
+            let before = doc.project.clone();
+            let (node, shape, index) = match h {
+                Handle::Vertex(n, s, i) => (n, s, i),
+                Handle::Mid(n, s, edge) => {
+                    if let Some(nd) = doc.project.node_mut(n) {
+                        if s == ShapeRef::TcPath {
+                            drawing::insert_path_point(nd, edge, pt(start_world));
+                        } else if let Some(pts) = shape_points_mut(nd, s) {
+                            pts.insert(edge + 1, pt(start_world));
+                        }
+                    }
+                    (n, s, edge + 1)
+                }
+            };
+            it.drag = Some(Drag::Vertex { node, shape, index, before });
+        } else if let Some((from, k)) = handle_at(doc, canvas, start) {
             it.drag = Some(Drag::Reroute { from, k, at: p });
         } else if let Some(id) = node_at(&doc.project, start_world, d) {
             if !doc.is_selected(id) {
@@ -799,21 +1230,48 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
                 let delta = w - *last;
                 *last = w;
                 let sel = doc.selection.clone();
+                let (dx, dy) = (delta.x as f64, delta.y as f64);
                 for id in sel {
                     if let Some(n) = doc.project.node_mut(id) {
-                        n.pos[0] += delta.x as f64;
-                        n.pos[1] += delta.y as f64;
-                        if let Some(o) = &mut n.outline {
-                            for q in o.iter_mut() {
-                                q[0] += delta.x as f64;
-                                q[1] += delta.y as f64;
-                            }
+                        n.pos[0] += dx;
+                        n.pos[1] += dy;
+                        // A subcatchment's drawings travel with its symbol.
+                        let mv = |pts: &mut Vec<Pt>| pts.iter_mut().for_each(|q| *q = [q[0] + dx, q[1] + dy]);
+                        n.outline.as_mut().map(mv);
+                        n.tc_path.as_mut().map(mv);
+                        if let NodeData::Subcat(sc) = &mut n.data {
+                            sc.areas.iter_mut().filter_map(|a| a.outline.as_mut()).for_each(mv);
                         }
                     }
                 }
             }
             Drag::Reroute { at, .. } => *at = p,
             Drag::Underlay { .. } => {}
+            Drag::Vertex { node, shape, index, .. } => {
+                let (node, shape, index) = (*node, *shape, *index);
+                let w = to_world(&doc.view, canvas, p);
+                let placed = match shape {
+                    ShapeRef::Outline => pt(snap_to_drawings(doc, canvas, w, None, Some((node, shape, index)))),
+                    ShapeRef::SubArea(_) => {
+                        let snapped = pt(snap_to_drawings(doc, canvas, w, Some(node), Some((node, shape, index))));
+                        match doc.project.node(node).and_then(|n| n.outline.as_ref()) {
+                            Some(o) => drawing::clamp_inside(snapped, o),
+                            None => snapped,
+                        }
+                    }
+                    ShapeRef::TcPath => pt(w),
+                };
+                let fpu = drawing::feet_per_unit(&doc.project);
+                if let Some(n) = doc.project.node_mut(node) {
+                    if let Some(q) = shape_points_mut(n, shape).and_then(|pts| pts.get_mut(index)) {
+                        *q = placed;
+                    }
+                    // Live feedback for drawn sub-areas and Tc lengths; outlines settle on release.
+                    if shape != ShapeRef::Outline {
+                        drawing::sync_node(n, fpu);
+                    }
+                }
+            }
         }
     }
     if let (Some((_, b)), Some(p)) = (&mut it.rubber, pointer) {
@@ -828,6 +1286,7 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
     // Drag end.
     if resp.drag_stopped() || (it.drag.is_some() && !ui.input(|i| i.pointer.any_down())) {
         match it.drag.take() {
+            Some(Drag::Vertex { node, shape, before, .. }) => finish_shape_edit(doc, node, shape, before, actions),
             Some(Drag::Nodes { before, cloned, .. }) => {
                 if doc.project.diagram.snap_to_grid {
                     let sel = doc.selection.clone();
@@ -898,6 +1357,44 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
     {
         actions.push(CanvasAction::OpenReport(id));
     }
+    // Right-click a point of a drawn shape to delete it.
+    if resp.secondary_clicked()
+        && let Some(p) = pointer
+        && let Some(Handle::Vertex(node, shape, index)) = shape_handle_at(doc, canvas, p)
+    {
+        let before = doc.project.clone();
+        let removed = doc.project.node_mut(node).is_some_and(|n| match shape {
+            ShapeRef::TcPath => drawing::remove_path_point(n, index),
+            _ => shape_points_mut(n, shape).is_some_and(|pts| {
+                let ok = pts.len() > 3 && index < pts.len();
+                if ok {
+                    pts.remove(index);
+                }
+                ok
+            }),
+        });
+        if removed {
+            finish_shape_edit(doc, node, shape, before, actions);
+        } else {
+            actions.push(CanvasAction::Message("A shape keeps at least three points (a Tc path two).".into()));
+        }
+        return;
+    }
+    // Pointer over a shape's point: show that it can be dragged.
+    if it.drag.is_none()
+        && let Some(hp) = ui.input(|i| i.pointer.hover_pos())
+        && resp.hovered()
+        && let Some(h) = shape_handle_at(doc, canvas, hp)
+    {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
+        crate::widgets::set_status_hint(
+            ui.ctx(),
+            match h {
+                Handle::Vertex(..) => "Drag to move this point; right-click to delete it",
+                Handle::Mid(..) => "Drag to add a point here",
+            },
+        );
+    }
     if resp.secondary_clicked()
         && let Some(id) = world.and_then(|w| node_at(&doc.project, w, d))
     {
@@ -914,31 +1411,6 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
     {
         resp.clone().on_hover_text_at_pointer(n.title());
     }
-}
-
-fn move_underlay(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &mut Interaction) {
-    let pointer = ui.input(|i| i.pointer.interact_pos());
-    if resp.drag_started_by(egui::PointerButton::Primary)
-        && let Some(p) = pointer
-    {
-        it.drag = Some(Drag::Underlay { last: to_world(&doc.view, canvas, p), before: doc.project.clone() });
-    }
-    if let (Some(Drag::Underlay { last, .. }), Some(p)) = (&mut it.drag, pointer) {
-        let w = to_world(&doc.view, canvas, p);
-        let delta = w - *last;
-        *last = w;
-        if let Some(u) = &mut doc.project.diagram.underlay {
-            u.origin[0] += delta.x as f64;
-            u.origin[1] += delta.y as f64;
-        }
-    }
-    if resp.drag_stopped()
-        && let Some(Drag::Underlay { before, .. }) = it.drag.take()
-    {
-        doc.commit_from("Move Background", before);
-    }
-    let _ = vec2(0.0, 0.0);
-    let _ = Align2::CENTER_CENTER;
 }
 
 /// Classic scrollbars for the diagram: `canvas` is the diagram area, `vbar`/`hbar` the strips.

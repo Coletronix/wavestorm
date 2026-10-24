@@ -10,6 +10,7 @@ pub mod base64;
 pub mod calc;
 pub mod chamber;
 pub mod cn;
+pub mod drawing;
 pub mod exchange;
 pub mod geometry;
 pub mod hcp;

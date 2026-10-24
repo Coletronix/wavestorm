@@ -214,15 +214,27 @@ impl WaveStormApp {
                     return Err(format!("{} could not be read as an image or PDF.", item.name));
                 }
                 let raster = underlay::rasterize(&item.bytes, 0, 150.0)?;
+                let canvas = self.canvas_rect;
                 let doc = self.doc();
-                let width = raster.width.max(1) as f64;
-                let scale = 1200.0 / width;
+                let (w, h) = (raster.width.max(1) as f64, raster.height.max(1) as f64);
+                // The image starts sized to the diagram as it is in view (90 %, centred), so it
+                // relates to the symbols on screen; the placement tool then adjusts it.
+                let view = canvas.is_finite().then(|| (diagram::to_world(&doc.view, canvas, canvas.min), diagram::to_world(&doc.view, canvas, canvas.max)));
+                let (origin, scale) = match view {
+                    Some((a, b)) if b.x > a.x && b.y > a.y => {
+                        let s = 0.9 * ((b.x - a.x) as f64 / w).min((b.y - a.y) as f64 / h);
+                        let c = [((a.x + b.x) / 2.0) as f64, ((a.y + b.y) / 2.0) as f64];
+                        ([c[0] - w * s / 2.0, c[1] - h * s / 2.0], s)
+                    }
+                    _ => ([0.0, 0.0], 1200.0 / w),
+                };
+                let fit = view.is_none();
                 doc.edit("Load Background", |p| {
                     p.diagram.underlay = Some(wavestorm_core::project::Underlay {
                         file_name: item.name.clone(),
                         bytes: item.bytes.clone(),
                         page: 0,
-                        origin: [0.0, 0.0],
+                        origin,
                         scale,
                         rotation: 0.0,
                         feet_per_unit: None,
@@ -232,9 +244,15 @@ impl WaveStormApp {
                     });
                 });
                 doc.underlay_key = None;
-                doc.fit_pending = true;
+                doc.fit_pending = fit;
                 doc.windows.push(Window::Calibrate(dialogs::misc::CalibrateState::intro()));
-                self.status = format!("Background loaded: {} ({} page{}). Use Diagram > Background > Calibrate Scale.", item.name, pages, if pages == 1 { "" } else { "s" });
+                self.start_place_underlay();
+                self.status = format!(
+                    "Background loaded: {} ({} page{}). Drag it to move it or a corner to resize it, press Enter when done, then calibrate (Diagram > Background > Calibrate Scale).",
+                    item.name,
+                    pages,
+                    if pages == 1 { "" } else { "s" }
+                );
             }
             Purpose::RatingCsv => {
                 let rows = dialogs::outlet::parse_rating(&String::from_utf8_lossy(&item.bytes))?;
@@ -764,8 +782,8 @@ impl WaveStormApp {
                         self.status = "Click two points a known distance apart on the background".into();
                         ui.close();
                     }
-                    if ui.add_enabled(has, egui::Button::new("Move Background")).clicked() {
-                        self.tool = Tool::MoveUnderlay;
+                    if ui.add_enabled(has, egui::Button::new("Move / Resize Background")).clicked() {
+                        self.start_place_underlay();
                         ui.close();
                     }
                     if ui.add_enabled(has, egui::Button::new("Background Settings...")).clicked() {
@@ -954,13 +972,109 @@ impl WaveStormApp {
     }
 
     fn start_trace(&mut self) {
+        self.start_outline(None);
+    }
+
+    /// Starts tracing an outline: for a new subcatchment, or to give subcatchment `node` a new one.
+    fn start_outline(&mut self, node: Option<NodeId>) {
         let has_scale = self.doc().project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit).is_some();
-        self.tool = Tool::Trace { points: Vec::new() };
+        if let Some(id) = node {
+            self.doc().selection = vec![id];
+        }
+        self.tool = Tool::Trace { points: Vec::new(), node };
         self.status = if has_scale {
             "Click the outline corners; click the first point, double-click or press Enter to close (Backspace undoes a point)".into()
         } else {
             "No calibrated background: areas will use 1 diagram unit = 1 ft. Calibrate the background first for real areas.".into()
         };
+    }
+
+    /// Starts drawing a sub-area inside subcatchment `id`'s outline.
+    fn start_subarea(&mut self, id: NodeId) {
+        self.doc().selection = vec![id];
+        self.tool = Tool::SubArea { node: id, points: Vec::new() };
+        self.status = "Click the sub-area's corners inside the outline (they snap to nearby corners and edges); click the first point, double-click or press Enter to close".into();
+    }
+
+    /// Starts moving / resizing the background.
+    fn start_place_underlay(&mut self) {
+        self.tool = Tool::PlaceUnderlay;
+        self.status = "Drag the background to move it, or a corner to resize it; drawings follow it. Press Enter or Esc when done.".into();
+    }
+
+    /// A finished outline for an existing subcatchment: its sub-areas must still fit inside it;
+    /// the areas follow the new outline (scaled, or the remainder recomputed).
+    fn redraw_outline(&mut self, id: NodeId, points: Vec<Pos2>) {
+        let outline: Vec<[f64; 2]> = points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
+        let doc = self.doc();
+        let fpu = wavestorm_core::drawing::feet_per_unit(&doc.project);
+        let Some(n) = doc.project.node(id) else { return };
+        let mut trial = n.clone();
+        trial.outline = Some(outline.clone());
+        if let Some(problem) = diagram::drawings_problem(&trial) {
+            self.error = Some(format!("{problem} Redraw the outline around all the drawn sub-areas, or delete those that no longer fit."));
+            return;
+        }
+        let old = match (&n.outline, &n.data) {
+            (Some(o), _) => wavestorm_core::drawing::polygon_area(o) * fpu * fpu,
+            (None, NodeData::Subcat(sc)) => sc.areas.iter().map(|a| a.area).sum(),
+            _ => 0.0,
+        };
+        doc.edit("Draw Outline", |p| {
+            if let Some(n) = p.node_mut(id) {
+                n.outline = Some(outline.clone());
+                if let NodeData::Subcat(sc) = &mut n.data {
+                    wavestorm_core::drawing::outline_changed(sc, &outline, old, fpu);
+                }
+            }
+        });
+        self.refresh_drafts(id);
+        self.status = "Outline updated; the areas follow it".into();
+    }
+
+    /// Adds a drawn sub-area to subcatchment `id` (CN 98 to start) and opens the Area tab with
+    /// the new row selected and the curve-number lookup open, to pick its cover.
+    fn add_subarea(&mut self, id: NodeId, points: Vec<Pos2>) {
+        let outline: Vec<[f64; 2]> = points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
+        let doc = self.doc();
+        let fpu = wavestorm_core::drawing::feet_per_unit(&doc.project);
+        let mut row = 0;
+        doc.edit("Draw Sub-Area", |p| {
+            if let Some(n) = p.node_mut(id) {
+                let main = n.outline.clone();
+                if let NodeData::Subcat(sc) = &mut n.data {
+                    let mut a = wavestorm_core::cn::SubArea::new(0.0, 98.0, "Drawn sub-area (choose its cover)");
+                    a.outline = Some(outline.clone());
+                    sc.areas.push(a);
+                    row = sc.areas.len() - 1;
+                    wavestorm_core::drawing::sync_subareas(sc, main.as_deref(), fpu);
+                }
+            }
+        });
+        self.refresh_drafts(id);
+        self.open_edit(id);
+        for w in &mut self.doc().windows {
+            if let Window::Edit(e) = w
+                && e.node == id
+            {
+                e.tab = 1;
+                e.sel_row = Some(row);
+                e.cn_lookup.open = true;
+            }
+        }
+        self.status = "Sub-area added: pick its ground cover. The remainder row is the outline less the drawn sub-areas.".into();
+    }
+
+    /// Refreshes open edit dialogs of node `id` after its drawings changed on the diagram.
+    fn refresh_drafts(&mut self, id: NodeId) {
+        let Some(n) = self.doc().project.node(id).cloned() else { return };
+        for w in &mut self.doc().windows {
+            if let Window::Edit(e) = w
+                && e.node == id
+            {
+                e.draft = n.clone();
+            }
+        }
     }
 
     /// Screen position of a diagram point (for tests and automation).
@@ -1066,8 +1180,16 @@ impl WaveStormApp {
             Cmd::Trace => matches!(self.tool, Tool::Trace { .. }),
             Cmd::Measure => matches!(self.tool, Tool::Measure { .. }),
             Cmd::TcPath => matches!(self.tool, Tool::TcPath { .. }),
+            Cmd::SubArea => matches!(self.tool, Tool::SubArea { .. }),
+            Cmd::PlaceUnderlay => self.tool == Tool::PlaceUnderlay,
             _ => false,
         }
+    }
+
+    /// The one selected subcatchment, if it has a drawn outline.
+    fn selected_outlined(&self) -> Option<NodeId> {
+        let doc = self.docs.get(self.active)?;
+        self.selected_subcat().filter(|id| doc.project.node(*id).is_some_and(|n| n.outline.is_some()))
     }
 
     /// The one selected subcatchment, if exactly one is selected.
@@ -1083,6 +1205,8 @@ impl WaveStormApp {
     fn cmd_enabled(&self, c: Cmd) -> bool {
         match c {
             Cmd::TcPath => self.selected_subcat().is_some() || self.cmd_active(c),
+            Cmd::SubArea => self.selected_outlined().is_some() || self.cmd_active(c),
+            Cmd::PlaceUnderlay => self.docs.get(self.active).is_some_and(|d| d.project.diagram.underlay.is_some()),
             _ => true,
         }
     }
@@ -1161,6 +1285,12 @@ impl WaveStormApp {
                     self.start_tc_path(id);
                 }
             }
+            Cmd::SubArea => {
+                if let Some(id) = self.selected_outlined() {
+                    self.start_subarea(id);
+                }
+            }
+            Cmd::PlaceUnderlay => self.start_place_underlay(),
             Cmd::Undo => {
                 self.doc().undo();
             }
@@ -1219,7 +1349,7 @@ impl WaveStormApp {
             ui.spacing_mut().item_spacing.y = 2.0;
             let groups: [&[Cmd]; 3] = [
                 &[Cmd::Select, Cmd::Units, Cmd::LandUse, Cmd::Calculation, Cmd::Diagram, Cmd::General, Cmd::Idf, Cmd::Print, Cmd::Messages],
-                &[Cmd::Underlay, Cmd::Calibrate, Cmd::Trace, Cmd::Measure, Cmd::TcPath],
+                &[Cmd::Underlay, Cmd::PlaceUnderlay, Cmd::Calibrate, Cmd::Trace, Cmd::SubArea, Cmd::Measure, Cmd::TcPath],
                 &[Cmd::Undo, Cmd::Redo],
             ];
             for (i, group) in groups.into_iter().enumerate() {
@@ -1361,7 +1491,14 @@ impl WaveStormApp {
                     let doc = self.doc();
                     doc.windows.push(Window::Calibrate(dialogs::misc::CalibrateState::distance(a, b)));
                 }
-                CanvasAction::Traced(points) => self.finish_trace(points),
+                CanvasAction::Traced(None, points) => self.finish_trace(points),
+                CanvasAction::Traced(Some(id), points) => self.redraw_outline(id, points),
+                CanvasAction::SubArea(id, points) => self.add_subarea(id, points),
+                CanvasAction::ShapeEdited(id) => {
+                    self.refresh_drafts(id);
+                    self.status = "Drawing updated; areas and Tc lengths follow it".into();
+                }
+                CanvasAction::Message(m) => self.status = m,
                 CanvasAction::Measured(points) => {
                     let len = diagram::polyline_length(&points) as f64;
                     let doc = self.doc();
@@ -1461,9 +1598,20 @@ impl WaveStormApp {
                         }
                     });
                 }
-                if n.node_type() == NodeType::Subcat && n.outline.is_some() && ui.button("Update Area from Outline").clicked() {
-                    self.area_from_outline(id);
-                    close = true;
+                if n.node_type() == NodeType::Subcat {
+                    let has = n.outline.is_some();
+                    if ui.button(if has { "Redraw Outline" } else { "Draw Outline" }).on_hover_text("Trace this subcatchment's outline on the diagram; its areas follow it").clicked() {
+                        self.start_outline(Some(id));
+                        close = true;
+                    }
+                    if has && ui.button("Draw Sub-Area").on_hover_text("Draw an area of different cover inside the outline; the rest of the outline is the remainder").clicked() {
+                        self.start_subarea(id);
+                        close = true;
+                    }
+                    if has && ui.button("Update Area from Outline").clicked() {
+                        self.area_from_outline(id);
+                        close = true;
+                    }
                 }
                 if n.node_type() == NodeType::Subcat && ui.button("Draw Tc Flow Path").on_hover_text("Measure the Tc segment lengths from a path drawn on the diagram").clicked() {
                     self.start_tc_path(id);
@@ -1482,22 +1630,16 @@ impl WaveStormApp {
         let fpu = doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit).unwrap_or(1.0);
         doc.edit("Area from Outline", |p| {
             if let Some(n) = p.node_mut(id) {
-                let Some(o) = &n.outline else { return };
-                let pts: Vec<Pos2> = o.iter().map(|q| pos2(q[0] as f32, q[1] as f32)).collect();
-                let area = diagram::polygon_area(&pts) as f64 * fpu * fpu;
+                let Some(o) = n.outline.clone() else { return };
                 if let NodeData::Subcat(sc) = &mut n.data {
+                    // The rows' total becomes the outline's area (scaled in proportion), or a
+                    // drawn subcatchment recomputes its remainder.
                     let current: f64 = sc.areas.iter().map(|a| a.area).sum();
-                    if sc.areas.is_empty() {
-                        sc.areas.push(wavestorm_core::cn::SubArea::new(area, 61.0, "Open Space, Good, HSG B"));
-                    } else if current > 0.0 {
-                        // Scale existing sub-areas proportionally to the outline area.
-                        for a in &mut sc.areas {
-                            a.area *= area / current;
-                        }
-                    }
+                    wavestorm_core::drawing::outline_changed(sc, &o, current, fpu);
                 }
             }
         });
+        self.refresh_drafts(id);
     }
 
     fn window_actions(&mut self, actions: Vec<WindowAction>) {
@@ -1522,6 +1664,9 @@ impl WaveStormApp {
                 },
                 WindowAction::SetEvents { events, replace } => self.set_events(events, replace),
                 WindowAction::DrawTcPath(id) => self.start_tc_path(id),
+                WindowAction::DrawOutline(id) => self.start_outline(Some(id)),
+                WindowAction::DrawSubArea(id) => self.start_subarea(id),
+                WindowAction::PlaceUnderlay => self.start_place_underlay(),
             }
         }
     }
@@ -1708,7 +1853,7 @@ impl WaveStormApp {
     fn glass_dock(&mut self, ui: &mut Ui, canvas: Rect) {
         let t = Tokens::get(ui.ctx());
         let groups: [&[Cmd]; 4] = [
-            &[Cmd::Select, Cmd::Trace, Cmd::Measure, Cmd::TcPath, Cmd::Calibrate, Cmd::Underlay],
+            &[Cmd::Select, Cmd::Trace, Cmd::SubArea, Cmd::Measure, Cmd::TcPath, Cmd::Calibrate, Cmd::Underlay, Cmd::PlaceUnderlay],
             &[Cmd::ZoomOut, Cmd::ZoomIn, Cmd::ZoomAll, Cmd::ZoomSelected],
             &[Cmd::Edit, Cmd::Delete],
             &[Cmd::Report, Cmd::Compare, Cmd::ProjectReports, Cmd::PrintDiagram],
@@ -1963,6 +2108,8 @@ enum Cmd {
     Trace,
     Measure,
     TcPath,
+    SubArea,
+    PlaceUnderlay,
     Undo,
     Redo,
 }
@@ -1997,6 +2144,8 @@ impl Cmd {
             Cmd::Trace => Glyph::Trace,
             Cmd::Measure => Glyph::Measure,
             Cmd::TcPath => Glyph::TcPath,
+            Cmd::SubArea => Glyph::SubArea,
+            Cmd::PlaceUnderlay => Glyph::PlaceUnderlay,
             Cmd::Undo => Glyph::Undo,
             Cmd::Redo => Glyph::Redo,
         }
@@ -2006,6 +2155,8 @@ impl Cmd {
     fn disabled_tip(self) -> &'static str {
         match self {
             Cmd::TcPath => "Draw Tc flow path: select one subcatchment first",
+            Cmd::SubArea => "Draw sub-area: select one subcatchment that has a drawn outline first",
+            Cmd::PlaceUnderlay => "Move / resize background: load a background first",
             _ => self.tip(),
         }
     }
@@ -2039,6 +2190,8 @@ impl Cmd {
             Cmd::Trace => "Trace a subcatchment outline",
             Cmd::Measure => "Measure length",
             Cmd::TcPath => "Draw the selected subcatchment's Tc flow path (segment lengths are measured from it)",
+            Cmd::SubArea => "Draw a sub-area of different cover inside the selected subcatchment's outline (the rest is the remainder)",
+            Cmd::PlaceUnderlay => "Move or resize the background (drawings follow it)",
             Cmd::Undo => "Undo",
             Cmd::Redo => "Redo",
         }
@@ -2084,7 +2237,8 @@ impl eframe::App for WaveStormApp {
 /// `report:1P`, `edit:1S`, `tab:<n>`, `select:1R`, `settings`, `settings-tab:<n>`, `messages`,
 /// `project-report`, `storms`, `uhs`, `units`, `theme:<classic|modern|dark|glass>`, `compare`, `new`,
 /// `table`, `inflows` (tabular hydrograph with inflow columns), `general`,
-/// `profile:<labels,…>`, `import-tr20:<path>` and `lookup:<NOAA csv path>` (desktop).
+/// `profile:<labels,…>`, `import-tr20:<path>` and `lookup:<NOAA csv path>` (desktop); drawing
+/// tools: `trace`, `outline:1S`, `subarea:1S`, `tc-path:1S`, `place-background`, `close`.
 pub fn script(app: &mut WaveStormApp, cmd: &str) {
     let (verb, arg) = cmd.split_once(':').unwrap_or((cmd, ""));
     let find = |app: &mut WaveStormApp, label: &str| app.doc().project.by_label(label).map(|n| n.id);
@@ -2117,6 +2271,17 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
                 app.start_tc_path(id);
             }
         }
+        "subarea" => {
+            if let Some(id) = find(app, arg) {
+                app.start_subarea(id);
+            }
+        }
+        "outline" => {
+            if let Some(id) = find(app, arg) {
+                app.start_outline(Some(id));
+            }
+        }
+        "place-background" => app.start_place_underlay(),
         "tab" => {
             let n: usize = arg.parse().unwrap_or(0);
             if let Some(w) = app.doc().windows.last_mut() {

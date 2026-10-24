@@ -501,6 +501,7 @@ fn general(ui: &mut Ui, st: &mut EditState, project: &wavestorm_core::project::P
 
 fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, actions: &mut Vec<WindowAction>) {
     let path = st.draft.tc_path.clone();
+    let outline = st.draft.outline.clone();
     let NodeData::Subcat(sc) = &mut st.draft.data else { return };
     let large = sc.large_units;
     let area_unit = if large { u.area_label() } else if u.metric() { "m²" } else { "sq-ft" };
@@ -511,27 +512,49 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
         // Refresh the text buffer when it no longer matches the data (first show, lookups).
         let parsed: Vec<(f64, f64, String)> = st.area_rows.iter().filter(|r| r.iter().any(|c| !c.trim().is_empty())).map(|r| (widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0), widgets::cell_num(&r[1]).unwrap_or(0.0), r[2].clone())).collect();
         let same = parsed.len() == sc.areas.len() && parsed.iter().zip(&sc.areas).all(|(p, a)| (p.0 - a.area).abs() < 1e-6 * a.area.abs().max(1.0) && (p.1 - a.cn).abs() < 1e-9 && p.2 == a.description);
+        let drawn = sc.areas.iter().any(|a| a.outline.is_some());
+        let source = |a: &SubArea| if a.outline.is_some() { "drawn" } else if a.remainder && drawn { "remainder" } else { "" };
         if !same {
-            st.area_rows = sc.areas.iter().map(|a| vec![widgets::cell_fmt(to_area(a.area), if large { 3 } else { 0 }), format!("{}", a.cn), a.description.clone(), a.land_use.clone().unwrap_or_default()]).collect();
+            st.area_rows = sc.areas.iter().map(|a| vec![widgets::cell_fmt(to_area(a.area), if large { 3 } else { 0 }), format!("{}", a.cn), a.description.clone(), a.land_use.clone().unwrap_or_default(), source(a).to_string()]).collect();
         }
         let cols = [
-            widgets::Column { title: &format!("Area ({area_unit})"), width: 100.0, numeric: true, tip: Some("Area of this ground cover and soil group combination, in the displayed area units.") },
+            widgets::Column { title: &format!("Area ({area_unit})"), width: 100.0, numeric: true, tip: Some("Area of this ground cover and soil group combination, in the displayed area units. Drawn sub-areas and the remainder are measured from the diagram.") },
             widgets::Column { title: "CN", width: 56.0, numeric: true, tip: Some("NRCS runoff curve number (TR-55 Table 2-2) for this cover and hydrologic soil group, 30 to 100. Use Lookup CN... to pick from the tables.") },
-            widgets::Column { title: "Description", width: 260.0, numeric: false, tip: Some("Ground cover and soil group text, printed in reports.") },
-            widgets::Column { title: "Land Use", width: 100.0, numeric: false, tip: Some("Optional land use name for this row; areas are grouped by it in the land use listing.") },
+            widgets::Column { title: "Description", width: 240.0, numeric: false, tip: Some("Ground cover and soil group text, printed in reports.") },
+            widgets::Column { title: "Land Use", width: 90.0, numeric: false, tip: Some("Optional land use name for this row; areas are grouped by it in the land use listing.") },
+            widgets::Column { title: "Source", width: 70.0, numeric: false, tip: Some("\"drawn\": a sub-area drawn inside the outline, measured from it (coloured as on the diagram). \"remainder\": the rest of the outline, its area less the drawn sub-areas.") },
         ];
-        let ev = widgets::grid(ui, "areas", &cols, &mut st.area_rows, &mut st.sel_row, 210.0, true);
+        // Each row's colour on the diagram.
+        let marks: Vec<Option<egui::Color32>> = sc.areas.iter().enumerate().map(|(i, a)| if a.outline.is_some() { Some(crate::diagram::subarea_color(i, &t)) } else if a.remainder && drawn { Some(t.subcat.1) } else { None }).collect();
+        let ev = widgets::grid_marked(ui, "areas", &cols, &mut st.area_rows, &mut st.sel_row, 210.0, true, &marks);
         if ev.changed {
+            // Rows keep their drawings: mirror the grid's insert/delete on the old rows, then
+            // match the edited text to them by position.
+            let mut old = std::mem::take(&mut sc.areas);
+            if let Some(i) = ev.delete_row.filter(|i| *i < old.len()) {
+                old.remove(i);
+            }
+            if let Some(i) = ev.insert_row.filter(|i| *i <= old.len()) {
+                old.insert(i, SubArea::new(0.0, 0.0, ""));
+            }
             sc.areas = st
                 .area_rows
                 .iter()
-                .filter(|r| r.iter().any(|c| !c.trim().is_empty()))
-                .map(|r| {
+                .enumerate()
+                .filter(|(_, r)| r.iter().take(4).any(|c| !c.trim().is_empty()))
+                .map(|(i, r)| {
                     let mut a = SubArea::new(widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0).max(0.0), widgets::cell_num(&r[1]).unwrap_or(0.0).clamp(0.0, 100.0), r[2].trim());
                     a.land_use = r.get(3).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+                    if let Some(o) = old.get(i) {
+                        a.outline = o.outline.clone();
+                        a.remainder = o.remainder;
+                        a.c = o.c;
+                    }
                     a
                 })
                 .collect();
+            // Drawn rows and the remainder are measured, not typed.
+            wavestorm_core::drawing::sync_subareas(sc, outline.as_deref(), wavestorm_core::drawing::feet_per_unit(&doc.project));
         }
         if ev.double_clicked.is_some() {
             st.cn_lookup.open = true;
@@ -540,8 +563,18 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
             if widgets::button(ui, "Lookup CN...", 100.0).on_hover_text("Pick a ground cover for the selected line (double-click a line number also opens it)").clicked() {
                 st.cn_lookup.open = true;
             }
-            ui.label(RichText::new("Right-click a line number to insert or delete a line.").color(t.text_dim));
+            if widgets::button(ui, if outline.is_some() { "Redraw Outline" } else { "Draw Outline on Diagram" }, 0.0).on_hover_text("Trace this subcatchment's outline on the diagram; its areas follow it").clicked() {
+                actions.push(WindowAction::DrawOutline(st.node));
+            }
+            if outline.is_some() && widgets::button(ui, "Draw Sub-Area on Diagram", 0.0).on_hover_text("Draw an area of different cover inside the outline; its area is measured, and the remainder row is the outline less the drawn sub-areas").clicked() {
+                actions.push(WindowAction::DrawSubArea(st.node));
+            }
         });
+        ui.label(RichText::new(if drawn {
+            "Coloured rows are drawn on the diagram: their areas (and the remainder's) are measured and cannot be typed. Right-click a line number to insert or delete a line; deleting a drawn row removes its drawing."
+        } else {
+            "Right-click a line number to insert or delete a line."
+        }).color(t.text_dim));
         let comp = wavestorm_core::cn::composite(&sc.areas, doc.project.settings.round_cn, 0);
         ui.add_space(6.0);
         ui.label(format!(

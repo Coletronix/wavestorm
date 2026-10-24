@@ -269,6 +269,10 @@ pub enum Glyph {
     Measure,
     /// Draw a subcatchment's Tc flow path: a bent path with a clock.
     TcPath,
+    /// Draw a sub-area: a smaller coloured shape inside an outline.
+    SubArea,
+    /// Move / resize the background: a picture with a resize arrow at its corner.
+    PlaceUnderlay,
     Pointer,
     Undo,
     Redo,
@@ -505,6 +509,23 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             p.circle_stroke(cc, s * 0.26, Stroke::new(1.2, if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink }));
             p.line_segment([cc, cc + vec2(0.0, -s * 0.17)], Stroke::new(1.2, Color32::from_rgb(20, 20, 20)));
             p.line_segment([cc, cc + vec2(s * 0.12, 0.0)], Stroke::new(1.2, Color32::from_rgb(20, 20, 20)));
+        }
+        Glyph::SubArea => {
+            let at = |fx: f32, fy: f32| pos2(r.min.x + s * fx, r.min.y + s * fy);
+            let outer = vec![at(0.05, 0.2), at(0.6, 0.02), at(0.98, 0.45), at(0.75, 0.98), at(0.1, 0.85)];
+            p.add(Shape::convex_polygon(outer, t.subcat.0, Stroke::new(1.3, t.subcat.1)));
+            let inner = vec![at(0.42, 0.3), at(0.78, 0.42), at(0.62, 0.78), at(0.3, 0.62)];
+            p.add(Shape::convex_polygon(inner, Color32::from_rgb(250, 190, 70), Stroke::new(1.3, Color32::from_rgb(200, 120, 0))));
+        }
+        Glyph::PlaceUnderlay => {
+            let at = |fx: f32, fy: f32| pos2(r.min.x + s * fx, r.min.y + s * fy);
+            let pic = Rect::from_min_max(at(0.0, 0.08), at(0.72, 0.7));
+            p.rect_filled(pic, 0.0, Color32::from_rgb(220, 235, 210));
+            p.rect_stroke(pic, 0.0, thin, egui::StrokeKind::Inside);
+            p.add(Shape::line(vec![at(0.05, 0.62), at(0.3, 0.36), at(0.45, 0.5), at(0.68, 0.24)], Stroke::new(1.2, Color32::from_rgb(120, 90, 40))));
+            let arrow = k(Color32::from_rgb(30, 90, 200));
+            p.line_segment([at(0.55, 0.53), at(0.97, 0.95)], Stroke::new(1.8, arrow));
+            p.add(Shape::convex_polygon(vec![at(0.97, 0.95), at(0.67, 0.92), at(0.94, 0.65)], arrow, Stroke::NONE));
         }
         Glyph::Pointer => {
             let pts = vec![r.min + vec2(4.0, 1.0), r.min + vec2(4.0, s * 0.85), r.min + vec2(s * 0.42, s * 0.62), r.min + vec2(s * 0.75, s * 0.62)];
@@ -759,6 +780,20 @@ pub fn draw_glass_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             pen.circle(cc, s * 0.22, true);
             pen.seg(cc, cc + vec2(0.0, -s * 0.13));
             pen.seg(cc, cc + vec2(s * 0.1, 0.0));
+        }
+        Glyph::SubArea => {
+            // A glass outline holding a smaller amber-tinted shape.
+            pen.shape(vec![at(0.06, 0.22), at(0.6, 0.04), at(0.96, 0.45), at(0.74, 0.96), at(0.1, 0.84)]);
+            let inner = vec![at(0.4, 0.32), at(0.76, 0.44), at(0.62, 0.76), at(0.3, 0.62)];
+            glass::gradient_fill(p, &inner, glass::alpha(Color32::from_rgb(245, 158, 11), 0.6), glass::alpha(Color32::from_rgb(245, 158, 11), 0.35));
+            pen.outline(inner);
+        }
+        Glyph::PlaceUnderlay => {
+            // A picture with a resize arrow leaving its corner.
+            pen.rrect(Rect::from_min_max(at(0.04, 0.08), at(0.72, 0.68)), s * 0.08, true);
+            pen.line(vec![at(0.1, 0.6), at(0.3, 0.36), at(0.44, 0.5), at(0.64, 0.26)]);
+            pen.seg(at(0.56, 0.54), at(0.94, 0.92));
+            pen.line(vec![at(0.68, 0.92), at(0.94, 0.92), at(0.94, 0.66)]);
         }
         Glyph::LandUse => {
             // A leaf with its midrib and stem.

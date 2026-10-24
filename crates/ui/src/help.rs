@@ -129,13 +129,28 @@ The Elevation tab defines a fixed, tabular or tidal water level that upstream po
     },
     Topic {
         id: "background",
-        title: "Background images and tracing subcatchments",
-        body: "Diagram > Background > Load Image or PDF places a site plan, aerial photo or PDF sheet behind the diagram.\n\n\
-Calibrate the scale: choose Calibrate Scale (ruler button), click two points a known distance apart (a scale bar or dimensioned line) and enter the real distance.\n\n\
+        title: "Background images and drawing on the diagram",
+        body: "Diagram > Background > Load Image or PDF places a site plan, aerial photo or PDF sheet behind the diagram, sized to the part of the diagram in view. \
+It starts in Place Background mode: drag the image to move it, drag a corner to resize it, press Enter when done. \
+Move / Resize Background (Diagram > Background, the dock, or Background Settings) returns to that mode later. Everything drawn on the diagram moves and \
+scales with the background so it stays on it, and the calibration follows the size, so measured areas and lengths do not change. \
+Background Settings > Lock position and size prevents moving it by accident.\n\n\
+Calibrate the scale: choose Calibrate Scale (ruler button), click two points a known distance apart (a scale bar or dimensioned line) and enter the real distance. \
+Drawn areas and Tc lengths are re-measured at the new scale.\n\n\
 Trace a subcatchment: choose Trace Subcatchment, click the corners of the drainage area and click the first point again (or double-click, or press Enter). \
-A subcatchment is created at the centre of the outline with the measured area; edit it to set ground covers and Tc. \
-Right-click a traced subcatchment > Update Area from Outline rescales its sub-areas after the outline or scale changes.\n\n\
-Measure Length reports the length of a clicked path, for Tc flow lengths.",
+A subcatchment is created at the centre of the outline with the measured area; edit it to set ground covers and Tc. Corners snap to the corners of other \
+outlines, so neighbouring subcatchments can share boundaries. An existing subcatchment can be given an outline, or a new one, with Draw / Redraw Outline \
+(right-click menu or the Area tab).\n\n\
+Sub-areas: select a subcatchment that has an outline and choose Draw Sub-Area (dock, right-click menu or the Area tab), then click the corners of an area \
+of different cover (roofs, pavement, a pond…). Points are kept inside the outline and snap to nearby corners and edges; a sub-area may not overlap another. \
+Its area is measured, the Area tab opens with it selected to pick its cover, and the row that was there becomes the remainder: the outline's area less the \
+drawn sub-areas, so the rows always add up to the outline. Each drawn sub-area has its own colour on the diagram and on the Area tab; their areas (and \
+the remainder's) cannot be typed. Subcatchments without drawn sub-areas work as before.\n\n\
+Editing drawings: select the subcatchment. Its outline, sub-areas and Tc path show their points: drag a point to move it, drag the small dot in the middle \
+of an edge to add a point there, right-click a point to delete it. Areas, the remainder and the Tc segment lengths (keeping their types, slopes and \
+surfaces) update when you let go. An edit that would leave a sub-area outside the outline or overlapping another is undone. Moving the subcatchment's \
+symbol moves its drawings with it.\n\n\
+Measure Length reports the length of a clicked path.",
     },
     Topic {
         id: "messages",

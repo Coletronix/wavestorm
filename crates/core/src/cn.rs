@@ -195,11 +195,19 @@ pub struct SubArea {
     /// Land use name, for pollutant loading.
     #[serde(default)]
     pub land_use: Option<String>,
+    /// A sub-area drawn inside its subcatchment's outline (diagram units): its area is measured
+    /// from this polygon (see `drawing::sync_subareas`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline: Option<Vec<[f64; 2]>>,
+    /// In a subcatchment with drawn sub-areas, the row holding the rest of the outline: its
+    /// area is the outline's area less the drawn sub-areas.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remainder: bool,
 }
 
 impl SubArea {
     pub fn new(area: f64, cn: f64, description: &str) -> Self {
-        SubArea { area, cn, c: None, description: description.into(), hsg: soil_from_description(description), land_use: None }
+        SubArea { area, cn, c: None, description: description.into(), hsg: soil_from_description(description), land_use: None, outline: None, remainder: false }
     }
 
     /// Fraction of this sub-area that is impervious: 100% for CN ≥ 98, the "x% imp" value in the

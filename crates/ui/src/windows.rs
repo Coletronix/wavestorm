@@ -66,6 +66,12 @@ pub enum WindowAction {
     SetEvents { events: Vec<wavestorm_core::rainfall::RainEvent>, replace: bool },
     /// Start drawing subcatchment `n`'s Tc flow path on the diagram.
     DrawTcPath(NodeId),
+    /// Start tracing subcatchment `n`'s outline (new or replacing the old one).
+    DrawOutline(NodeId),
+    /// Start drawing a sub-area inside subcatchment `n`'s outline.
+    DrawSubArea(NodeId),
+    /// Move or resize the background on the diagram.
+    PlaceUnderlay,
 }
 
 /// Shows every window of the document; returns follow-up actions.

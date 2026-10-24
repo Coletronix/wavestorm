@@ -313,6 +313,26 @@ Keep this section updated at the end of every session.
   recomputes from the drawn points when the limit changes. Deleting segments drops the path
   once none references it (`dialogs::node::drop_orphan_path`); "Remove Drawn Path" keeps the
   segments.
+- Drawing on the map (2026-10-24, user direction: "draw things on the map and bring the data
+  into subcatchments"). `core::drawing` holds the geometry (polygon area/centroid, ear-clipping
+  `triangulate`, `point_in_polygon`, `polygon_within`, `polygons_overlap`, `clamp_inside`,
+  `subarea_problem`) and the bookkeeping: `sync_subareas` (drawn `SubArea::outline` rows are
+  measured, the `SubArea::remainder` row = outline − drawn; a remainder row is created when
+  needed), `outline_changed` (drawn: re-sync; else scale rows in proportion),
+  `sync_tc_lengths`, `insert_path_point`/`remove_path_point` (Tc segments keep their legs),
+  `transform` (moves all drawings + outlined subcatchment symbols), `sync_all` after
+  calibration. UI: `Tool::Trace { node: Option }` (new subcatchment or (re)draw an existing
+  one's outline), `Tool::SubArea` (points clamped inside, snapped to corners within 8 px /
+  edges within 6 px; refused with a status message if outside/overlapping),
+  `Tool::PlaceUnderlay` (drag to move, corner to resize uniformly; drawings follow;
+  `feet_per_unit` divided by the scale change so real sizes hold; started automatically after
+  loading a background, which is sized to 90 % of the view). Point editing lives in
+  `select_tool` for the single selected subcatchment (`shape_handle_at`, `Drag::Vertex`,
+  midpoint drag inserts, right-click deletes, `finish_shape_edit` validates/undoes, re-measures
+  and emits `CanvasAction::ShapeEdited`, which refreshes open edit drafts). Area grid:
+  `widgets::grid_marked` swatches, "Source" column, rebuild keeps each row's drawing by index
+  (mirroring grid insert/delete). Colours: `diagram::subarea_color(row)`, remainder = subcat
+  colour. Test: `tests/underlay.rs::draw_subareas_edit_and_place_background`.
 - Session (`ui::recovery`, store key `session`; 0.3.0's `recovery` key is still read): `DELAY`
   (1 s) after any change the open projects are recorded — saved files by path, unsaved or
   file-less ones (always on the web) with their JSON, plus the front tab. At start (non-headless)

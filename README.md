@@ -67,8 +67,13 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 
 **Working on the diagram**
 - Drag-and-drop nodes, multiple projects in tabs, undo history, notes and pop-up field tips.
-- A background image or PDF underlay with two-point scale calibration. You can trace
-  subcatchment outlines on it, and the areas are measured automatically.
+- A background image or PDF underlay with two-point scale calibration. Move and resize it
+  on the diagram; your drawings follow it and keep their measured sizes.
+- Trace subcatchment outlines on it, and the areas are measured automatically. Draw
+  sub-areas inside an outline: each is measured and coloured, and the remainder row is
+  the outline less the drawn sub-areas, so the rows always add up.
+- Edit any drawing: drag its points, drag an edge's middle to add a point, or right-click a
+  point to delete it. Areas and Tc lengths update to match.
 - Draw a subcatchment's time-of-concentration flow path on the diagram. Its points are lettered
   A, B, C… and the Tc segments ("A to B", "B to D", …) are measured from it (sheet flow is
   capped at 100 ft by default); you only enter slope and surface.

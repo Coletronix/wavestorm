@@ -735,6 +735,12 @@ pub struct GridEvents {
 /// An editable table with a row-number column, one blank row at the end for new entries, and a
 /// right-click menu (insert/delete row). Cells are strings; callers convert.
 pub fn grid(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>, selected: &mut Option<usize>, height: f32, editable: bool) -> GridEvents {
+    grid_marked(ui, id, cols, rows, selected, height, editable, &[])
+}
+
+/// [`grid`] with a colour swatch in the row-number cell of rows that have one (`marks[i]`).
+#[allow(clippy::too_many_arguments)]
+pub fn grid_marked(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>, selected: &mut Option<usize>, height: f32, editable: bool, marks: &[Option<Color32>]) -> GridEvents {
     let t = Tokens::get(ui.ctx());
     let mut ev = GridEvents::default();
     let row_h = 18.0;
@@ -773,6 +779,11 @@ pub fn grid(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>,
             let p = ui.painter().clone();
             let num_rect = Rect::from_min_size(row_rect.min, vec2(num_w, row_h));
             header_cell(&p, num_rect, &t);
+            if let Some(Some(c)) = marks.get(i) {
+                let sw = Rect::from_center_size(num_rect.right_center() - vec2(7.0, 0.0), vec2(8.0, 8.0));
+                p.rect_filled(sw, 2.0, *c);
+                p.rect_stroke(sw, 2.0, Stroke::new(1.0, crate::glass::alpha(Color32::BLACK, 0.4)), StrokeKind::Inside);
+            }
             let is_sel = *selected == Some(i);
             p.text(num_rect.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, format!("{}", i + 1), font.clone(), t.text);
             let num_resp = ui.interact(num_rect, gid.with(("num", i)), Sense::click());

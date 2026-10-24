@@ -168,3 +168,140 @@ fn calibrate_and_trace_subcatchment() {
         assert!(node.tc_path.is_none(), "the path goes with its last segment");
     }
 }
+
+fn drag(h: &mut egui_kittest::Harness<'static, WaveStormApp>, a: Pos2, b: Pos2) {
+    h.input_mut().events.push(Event::PointerMoved(a));
+    h.input_mut().events.push(Event::PointerButton { pos: a, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.step();
+    for k in 1..=8 {
+        h.input_mut().events.push(Event::PointerMoved(a + (b - a) * (k as f32 / 8.0)));
+        h.step();
+    }
+    h.input_mut().events.push(Event::PointerButton { pos: b, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.step();
+    h.run_steps(30);
+}
+
+fn areas(app: &mut WaveStormApp, id: wavestorm_core::project::NodeId) -> Vec<(f64, bool, bool)> {
+    match &app.doc().project.node(id).unwrap().data {
+        NodeData::Subcat(sc) => sc.areas.iter().map(|a| (a.area, a.outline.is_some(), a.remainder)).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Sub-areas drawn inside an outline, edited point by point, and a background moved and
+/// resized with the drawings following it.
+#[test]
+fn draw_subareas_edit_and_place_background() {
+    let mut h = harness();
+    h.run_steps(3);
+    script(h.state_mut(), "new");
+    h.run_steps(2);
+    h.state_mut().platform.push(Incoming { purpose: Purpose::Underlay, name: "site".into(), path: None, bytes: png(600, 400) });
+    h.run_steps(4);
+    assert_eq!(h.state_mut().tool.name(), "Place Background", "placement starts after loading");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    {
+        let doc = h.state_mut().doc();
+        doc.windows.clear();
+        doc.edit("Calibrate Background", |p| {
+            if let Some(u) = &mut p.diagram.underlay {
+                u.feet_per_unit = Some(2.0);
+            }
+        });
+    }
+    // Outline: 100 x 80 units = 200 x 160 ft = 32,000 sq ft.
+    script(h.state_mut(), "trace");
+    h.step();
+    let corners = [pos2(100.0, 100.0), pos2(200.0, 100.0), pos2(200.0, 180.0), pos2(100.0, 180.0)];
+    for c in corners.iter().chain(std::iter::once(&corners[0])) {
+        let s = h.state_mut().world_to_screen(*c);
+        click(&mut h, s);
+    }
+    h.run_steps(2);
+    let (id, label) = {
+        let n = h.state_mut().doc().project.nodes.iter().find(|n| n.outline.is_some()).expect("traced");
+        (n.id, n.label())
+    };
+    h.state_mut().doc().windows.clear();
+    let total = 32_000.0;
+    let sum = |v: &[(f64, bool, bool)]| v.iter().map(|a| a.0).sum::<f64>();
+    // A 40 x 30 unit sub-area = 4,800 sq ft; the traced row becomes the remainder.
+    script(h.state_mut(), &format!("subarea:{label}"));
+    h.step();
+    let sq = [pos2(110.0, 110.0), pos2(150.0, 110.0), pos2(150.0, 140.0), pos2(110.0, 140.0)];
+    for c in sq.iter().chain(std::iter::once(&sq[0])) {
+        let s = h.state_mut().world_to_screen(*c);
+        click(&mut h, s);
+    }
+    h.run_steps(2);
+    let a = areas(h.state_mut(), id);
+    assert_eq!(a.len(), 2, "{a:?}");
+    assert!(a[0].2 && !a[0].1, "the traced row is the remainder: {a:?}");
+    assert!(a[1].1 && (a[1].0 - 4_800.0).abs() / 4_800.0 < 0.03, "{a:?}");
+    assert!((sum(&a) - total).abs() / total < 0.01, "rows add up to the outline: {a:?}");
+    h.state_mut().doc().windows.clear();
+    // An overlapping sub-area is refused; the tool stays on so it can be fixed.
+    script(h.state_mut(), &format!("subarea:{label}"));
+    h.step();
+    let bad = [pos2(140.0, 130.0), pos2(170.0, 130.0), pos2(170.0, 160.0), pos2(140.0, 160.0)];
+    for c in bad.iter().chain(std::iter::once(&bad[0])) {
+        let s = h.state_mut().world_to_screen(*c);
+        click(&mut h, s);
+    }
+    assert_eq!(h.state_mut().tool.name(), "Draw Sub-Area");
+    assert_eq!(areas(h.state_mut(), id).len(), 2);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    // Dragging a sub-area corner re-measures it and the remainder.
+    h.state_mut().doc().selection = vec![id];
+    h.run_steps(2);
+    let (from, to) = (h.state_mut().world_to_screen(pos2(150.0, 140.0)), h.state_mut().world_to_screen(pos2(160.0, 150.0)));
+    drag(&mut h, from, to);
+    let a = areas(h.state_mut(), id);
+    assert!(a[1].0 > 4_900.0, "the sub-area grew: {a:?}");
+    assert!((sum(&a) - total).abs() / total < 0.01, "{a:?}");
+    // A corner dragged outside the outline stays on it.
+    let (from, to) = (h.state_mut().world_to_screen(pos2(110.0, 110.0)), h.state_mut().world_to_screen(pos2(60.0, 60.0)));
+    drag(&mut h, from, to);
+    let corner = match &h.state_mut().doc().project.node(id).unwrap().data {
+        NodeData::Subcat(sc) => sc.areas[1].outline.as_ref().unwrap()[0],
+        _ => unreachable!(),
+    };
+    assert!((corner[0] - 100.0).abs() < 1.5 && (corner[1] - 100.0).abs() < 1.5, "clamped to the outline: {corner:?}");
+    let before = areas(h.state_mut(), id);
+    // Move the background: the drawings move with it, areas unchanged.
+    script(h.state_mut(), "place-background");
+    h.step();
+    let (origin, scale, tex) = {
+        let doc = h.state_mut().doc();
+        let u = doc.project.diagram.underlay.clone().unwrap();
+        (u.origin, u.scale, doc.underlay_tex.as_ref().unwrap().size_vec2())
+    };
+    let centre = pos2((origin[0] + tex.x as f64 * scale / 2.0) as f32, (origin[1] + tex.y as f64 * scale / 2.0) as f32);
+    let outline0 = h.state_mut().doc().project.node(id).unwrap().outline.clone().unwrap()[0];
+    let (from, to) = (h.state_mut().world_to_screen(centre), h.state_mut().world_to_screen(centre) + vec2(40.0, 20.0));
+    drag(&mut h, from, to);
+    let outline1 = h.state_mut().doc().project.node(id).unwrap().outline.clone().unwrap()[0];
+    assert!(outline1[0] > outline0[0] + 1.0 && outline1[1] > outline0[1] + 0.5, "{outline0:?} -> {outline1:?}");
+    // Resize from the bottom-right corner: drawings scale, calibration compensates.
+    let (origin, scale) = {
+        let u = h.state_mut().doc().project.diagram.underlay.clone().unwrap();
+        (u.origin, u.scale)
+    };
+    let br = pos2((origin[0] + tex.x as f64 * scale) as f32, (origin[1] + tex.y as f64 * scale) as f32);
+    let from = h.state_mut().world_to_screen(br);
+    drag(&mut h, from, from + vec2(60.0, 40.0));
+    let after = areas(h.state_mut(), id);
+    let u = h.state_mut().doc().project.diagram.underlay.clone().unwrap();
+    assert!(u.scale > scale * 1.05, "resized");
+    let fpu = u.feet_per_unit.unwrap();
+    assert!(fpu < 2.0, "calibration follows the size: {fpu}");
+    for (x, y) in after.iter().zip(&before) {
+        assert!((x.0 - y.0).abs() / y.0.max(1.0) < 1e-6, "areas keep their real size: {before:?} -> {after:?}");
+    }
+    let n = h.state_mut().doc().project.node(id).unwrap().clone();
+    let o = n.outline.unwrap();
+    assert!((wavestorm_core::drawing::polygon_area(&o) * fpu * fpu - total).abs() / total < 0.02);
+}

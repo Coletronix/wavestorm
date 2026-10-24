@@ -296,6 +296,8 @@ pub fn calibrate(ctx: &egui::Context, doc: &mut Doc, st: &mut CalibrateState) ->
                         if let Some(ul) = &mut p.diagram.underlay {
                             ul.feet_per_unit = Some(fpu);
                         }
+                        // Drawn sub-areas and Tc paths are re-measured at the new scale.
+                        wavestorm_core::drawing::sync_all(p);
                     });
                 }
                 keep = false;
@@ -334,25 +336,39 @@ pub fn underlay(ctx: &egui::Context, doc: &mut Doc, st: &mut UnderlayState, acti
             conv_field(ui, "sc", "Image Scale:", "units/pixel", &mut draft.scale, |x| x, |x| x.max(1e-4), 4, 140.0);
         });
         widgets::check(ui, &mut draft.visible, "Show background");
+        widgets::check(ui, &mut draft.locked, "Lock position and size");
         match draft.feet_per_unit {
             Some(f) => ui.label(format!("Calibrated: 1 diagram unit = {:.4} {}", u.len(f), u.len_label())),
             None => ui.colored_label(Tokens::get(ui.ctx()).warning, "Not calibrated: traced areas assume 1 unit = 1 ft."),
         };
         let _ = st;
         if draft != ul {
-            // Rescaling the image keeps the calibration consistent: real size per pixel is fixed.
-            if (draft.scale - ul.scale).abs() > 1e-12
-                && let Some(f) = draft.feet_per_unit
-            {
-                draft.feet_per_unit = Some(f * ul.scale / draft.scale);
+            // Rescaling the image keeps the calibration consistent (real size per pixel is
+            // fixed), and the drawings scale with it about its corner so they stay on it.
+            let k = draft.scale / ul.scale;
+            let rescaled = (k - 1.0).abs() > 1e-12 && k.is_finite() && k > 0.0;
+            if rescaled && let Some(f) = draft.feet_per_unit {
+                draft.feet_per_unit = Some(f / k);
             }
-            doc.edit("Background Settings", |p| p.diagram.underlay = Some(draft.clone()));
+            let o = ul.origin;
+            doc.edit("Background Settings", |p| {
+                p.diagram.underlay = Some(draft.clone());
+                if rescaled {
+                    wavestorm_core::drawing::transform(p, &|q| [o[0] + (q[0] - o[0]) * k, o[1] + (q[1] - o[1]) * k]);
+                }
+            });
             actions.push(WindowAction::Status("Background updated".into()));
         }
         ui.add_space(4.0);
-        if widgets::button(ui, "Close", 80.0).clicked() {
-            keep = false;
-        }
+        ui.horizontal(|ui| {
+            if widgets::button(ui, "Move / Resize...", 120.0).on_hover_text("Drag the background on the diagram to move it, or a corner to resize it").clicked() {
+                actions.push(WindowAction::PlaceUnderlay);
+                keep = false;
+            }
+            if widgets::button(ui, "Close", 80.0).clicked() {
+                keep = false;
+            }
+        });
     });
     keep
 }
