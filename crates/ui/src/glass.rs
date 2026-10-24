@@ -60,8 +60,16 @@ pub fn rounded(rect: Rect, radius: f32) -> Vec<Pos2> {
     for (c, start) in corners {
         for k in 0..=n {
             let a = start + 0.5 * std::f32::consts::PI * k as f32 / n as f32;
-            pts.push(pos2(c.x + r * a.cos(), c.y + r * a.sin()));
+            let q = pos2(c.x + r * a.cos(), c.y + r * a.sin());
+            // Corners meet when the radius is half a side (pills) or zero; a repeated point
+            // would make a zero-length segment that tears the stroke join.
+            if pts.last().is_none_or(|l: &Pos2| (*l - q).length() > 0.01) {
+                pts.push(q);
+            }
         }
+    }
+    if pts.len() > 1 && pts.first().zip(pts.last()).is_some_and(|(a, b)| (*a - *b).length() <= 0.01) {
+        pts.pop();
     }
     pts
 }
@@ -354,6 +362,10 @@ mod tests {
         let r = Rect::from_min_size(pos2(10.0, 20.0), vec2(100.0, 30.0));
         let pts = rounded(r, 40.0);
         assert!(pts.iter().all(|q| r.expand(0.01).contains(*q)));
-        assert_eq!(pts.len(), 28);
+        // A pill: the corner arcs meet on the short sides, and no point is repeated.
+        assert_eq!(pts.len(), 26);
+        for (i, q) in pts.iter().enumerate() {
+            assert!((pts[(i + 1) % pts.len()] - *q).length() > 0.01, "repeated point at {i}");
+        }
     }
 }

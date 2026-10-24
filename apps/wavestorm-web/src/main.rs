@@ -15,9 +15,9 @@ fn main() {
             log::error!("missing <canvas id=\"wavestorm_canvas\">");
             return;
         };
-        let result = eframe::WebRunner::new()
-            .start(canvas, eframe::WebOptions::default(), Box::new(|_cc| Ok(Box::new(wavestorm_ui::WaveStormApp::new()))))
-            .await;
+        // One queued frame instead of the default two, so the UI keeps up with the pointer.
+        let options = eframe::WebOptions { wgpu_options: eframe::WgpuConfiguration { surface: eframe::SurfaceConfig::LOW_LATENCY, ..Default::default() }, ..Default::default() };
+        let result = eframe::WebRunner::new().start(canvas, options, Box::new(|_cc| Ok(Box::new(wavestorm_ui::WaveStormApp::new())))).await;
         if let Some(el) = document.get_element_by_id("wavestorm_loading") {
             match result {
                 Ok(()) => el.remove(),

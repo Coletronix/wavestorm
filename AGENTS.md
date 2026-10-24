@@ -293,6 +293,15 @@ Keep this section updated at the end of every session.
   `check`, `radio`, `group`, `tabs`/`pill_tab`, `tab_body`, `header_cell`, `sunken`,
   `combo` — the combo slab is painted under egui's button from last frame's rect). Snapshot
   with `--do "theme:glass;..."`; `tests/monkey.rs` runs the random-input test in glass too.
+- Responsiveness (2026-10-23, user report "a few frames behind the mouse"): the app must go
+  idle when nothing changes. Never call `send_viewport_cmd` or `request_repaint` every frame
+  (the window title is sent only when it changes); `tests/idle.rs` asserts every theme and
+  common windows settle within 30 frames (window-open animations take ~13). The desktop and
+  web apps use `SurfaceConfig::LOW_LATENCY` (one queued frame). Frame cost per theme:
+  `cargo run --release -p wavestorm-ui --example frame_bench` (glass ≈ 2 ms with a report
+  open); `frame_bench "<script>"` prints the idle repaint delays.
+- Glass outlines must not repeat points (a zero-length segment tears the stroke join):
+  `glass::rounded` drops coincident corner points, `Pen::circle` drops the closing point.
 - After each milestone, rate 1–10: UI look, UI parity, code cleanliness, feature parity.
 
 ## 6. README

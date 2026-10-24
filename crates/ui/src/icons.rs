@@ -544,11 +544,22 @@ impl Pen<'_> {
     /// Strokes `pts` as a lit glass tube: a drop shadow below, the iridescent body, and a thin
     /// white highlight along its upper-left side.
     fn tube(&self, pts: Vec<Pos2>, closed: bool) {
-        let shift = |d: egui::Vec2| pts.iter().map(|q| *q + d).collect::<Vec<Pos2>>();
-        let make = |v: Vec<Pos2>, s: PathStroke| Shape::Path(if closed { PathShape::closed_line(v, s) } else { PathShape::line(v, s) });
-        self.p.add(make(shift(vec2(0.4, 1.4)), PathStroke::new(self.w + 0.8, glass::alpha(Color32::BLACK, 0.55))));
-        self.p.add(make(pts.clone(), self.stroke()));
-        self.p.add(make(shift(vec2(-0.3, -0.4)), PathStroke::new((self.w * 0.35).max(0.6), white(0.55))));
+        self.tube_shadow(&pts, closed);
+        self.tube_body(pts, closed);
+    }
+    fn make(v: Vec<Pos2>, s: PathStroke, closed: bool) -> Shape {
+        Shape::Path(if closed { PathShape::closed_line(v, s) } else { PathShape::line(v, s) })
+    }
+    /// The tube's cast shadow, offset down and right.
+    fn tube_shadow(&self, pts: &[Pos2], closed: bool) {
+        let v = pts.iter().map(|q| *q + vec2(0.4, 1.4)).collect();
+        self.p.add(Self::make(v, PathStroke::new(self.w + 0.8, glass::alpha(Color32::BLACK, 0.55)), closed));
+    }
+    /// The iridescent tube and its highlight.
+    fn tube_body(&self, pts: Vec<Pos2>, closed: bool) {
+        let lit = pts.iter().map(|q| *q + vec2(-0.3, -0.4)).collect();
+        self.p.add(Self::make(pts, self.stroke(), closed));
+        self.p.add(Self::make(lit, PathStroke::new((self.w * 0.35).max(0.6), white(0.55)), closed));
     }
     fn line(&self, pts: Vec<Pos2>) {
         self.tube(pts, false);
@@ -559,16 +570,23 @@ impl Pen<'_> {
     /// A closed outline with a thick glass body (`pts` convex): a darker underside offset below
     /// gives it depth, then a translucent face with a sheen.
     fn shape(&self, pts: Vec<Pos2>) {
+        // The outline's shadow goes under the body, so it shows only outside the shape.
+        self.tube_shadow(&pts, true);
         let under: Vec<Pos2> = pts.iter().map(|q| *q + vec2(0.0, 1.6)).collect();
         glass::gradient_fill(self.p, &under, glass::alpha(Color32::from_rgb(40, 30, 90), 0.55), glass::alpha(Color32::BLACK, 0.6));
+        // An opaque base under the translucent face, so nothing below shows through it.
+        glass::gradient_fill(self.p, &pts, Color32::from_rgb(22, 24, 40), Color32::from_rgb(12, 13, 24));
         glass::gradient_fill(self.p, &pts, white(0.30), white(0.05));
-        self.tube(pts, true);
+        self.tube_body(pts, true);
     }
     fn outline(&self, pts: Vec<Pos2>) {
         self.tube(pts, true);
     }
     fn circle(&self, c: Pos2, rad: f32, body: bool) {
-        let pts = arc(c, rad, 0.0, std::f32::consts::TAU, 24);
+        // A full arc ends where it starts; drop that repeated point, or the closed outline gets
+        // a zero-length segment whose join tears the stroke at the circle's right side.
+        let mut pts = arc(c, rad, 0.0, std::f32::consts::TAU, 32);
+        pts.pop();
         if body { self.shape(pts) } else { self.outline(pts) }
     }
     fn rrect(&self, rect: Rect, rad: f32, body: bool) {

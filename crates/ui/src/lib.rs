@@ -52,6 +52,8 @@ pub struct WaveStormApp {
     untitled: usize,
     canvas_rect: Rect,
     last_backup: f64,
+    /// The window title last sent to the platform.
+    window_title: String,
 }
 
 impl Default for WaveStormApp {
@@ -93,6 +95,7 @@ impl WaveStormApp {
             untitled: 1,
             canvas_rect: Rect::NOTHING,
             last_backup: 0.0,
+            window_title: String::new(),
         }
     }
 
@@ -1661,8 +1664,13 @@ impl WaveStormApp {
             self.open_window(Window::Help(help::HelpState::topic(topic)));
         }
         self.error_dialog(&ctx);
+        // Only send the title when it changes: every viewport command also requests another
+        // frame, which would keep the app repainting forever (and lagging behind the mouse).
         let title = format!("{} - WAVEStorm", self.doc().title());
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        if title != self.window_title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.window_title = title;
+        }
         let _ = Stroke::NONE;
         let _ = Color32::BLACK;
     }
