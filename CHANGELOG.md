@@ -16,6 +16,10 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
   - Segment slopes come from the legs.
   - Each leg is coloured by its flow type: sheet green, shallow orange, channel blue, pipe
     violet, lake teal. The editor rows have matching colour swatches.
+  - The path's point markers and arrowhead now scale with the diagram zoom. Their letters
+    keep a constant size.
+- Node names under the diagram symbols keep a constant, readable size at every zoom. They no
+  longer shrink when zoomed out.
 
 ## [0.4.0] - 2026-10-23
 

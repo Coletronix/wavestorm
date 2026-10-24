@@ -593,9 +593,11 @@ fn handle_at(doc: &Doc, canvas: Rect, p: Pos2) -> Option<(NodeId, usize)> {
     best.map(|(h, _)| h)
 }
 
+/// Screen size of node names under the symbols (independent of zoom).
+const NAME_FONT: f32 = 13.0;
+
 fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &Tokens) {
     let d = doc.project.diagram.symbol_size as f32 * doc.view.zoom;
-    let font = (d * 0.27).clamp(6.0, 22.0);
     for n in &doc.project.nodes {
         let c = to_screen(&doc.view, canvas, wp(n.pos));
         if !canvas.expand(d * 3.0).contains(c) {
@@ -625,7 +627,8 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
                     || doc.results.messages.iter().any(|m| m.node == Some(n.id) && m.severity >= wavestorm_core::calc::Severity::Error);
                 icons::draw_node_ex(p, n.node_type(), c, d, &n.label(), sel, external, problem, t);
                 if !n.name.is_empty() {
-                    let galley = p.layout(n.name.clone(), FontId::proportional(font * 0.85), t.label_text, d * 3.2);
+                    // Node names keep a constant, readable size at every zoom.
+                    let galley = p.layout(n.name.clone(), FontId::proportional(NAME_FONT), t.label_text, (d * 3.2).max(NAME_FONT * 10.0));
                     let top = c.y + d * 0.5 + 3.0 + if external { d * 0.24 } else { 0.0 } + if t.glass { d * 0.09 } else { 0.0 };
                     let at = pos2(c.x - galley.size().x / 2.0, top);
                     if t.glass {
@@ -682,7 +685,6 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
     }
     let color = t.hint;
     let leg_color = |i: usize| flows.get(i).copied().flatten().map_or(color, |f| flow_color(f, t));
-    let stroke = Stroke::new(2.0, color);
     for (i, w) in s.windows(2).enumerate() {
         if t.glass {
             p.extend(Shape::dashed_line(&[w[0] + vec2(0.8, 2.0), w[1] + vec2(0.8, 2.0)], Stroke::new(2.5, crate::glass::alpha(Color32::BLACK, 0.5)), 8.0, 5.0));
@@ -691,14 +693,17 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
         p.extend(Shape::dashed_line(&[w[0], w[1]], Stroke::new(if typed { 2.6 } else { 2.0 }, leg_color(i)), 8.0, 5.0));
     }
     // Segment ends are lettered A, B, C, … (the Tc segments are described "A to B", …).
+    // Point markers scale with the diagram (like the symbols); the letters keep a readable size.
+    let zoom = doc.view.zoom;
+    let mark = (3.5 * zoom).clamp(0.75, 14.0);
     for (i, q) in s.iter().enumerate().take(pts.len()) {
         let Some(Some(label)) = labels.get(i) else {
-            p.circle_filled(*q, 2.0, color);
+            p.circle_filled(*q, (2.0 * zoom).clamp(0.5, 8.0), color);
             continue;
         };
-        p.circle_filled(*q, 3.5, t.canvas);
-        p.circle_stroke(*q, 3.5, stroke);
-        let at = *q + vec2(6.0, -6.0);
+        p.circle_filled(*q, mark, t.canvas);
+        p.circle_stroke(*q, mark, Stroke::new((2.0 * zoom).clamp(0.75, 3.0), color));
+        let at = *q + vec2(mark + 2.5, -mark - 2.5);
         let font = FontId::proportional(12.5);
         p.text(at + vec2(1.0, 1.0), Align2::LEFT_BOTTOM, label, font.clone(), if t.is_dark() { Color32::BLACK } else { Color32::WHITE });
         p.text(at, Align2::LEFT_BOTTOM, label, font, color);
@@ -706,7 +711,7 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
     if let [.., a, b] = s.as_slice()
         && (*b - *a).length() > 1.0
     {
-        arrow_head(p, *b, *b - *a, 10.0, Stroke::new(2.0, leg_color(s.len().saturating_sub(2))), t);
+        arrow_head(p, *b, *b - *a, (10.0 * zoom).clamp(3.0, 30.0), Stroke::new(2.0, leg_color(s.len().saturating_sub(2))), t);
     }
 }
 
