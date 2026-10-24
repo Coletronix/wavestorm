@@ -14,7 +14,7 @@ use wavestorm_core::link::{LinkElevation, LinkSource, ManualHydrograph, interpol
 use wavestorm_core::outlets::{OutletDevice, Routing};
 use wavestorm_core::project::{Node, NodeData, NodeId, NodeType, Tailwater};
 use wavestorm_core::storage::{CustomKind, StorageVolume, VolumeShape};
-use wavestorm_core::tc::{self, PathFlow, TcKind, TcSegment};
+use wavestorm_core::tc::{self, PathFlow, PathLeg, TcKind, TcSegment};
 use wavestorm_core::units::Units;
 
 pub struct EditState {
@@ -39,16 +39,17 @@ pub struct EditState {
 }
 
 /// A Tc flow path drawn on the diagram, split into legs at the clicked points. Each leg gets a
-/// flow type; consecutive legs of one type become one Tc segment (`tc::segments_from_path`).
+/// flow type and optionally a slope; consecutive legs of one type and slope become one Tc
+/// segment (`tc::segments_from_path`), and only segment ends are lettered.
 pub struct TcPathState {
     /// The path as drawn (diagram units, upstream end first, repeated points removed).
     pub drawn: Vec<[f64; 2]>,
     /// Feet per diagram unit used for the lengths.
     pub fpu: f64,
-    /// The path's points after the sheet-flow limit (which may add one), labelled A, B, C, …
+    /// The path's points after the sheet-flow limit (which may add one).
     pub points: Vec<[f64; 2]>,
-    /// Leg lengths (ft) and flow types; leg `i` runs from point `i` to `i + 1`.
-    pub legs: Vec<(f64, PathFlow)>,
+    /// Legs; leg `i` runs from point `i` to `i + 1`.
+    pub legs: Vec<PathLeg>,
     pub limit_sheet: bool,
     /// Sheet flow longer than this (ft) continues as shallow concentrated flow.
     pub sheet_limit: f64,
@@ -85,9 +86,10 @@ impl TcPathState {
         st
     }
 
-    /// Recomputes the points and legs from the drawn path: flow types from `existing`'s path
-    /// segments where they cover a leg, else sheet flow first and shallow flow after; then the
-    /// sheet-flow limit. Called when the path is opened and when the limit settings change.
+    /// Recomputes the points and legs from the drawn path: flow types (and, on a segment's first
+    /// leg, its slope) from `existing`'s path segments where they cover a leg, else sheet flow
+    /// first and shallow flow after with no slope; then the sheet-flow limit. Called when the
+    /// path is opened and when the limit settings change.
     pub fn reset(&mut self, existing: &[TcSegment]) {
         self.points = self.drawn.clone();
         self.legs = self
@@ -96,8 +98,10 @@ impl TcPathState {
             .enumerate()
             .map(|(i, w)| {
                 let len = (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]) * self.fpu;
-                let kept = existing.iter().find(|s| s.path.is_some_and(|[a, b]| a <= i && i < b)).and_then(|s| tc::path_flow_of(&s.kind));
-                (len, kept.unwrap_or(if i == 0 { PathFlow::Sheet } else { PathFlow::Shallow }))
+                let seg = existing.iter().find(|s| s.path.is_some_and(|[a, b]| a <= i && i < b));
+                let flow = seg.and_then(|s| tc::path_flow_of(&s.kind)).unwrap_or(if i == 0 { PathFlow::Sheet } else { PathFlow::Shallow });
+                let slope = seg.filter(|s| s.path.is_some_and(|[a, _]| a == i)).and_then(|s| s.kind.slope());
+                PathLeg { length: len, flow, slope }
             })
             .collect();
         if self.limit_sheet {
@@ -105,9 +109,14 @@ impl TcPathState {
         }
     }
 
+    /// The path's segments as currently divided.
+    pub fn runs(&self) -> Vec<tc::PathRun> {
+        tc::path_runs(&self.resolved().1)
+    }
+
     /// The path points and legs to store, with the sheet-flow limit applied to the chosen types
     /// (normally already satisfied; a leg changed to sheet flow may be divided).
-    pub fn resolved(&self) -> (Vec<[f64; 2]>, Vec<(f64, PathFlow)>) {
+    pub fn resolved(&self) -> (Vec<[f64; 2]>, Vec<PathLeg>) {
         let (mut points, mut legs) = (self.points.clone(), self.legs.clone());
         if self.limit_sheet {
             tc::limit_sheet_flow(&mut points, &mut legs, self.sheet_limit);
@@ -133,7 +142,9 @@ impl TcPathState {
             }
             sc.tc.extend(segs);
         }
-        node.tc_path = Some(self.resolved().0);
+        let (points, legs) = self.resolved();
+        node.tc_path = Some(points);
+        node.tc_path_breaks = tc::path_breaks(&tc::path_runs(&legs));
     }
 }
 
@@ -144,6 +155,7 @@ pub fn drop_orphan_path(node: &mut Node) {
         && !sc.tc.iter().any(|s| s.path.is_some())
     {
         node.tc_path = None;
+        node.tc_path_breaks.clear();
     }
 }
 
@@ -623,6 +635,7 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
                 }
                 if widgets::button(ui, "Remove Drawn Path", 0.0).on_hover_text("Remove the path from the diagram; the Tc segments stay as they are").clicked() {
                     st.draft.tc_path = None;
+                    st.draft.tc_path_breaks.clear();
                     for s in &mut sc.tc {
                         s.path = None;
                     }
@@ -657,22 +670,41 @@ fn tc_path_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
         if !ps.calibrated {
             ui.colored_label(t.warning, "The background is not calibrated: lengths use 1 diagram unit = 1 ft. Calibrate the background first for real lengths.");
         }
-        ui.label("Choose the type of flow along each leg of the path (upstream first). Consecutive legs of the same type become one segment.");
+        ui.label("Set the type of flow along each leg of the path (upstream first), and its slope where it changes. A new segment, lettered on the diagram, starts wherever the flow type or the slope changes; legs in between stay in one segment.");
         ui.add_space(4.0);
         let options: Vec<(PathFlow, String)> = PathFlow::ALL.iter().map(|f| (*f, f.label().to_string())).collect();
-        egui::Grid::new("tc-legs").num_columns(3).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
+        let runs = tc::path_runs(&ps.legs);
+        let breaks = tc::path_breaks(&runs);
+        let letter = |p: usize| tc::point_label(breaks.iter().position(|b| *b == p).unwrap_or(0));
+        egui::Grid::new("tc-legs").num_columns(5).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
             ui.label(RichText::new("Leg").strong());
             ui.label(RichText::new(format!("Length ({})", u.len_label())).strong());
             ui.label(RichText::new("Flow").strong());
+            ui.label(RichText::new("Slope (ft/ft)").strong()).on_hover_text("Average slope from this leg on. Leave it blank where the slope stays the same as the leg above; entering a different slope starts a new segment.");
+            ui.label(RichText::new("Segment").strong());
             ui.end_row();
-            for (i, (len, flow)) in ps.legs.iter_mut().enumerate() {
-                ui.label(format!("{} to {}", tc::point_label(i), tc::point_label(i + 1)));
-                ui.label(wavestorm_core::units::group(u.len(*len), 1));
-                widgets::combo(ui, &format!("leg{i}"), flow, &options, 200.0);
+            for (i, leg) in ps.legs.iter_mut().enumerate() {
+                ui.label(format!("{}", i + 1));
+                ui.label(wavestorm_core::units::group(u.len(leg.length), 1));
+                ui.horizontal(|ui| {
+                    // The leg's colour on the diagram.
+                    let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), egui::Sense::hover());
+                    ui.painter().rect_filled(r, 3.0, crate::diagram::flow_color(leg.flow, &t));
+                    widgets::combo(ui, &format!("leg{i}"), &mut leg.flow, &options, 190.0);
+                });
+                let mut slope = leg.slope.unwrap_or(f64::NAN);
+                if widgets::num_box(ui, ui.id().with(("leg-slope", i)), &mut slope, 4, 80.0, None) {
+                    leg.slope = slope.is_finite().then_some(slope.max(0.0));
+                }
+                match runs.iter().find(|r| r.from <= i && i < r.to) {
+                    Some(r) if r.from == i => ui.label(format!("{} to {}", letter(r.from), letter(r.to))),
+                    Some(_) => ui.label(RichText::new("(same)").color(t.text_dim)),
+                    None => ui.label(""),
+                };
                 ui.end_row();
             }
         });
-        ui.label(RichText::new("The letters are shown at the path's points on the diagram.").color(t.text_dim));
+        ui.label(RichText::new("The segment ends are lettered on the diagram while this dialog is open.").color(t.text_dim));
         ui.add_space(6.0);
         let mut limit_changed = false;
         ui.horizontal(|ui| {
@@ -700,9 +732,10 @@ fn tc_path_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
         ui.add_space(6.0);
         ui.label(RichText::new("Resulting segments:").strong());
         for s in &preview {
-            ui.label(format!("  {}  {}  {}", s.description, s.kind.label(), u.fmt_len(s.kind.length())));
+            let slope = s.kind.slope().map(|v| format!("  slope {v:.4}")).unwrap_or_default();
+            ui.label(format!("  {}  {}  {}{slope}", s.description, s.kind.label(), u.fmt_len(s.kind.length())));
         }
-        ui.label(RichText::new("Lengths come from the path; check each segment's slope and surface afterwards (Edit... on the Tc tab).").color(t.text_dim));
+        ui.label(RichText::new("Lengths come from the path and slopes from the legs (or an existing segment of the same type); check each segment's surface afterwards (Edit... on the Tc tab).").color(t.text_dim));
         result = ok_cancel_apply(ui, false, "tc");
     });
     match result {

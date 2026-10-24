@@ -667,6 +667,7 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
         locked: false,
         outline: None,
         tc_path: None,
+        tc_path_breaks: Vec::new(),
         foreign: node_foreign,
     };
     Some((node, outs, label))

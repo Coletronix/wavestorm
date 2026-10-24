@@ -300,9 +300,14 @@ Keep this section updated at the end of every session.
   sheet limit (default `tc::SHEET_LIMIT_FT` = 100 ft), replace or append; OK writes the
   segments into the draft and `Node::tc_path` (shown while the node is selected). Segment logic
   is `core::tc::segments_from_path` (tested): only lengths come from the path; slope/cover are
-  copied from an existing segment of the same type or default. Path points are lettered
-  A, B, C… (`tc::point_label`, drawn on the diagram); segments are described "A to B" and
-  remember their span in `TcSegment::path` (`TcSegment::new` for plain ones). The sheet limit
+  copied from an existing segment of the same type or default. Legs are `tc::PathLeg` (length,
+  flow, optional slope; blank keeps the slope above); `tc::path_runs` groups legs into segments
+  where flow type and slope stay the same (user rule, 2026-10-23: a new letter only where the
+  type or slope changes). While drawing every point is lettered; afterwards only segment ends
+  (`path_breaks`/`path_labels`; stored in `Node::tc_path_breaks` so deletions don't re-letter).
+  The pending path in an open editor is drawn live; legs are coloured by flow type
+  (`diagram::flow_color`). Segments are described "A to B" and remember their span in
+  `TcSegment::path` (`TcSegment::new` for plain ones). The sheet limit
   is applied by `tc::limit_sheet_flow`, which inserts a point where it falls inside a leg
   (unless within `SPLIT_SLACK_FT`), so letters stay consistent; `TcPathState::reset`
   recomputes from the drawn points when the limit changes. Deleting segments drops the path

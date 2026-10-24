@@ -260,6 +260,35 @@ impl TcKind {
         }
         self
     }
+
+    /// The segment's slope (ft/ft), for kinds that have one.
+    pub fn slope(&self) -> Option<f64> {
+        match self {
+            TcKind::Sheet { slope, .. }
+            | TcKind::SheetMcCuenSpiess { slope, .. }
+            | TcKind::Shallow { slope, .. }
+            | TcKind::Channel { slope, .. }
+            | TcKind::Lag { slope, .. }
+            | TcKind::Kirpich { slope, .. }
+            | TcKind::Kerby { slope, .. } => Some(*slope),
+            TcKind::Direct { .. } | TcKind::Lake { .. } => None,
+        }
+    }
+
+    /// The same segment with slope `s` (ft/ft), for kinds that have one.
+    pub fn with_slope(mut self, s: f64) -> TcKind {
+        match &mut self {
+            TcKind::Sheet { slope, .. }
+            | TcKind::SheetMcCuenSpiess { slope, .. }
+            | TcKind::Shallow { slope, .. }
+            | TcKind::Channel { slope, .. }
+            | TcKind::Lag { slope, .. }
+            | TcKind::Kirpich { slope, .. }
+            | TcKind::Kerby { slope, .. } => *slope = s,
+            TcKind::Direct { .. } | TcKind::Lake { .. } => {}
+        }
+        self
+    }
 }
 
 /// Flow type of one leg of a flow path drawn on the diagram.
@@ -317,26 +346,26 @@ pub const SHEET_LIMIT_FT: f64 = 100.0;
 pub const SPLIT_SLACK_FT: f64 = 1.0;
 
 /// Ends sheet flow `limit` ft from the start of a drawn flow path. `points` are the path's
-/// points and `legs[i]` (length ft, type) runs from point `i` to `i + 1`. The sheet leg in which
+/// points and `legs[i]` runs from point `i` to `i + 1`. The sheet leg in which
 /// the limit falls is divided at a new point (sheet flow, then shallow concentrated flow), and
 /// sheet legs beyond the limit become shallow concentrated flow, so points and legs stay
 /// aligned and segment labels match the points drawn on the diagram. A leg that overshoots
 /// the limit by less than [`SPLIT_SLACK_FT`] (a hand-drawn point a pixel past it) is left whole.
-pub fn limit_sheet_flow(points: &mut Vec<[f64; 2]>, legs: &mut Vec<(f64, PathFlow)>, limit: f64) {
+pub fn limit_sheet_flow(points: &mut Vec<[f64; 2]>, legs: &mut Vec<PathLeg>, limit: f64) {
     let mut used = 0.0;
     let mut i = 0;
     while i < legs.len() {
-        let (len, flow) = legs[i];
+        let PathLeg { length: len, flow, .. } = legs[i];
         if flow == PathFlow::Sheet && len.is_finite() && len > 0.0 {
             let take = (limit - used).max(0.0);
             if take < SPLIT_SLACK_FT {
-                legs[i].1 = PathFlow::Shallow;
+                legs[i].flow = PathFlow::Shallow;
             } else if take < len - SPLIT_SLACK_FT {
                 if let (Some(a), Some(b)) = (points.get(i).copied(), points.get(i + 1).copied()) {
                     let f = take / len;
                     points.insert(i + 1, [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
-                    legs[i].0 = take;
-                    legs.insert(i + 1, (len - take, PathFlow::Shallow));
+                    legs[i].length = take;
+                    legs.insert(i + 1, PathLeg::new(len - take, PathFlow::Shallow));
                 }
                 used = limit;
             } else {
@@ -347,31 +376,91 @@ pub fn limit_sheet_flow(points: &mut Vec<[f64; 2]>, legs: &mut Vec<(f64, PathFlo
     }
 }
 
-/// Builds Tc segments from the legs of a flow path drawn on the diagram (`(length ft, type)` in
-/// flow order; leg `i` runs from point `i` to `i + 1`). Consecutive legs of the same type become
-/// one segment, described by the points it spans ("A to C") and remembering them in
-/// [`TcSegment::path`]. Only lengths come from the path: slope, roughness, surface and section
-/// are copied from the first segment of the same type in `template` (the subcatchment's
-/// existing segments) or take [`PathFlow::default_kind`]. Empty or invalid legs add nothing.
-pub fn segments_from_path(legs: &[(f64, PathFlow)], template: &[TcSegment]) -> Vec<TcSegment> {
-    // (type, length, first point, last point)
-    let mut runs: Vec<(PathFlow, f64, usize, usize)> = Vec::new();
-    for (i, &(len, flow)) in legs.iter().enumerate() {
-        if !(len.is_finite() && len > 0.0) {
+/// One leg of a drawn flow path (from one clicked point to the next).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PathLeg {
+    /// Length (ft).
+    pub length: f64,
+    pub flow: PathFlow,
+    /// Slope (ft/ft) from this leg on; None keeps the slope of the leg before.
+    pub slope: Option<f64>,
+}
+
+impl PathLeg {
+    pub fn new(length: f64, flow: PathFlow) -> PathLeg {
+        PathLeg { length, flow, slope: None }
+    }
+}
+
+/// A run of consecutive legs with the same flow type and slope: one Tc segment.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PathRun {
+    pub flow: PathFlow,
+    pub slope: Option<f64>,
+    /// Total length (ft).
+    pub length: f64,
+    /// First and last path point.
+    pub from: usize,
+    pub to: usize,
+}
+
+/// Splits a drawn path's legs into segments: a new one starts where the flow type or the slope
+/// changes (a leg without a slope keeps the one before). Empty or invalid legs add nothing.
+pub fn path_runs(legs: &[PathLeg]) -> Vec<PathRun> {
+    let mut runs: Vec<PathRun> = Vec::new();
+    let mut slope = None;
+    for (i, leg) in legs.iter().enumerate() {
+        if leg.slope.is_some() {
+            slope = leg.slope;
+        }
+        if !(leg.length.is_finite() && leg.length > 0.0) {
             continue;
         }
         match runs.last_mut() {
-            Some((f, l, _, end)) if *f == flow => {
-                *l += len;
-                *end = i + 1;
+            Some(r) if r.flow == leg.flow && r.slope == slope => {
+                r.length += leg.length;
+                r.to = i + 1;
             }
-            _ => runs.push((flow, len, i, i + 1)),
+            _ => runs.push(PathRun { flow: leg.flow, slope, length: leg.length, from: i, to: i + 1 }),
         }
     }
-    runs.into_iter()
-        .map(|(flow, len, a, b)| {
-            let base = template.iter().find(|s| flow.matches(&s.kind)).map(|s| s.kind.clone()).unwrap_or_else(|| flow.default_kind());
-            TcSegment { kind: base.with_length(len), description: format!("{} to {}", point_label(a), point_label(b)), path: Some([a, b]) }
+    runs
+}
+
+/// The path points that start or end a segment (the lettered ones), in order.
+pub fn path_breaks(runs: &[PathRun]) -> Vec<usize> {
+    let mut v: Vec<usize> = runs.iter().flat_map(|r| [r.from, r.to]).collect();
+    v.sort_unstable();
+    v.dedup();
+    v
+}
+
+/// The letter of each path point: segment ends are lettered A, B, C… in order; points inside
+/// a segment have none.
+pub fn path_labels(points: usize, breaks: &[usize]) -> Vec<Option<String>> {
+    (0..points).map(|i| breaks.iter().position(|b| *b == i).map(point_label)).collect()
+}
+
+/// Builds Tc segments from the legs of a flow path drawn on the diagram (in flow order; leg `i`
+/// runs from point `i` to `i + 1`). Consecutive legs of the same flow type and slope become one
+/// segment ([`path_runs`]), described by its lettered ends ("A to B") and remembering the
+/// points it spans in [`TcSegment::path`]. Lengths come from the path and slopes from the legs;
+/// roughness, surface and section (and the slope when no leg gives one) are copied from the
+/// first segment of the same type in `template` (the subcatchment's existing segments) or take
+/// [`PathFlow::default_kind`].
+pub fn segments_from_path(legs: &[PathLeg], template: &[TcSegment]) -> Vec<TcSegment> {
+    let runs = path_runs(legs);
+    let breaks = path_breaks(&runs);
+    let letter = |p: usize| point_label(breaks.iter().position(|b| *b == p).unwrap_or(0));
+    runs.iter()
+        .map(|r| {
+            let base = template.iter().find(|s| r.flow.matches(&s.kind)).map(|s| s.kind.clone()).unwrap_or_else(|| r.flow.default_kind());
+            let kind = base.with_length(r.length);
+            let kind = match r.slope {
+                Some(s) => kind.with_slope(s),
+                None => kind,
+            };
+            TcSegment { kind, description: format!("{} to {}", letter(r.from), letter(r.to)), path: Some([r.from, r.to]) }
         })
         .collect()
 }
@@ -389,44 +478,62 @@ mod tests {
         TcSegment::new(kind, "")
     }
 
+    fn legs(v: &[(f64, PathFlow, Option<f64>)]) -> Vec<PathLeg> {
+        v.iter().map(|&(length, flow, slope)| PathLeg { length, flow, slope }).collect()
+    }
+
     #[test]
     fn drawn_path_becomes_segments() {
         use PathFlow::*;
-        // Points A..E, 1 diagram unit = 1 ft. The 250 ft first leg is divided at 100 ft (new
-        // point B): sheet A to B, then shallow B to D (150 + 300 ft), channel D to F (two legs).
+        // Points 0..4, 1 diagram unit = 1 ft. The 250 ft first leg is divided at 100 ft (new
+        // point 1). Segments: sheet 0-1; shallow 1-3 (150 + 300 ft, same slope); channel 3-5
+        // at 0.01 then... the last leg's slope changes, so it is its own segment.
         let mut points = vec![[0.0, 0.0], [250.0, 0.0], [250.0, 300.0], [650.0, 300.0], [650.0, 500.0]];
-        let mut legs = vec![(250.0, Sheet), (300.0, Shallow), (400.0, Channel), (200.0, Channel)];
-        limit_sheet_flow(&mut points, &mut legs, SHEET_LIMIT_FT);
+        let mut lg = legs(&[(250.0, Sheet, Some(0.03)), (300.0, Shallow, Some(0.02)), (400.0, Channel, Some(0.01)), (200.0, Channel, Some(0.005))]);
+        limit_sheet_flow(&mut points, &mut lg, SHEET_LIMIT_FT);
         assert_eq!(points.len(), 6);
         assert_eq!(points[1], [100.0, 0.0]);
-        let segs = segments_from_path(&legs, &[]);
-        let got: Vec<(&str, f64, &str, Option<[usize; 2]>)> = segs.iter().map(|s| (s.kind.label(), s.kind.length(), s.description.as_str(), s.path)).collect();
+        let segs = segments_from_path(&lg, &[]);
+        type Row<'a> = (&'a str, f64, Option<f64>, &'a str, Option<[usize; 2]>);
+        let got: Vec<Row> = segs.iter().map(|s| (s.kind.label(), s.kind.length(), s.kind.slope(), s.description.as_str(), s.path)).collect();
         assert_eq!(
             got,
             vec![
-                ("Sheet Flow", 100.0, "A to B", Some([0, 1])),
-                ("Shallow Concentrated Flow", 450.0, "B to D", Some([1, 3])),
-                ("Trapezoidal Channel", 600.0, "D to F", Some([3, 5])),
+                ("Sheet Flow", 100.0, Some(0.03), "A to B", Some([0, 1])),
+                // The split-off 150 ft keeps the sheet leg's slope, so it is its own segment.
+                ("Shallow Concentrated Flow", 150.0, Some(0.03), "B to C", Some([1, 2])),
+                ("Shallow Concentrated Flow", 300.0, Some(0.02), "C to D", Some([2, 3])),
+                ("Trapezoidal Channel", 400.0, Some(0.01), "D to E", Some([3, 4])),
+                ("Trapezoidal Channel", 200.0, Some(0.005), "E to F", Some([4, 5])),
             ]
         );
+        // Legs of one type with no new slope merge, and only segment ends are lettered.
+        let lg2 = legs(&[(40.0, Sheet, Some(0.02)), (60.0, Sheet, None), (100.0, Shallow, None), (100.0, Shallow, None), (50.0, Shallow, Some(0.04))]);
+        let runs = path_runs(&lg2);
+        assert_eq!(runs.iter().map(|r| (r.from, r.to)).collect::<Vec<_>>(), [(0, 2), (2, 4), (4, 5)]);
+        let breaks = path_breaks(&runs);
+        assert_eq!(breaks, [0, 2, 4, 5]);
+        assert_eq!(path_labels(6, &breaks), [Some("A".into()), None, Some("B".into()), None, Some("C".into()), Some("D".into())]);
+        let segs = segments_from_path(&lg2, &[]);
+        assert_eq!(segs.iter().map(|s| s.description.as_str()).collect::<Vec<_>>(), ["A to B", "B to C", "C to D"]);
         // Re-applying the limit to the divided path changes nothing; later sheet legs turn shallow.
-        let (p0, l0) = (points.clone(), legs.clone());
-        limit_sheet_flow(&mut points, &mut legs, SHEET_LIMIT_FT);
-        assert_eq!((points, legs), (p0, l0));
+        let (p0, l0) = (points.clone(), lg.clone());
+        limit_sheet_flow(&mut points, &mut lg, SHEET_LIMIT_FT);
+        assert_eq!((points, lg), (p0, l0));
         let mut pts = vec![[0.0, 0.0], [50.0, 0.0], [200.0, 0.0]];
-        let mut lg = vec![(50.0, Sheet), (150.0, Sheet)];
-        limit_sheet_flow(&mut pts, &mut lg, 100.0);
-        assert_eq!(lg, vec![(50.0, Sheet), (50.0, Sheet), (100.0, Shallow)]);
-        // Slope and cover come from an existing segment of the same type.
+        let mut l3 = legs(&[(50.0, Sheet, None), (150.0, Sheet, None)]);
+        limit_sheet_flow(&mut pts, &mut l3, 100.0);
+        assert_eq!(l3, legs(&[(50.0, Sheet, None), (50.0, Sheet, None), (100.0, Shallow, None)]));
+        // Without leg slopes, slope and cover come from an existing segment of the same type.
         let existing = [seg(TcKind::Shallow { length: 10.0, slope: 0.035, kv: 20.3282, surface: "Paved".into() })];
-        let segs = segments_from_path(&[(80.0, Shallow), (0.0, Sheet), (f64::NAN, Pipe)], &existing);
+        let segs = segments_from_path(&legs(&[(80.0, Shallow, None), (0.0, Sheet, None), (f64::NAN, Pipe, None)]), &existing);
         assert_eq!(segs.len(), 1, "empty and invalid legs are skipped");
         match &segs[0].kind {
             TcKind::Shallow { length, slope, surface, .. } => assert_eq!((*length, *slope, surface.as_str()), (80.0, 0.035, "Paved")),
             k => panic!("unexpected {k:?}"),
         }
         // Pipes and channels are told apart by section.
-        let pipe = segments_from_path(&[(50.0, Pipe)], &[]);
+        let pipe = segments_from_path(&legs(&[(50.0, Pipe, None)]), &[]);
         assert!(matches!(&pipe[0].kind, TcKind::Channel { section: Section::Pipe { .. }, .. }));
         assert_eq!(path_flow_of(&pipe[0].kind), Some(Pipe));
         assert_eq!((point_label(0), point_label(25), point_label(26), point_label(27)), ("A".into(), "Z".into(), "AA".into(), "AB".into()));

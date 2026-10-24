@@ -7,6 +7,16 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
 
 ## [Unreleased]
 
+### Changed
+- Tc flow path editor:
+  - Each leg can take a slope. Leave it blank where the slope stays the same as the leg above.
+  - A new segment starts only where the flow type or the slope changes.
+  - Only segment ends are lettered on the diagram; points inside a segment show a small dot.
+  - The path stays on the diagram while the editor is open, with its letters updating live.
+  - Segment slopes come from the legs.
+  - Each leg is coloured by its flow type: sheet green, shallow orange, channel blue, pipe
+    violet, lake teal. The editor rows have matching colour swatches.
+
 ## [0.4.0] - 2026-10-23
 
 ### Added

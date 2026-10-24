@@ -135,7 +135,7 @@ fn calibrate_and_trace_subcatchment() {
         assert_eq!(st.tab, 2, "on the Tc tab");
         let ps = st.tc_path.as_ref().expect("flow path dialog");
         assert_eq!(ps.legs.len(), 2);
-        assert!((ps.legs[0].0 - 100.0).abs() < 3.0 && (ps.legs[1].0 - 200.0).abs() < 4.0, "legs {:?}", ps.legs);
+        assert!((ps.legs[0].length - 100.0).abs() < 3.0 && (ps.legs[1].length - 200.0).abs() < 4.0, "legs {:?}", ps.legs);
         // First leg sheet flow (within the 100 ft limit), then shallow concentrated flow.
         let segs = ps.segments(&[]);
         let kinds: Vec<(&str, &str)> = segs.iter().map(|s| (s.kind.label(), s.description.as_str())).collect();
@@ -144,6 +144,17 @@ fn calibrate_and_trace_subcatchment() {
         let mut node = doc.project.node(id).unwrap().clone();
         ps.apply(&mut node);
         assert_eq!(node.tc_path.as_ref().map(Vec::len), Some(3));
+        assert_eq!(node.tc_path_breaks, [0, 1, 2], "every point ends a segment here");
+        // Making the second leg sheet flow too merges the legs: only the ends are lettered.
+        let mut merged = wavestorm_ui::dialogs::node::TcPathState::new(node.tc_path.clone().unwrap(), Some(2.5), &[]);
+        merged.limit_sheet = false;
+        merged.reset(&[]);
+        merged.legs[1].flow = merged.legs[0].flow;
+        let mut n2 = node.clone();
+        merged.apply(&mut n2);
+        assert_eq!(n2.tc_path_breaks, [0, 2]);
+        let NodeData::Subcat(sc2) = &n2.data else { panic!() };
+        assert_eq!(sc2.tc.iter().map(|s| s.description.as_str()).collect::<Vec<_>>(), ["A to B"]);
         let NodeData::Subcat(sc) = &mut node.data else { panic!() };
         assert_eq!(sc.tc.len(), 2);
         // Deleting one path segment keeps the path; deleting the last one removes it.

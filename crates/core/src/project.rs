@@ -280,6 +280,10 @@ pub struct Node {
     /// subcatchments whose Tc segment lengths were measured from it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tc_path: Option<Vec<[f64; 2]>>,
+    /// The `tc_path` points lettered A, B, C… on the diagram (segment ends), in order; empty
+    /// letters every point.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tc_path_breaks: Vec<usize>,
     /// Interchange-file data this model does not represent (see `hcp`).
     #[serde(default)]
     pub foreign: Vec<ForeignEntry>,
@@ -577,6 +581,7 @@ impl Project {
             locked: false,
             outline: None,
             tc_path: None,
+            tc_path_breaks: Vec::new(),
             foreign: Vec::new(),
         });
         id

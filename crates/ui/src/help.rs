@@ -79,12 +79,16 @@ Drawing the flow path: select a subcatchment and use the Tc Flow Path tool (besi
 or Draw Flow Path on Diagram on the Tc tab, or the node's right-click menu). Click along the \
 longest flow path from the hydraulically most distant point to the outlet; every clicked point \
 can start a new segment. Double-click or press Enter to finish (Backspace removes the last \
-point, Esc cancels). Then choose the flow type of each leg: consecutive legs of one type \
-become one segment, and sheet flow beyond the limit (100 ft by default; TR-55 allows 300 ft) \
-continues as shallow concentrated flow. Lengths are measured with the background's calibrated \
-scale; slope and surface still have to be entered for each segment (they are copied from an \
-existing segment of the same type when there is one). The path is kept with the subcatchment \
-and shown while it is selected.",
+point, Esc cancels); while drawing every point is lettered. Then set each leg's flow type \
+and, where it changes, its slope (blank keeps the slope of the leg above). A new segment starts \
+wherever the flow type or the slope changes; only segment ends are lettered on the diagram \
+(A, B, C…, and the segments are described \"A to B\"), and each leg is coloured by its flow \
+type (sheet green, shallow orange, channel blue, pipe violet, lake teal). Sheet flow beyond \
+the limit (100 ft by default; TR-55 allows 300 ft) continues as shallow concentrated flow. \
+Lengths are measured with the background's calibrated scale; surface (and slope where no leg \
+gives one) is copied from an existing segment of the same type when there is one. The path is \
+kept with the subcatchment and shown while it is selected; deleting its last segment removes \
+it.",
     },
     Topic {
         id: "rainfall",
