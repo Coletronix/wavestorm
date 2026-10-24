@@ -7,6 +7,16 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-23
+
+### Fixed
+- The app no longer redraws continuously: the window title was re-sent every frame, which
+  requested another frame each time. It now goes idle when nothing changes, and the desktop and
+  web builds keep one frame queued instead of two, so the UI keeps up with the mouse.
+- Iridescent Glass: circular icons (Help, zoom lenses, settings knobs) and pill shapes no
+  longer show a torn edge on their right side; an icon's shadow no longer falls inside its
+  glass body.
+
 ## [0.2.1] - 2026-10-23
 
 ### Changed
@@ -93,7 +103,8 @@ First tagged release.
 - Stor-Ind+Trans reach attenuation can differ from the reference application (~2 % vs ~4 % on
   one published example).
 
-[Unreleased]: https://github.com/Coletronix/stormwaves/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Coletronix/stormwaves/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/Coletronix/stormwaves/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Coletronix/stormwaves/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Coletronix/stormwaves/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Coletronix/stormwaves/releases/tag/v0.1.0
