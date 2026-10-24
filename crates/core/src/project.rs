@@ -276,6 +276,10 @@ pub struct Node {
     /// Traced outline on the diagram (diagram units), for subcatchments drawn over a background.
     #[serde(default)]
     pub outline: Option<Vec<[f64; 2]>>,
+    /// The Tc flow path drawn on the diagram (diagram units, upstream end first), for
+    /// subcatchments whose Tc segment lengths were measured from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tc_path: Option<Vec<[f64; 2]>>,
     /// Interchange-file data this model does not represent (see `hcp`).
     #[serde(default)]
     pub foreign: Vec<ForeignEntry>,
@@ -572,6 +576,7 @@ impl Project {
             data: NodeData::empty(t),
             locked: false,
             outline: None,
+            tc_path: None,
             foreign: Vec::new(),
         });
         id

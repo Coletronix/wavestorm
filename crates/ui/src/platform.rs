@@ -218,16 +218,35 @@ pub mod store {
     }
 
     pub fn write(key: &str, text: &str) {
+        let _ = try_write(key, text);
+    }
+
+    /// Like [`write`], reporting failure (for example a full browser storage quota).
+    pub fn try_write(key: &str, text: &str) -> Result<(), String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let f = config_file(&format!("{key}.json")).ok_or("no configuration folder")?;
+            if let Some(dir) = f.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(f, text).map_err(|e| e.to_string())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let s = web_sys::window().and_then(|w| w.local_storage().ok().flatten()).ok_or("no local storage")?;
+            s.set_item(&format!("wavestorm.{key}"), text).map_err(|e| format!("{e:?}"))
+        }
+    }
+
+    /// Deletes a stored value.
+    pub fn remove(key: &str) {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(f) = config_file(&format!("{key}.json")) {
-            if let Some(dir) = f.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            let _ = std::fs::write(f, text);
+            let _ = std::fs::remove_file(f);
         }
         #[cfg(target_arch = "wasm32")]
         if let Some(Ok(Some(s))) = web_sys::window().map(|w| w.local_storage()) {
-            let _ = s.set_item(&format!("wavestorm.{key}"), text);
+            let _ = s.remove_item(&format!("wavestorm.{key}"));
         }
     }
 }

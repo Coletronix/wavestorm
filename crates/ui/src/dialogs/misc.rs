@@ -119,8 +119,25 @@ pub fn general(ctx: &egui::Context, st: &mut GeneralState, actions: &mut Vec<Win
             }
         });
         widgets::group(ui, "Automatic Backup", |ui| {
-            conv_field(ui, "backup", "Backup Interval", "minutes", &mut st.draft.backup_minutes, |x| x, |x| x.clamp(0.0, 1440.0), 0, 200.0);
-            ui.label(RichText::new("Changed projects are copied to <project>.bak (desktop only); 0 turns backups off.").color(Tokens::get(ui.ctx()).text_dim));
+            let dim = Tokens::get(ui.ctx()).text_dim;
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ui.horizontal(|ui| {
+                    widgets::check(ui, &mut st.draft.autosave, "Autosave projects every").on_hover_text("Save changed projects to their own files automatically. Projects never saved yet are kept for recovery instead.");
+                    if widgets::num_box(ui, ui.id().with("autosave-minutes"), &mut st.draft.autosave_minutes, 1, 60.0, Some(1.0)) {
+                        st.draft.autosave_minutes = st.draft.autosave_minutes.clamp(0.25, 240.0);
+                    }
+                    ui.label("minutes");
+                });
+                conv_field(ui, "backup", "Backup Interval", "minutes", &mut st.draft.backup_minutes, |x| x, |x| x.clamp(0.0, 1440.0), 0, 200.0);
+                ui.label(RichText::new("Changed projects are also copied to <project>.bak; 0 turns backups off.").color(dim));
+            }
+            ui.label(RichText::new(if cfg!(target_arch = "wasm32") {
+                "Unsaved changes are kept in this browser's storage and reopened if the page is closed before you export the project."
+            } else {
+                "Unsaved changes, including new projects never saved, are kept and reopened if the program closes unexpectedly."
+            })
+            .color(dim));
         });
         widgets::group(ui, "Rainfall Library", |ui| {
             let lib = crate::library::current();

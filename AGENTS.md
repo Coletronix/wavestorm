@@ -293,6 +293,23 @@ Keep this section updated at the end of every session.
   `check`, `radio`, `group`, `tabs`/`pill_tab`, `tab_body`, `header_cell`, `sunken`,
   `combo` — the combo slab is painted under egui's button from last frame's rect). Snapshot
   with `--do "theme:glass;..."`; `tests/monkey.rs` runs the random-input test in glass too.
+- Tc flow path (2026-10-23, user request): `Tool::TcPath { node, points }` draws a
+  subcatchment's flow path (dock/tool-column button `Cmd::TcPath`, greyed out unless exactly one
+  subcatchment is selected; Tc tab "Draw Flow Path on Diagram"; right-click menu). Finishing
+  (double-click/Enter) opens the edit dialog's `TcPathState` sub-dialog: one flow type per leg,
+  sheet limit (default `tc::SHEET_LIMIT_FT` = 100 ft), replace or append; OK writes the
+  segments into the draft and `Node::tc_path` (shown while the node is selected). Segment logic
+  is `core::tc::segments_from_path` (tested): only lengths come from the path; slope/cover are
+  copied from an existing segment of the same type or default.
+- Unsaved-work recovery (`ui::recovery`): `DELAY` (1 s) after any change, dirty projects are
+  written to `store` key `recovery` (localStorage / config file; falls back to no background
+  image, then reports a failure once); restored automatically at start (non-headless) in place
+  of the sample. Desktop autosave pref (`autosave`, `autosave_minutes`, off by default) saves
+  dirty projects that have a path; the `.bak` timer remains. Timers wake the idle app with
+  `request_repaint_after` only while saved projects have unsaved changes.
+- Arrow grabbing: `diagram::handle_at` hit-tests the whole arrowhead from the press origin
+  (egui reports drag starts after the pointer has moved), nearest wins; hovering a handle shows
+  a grab cursor. `tests/monkey.rs::arrowheads_are_easy_to_grab` covers both layouts.
 - Responsiveness (2026-10-23, user report "a few frames behind the mouse"): the app must go
   idle when nothing changes. Never call `send_viewport_cmd` or `request_repaint` every frame
   (the window title is sent only when it changes); `tests/idle.rs` asserts every theme and

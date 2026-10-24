@@ -109,5 +109,36 @@ fn calibrate_and_trace_subcatchment() {
         // Clicks land on whole pixels, so allow a little slack.
         assert!((area - 50_000.0).abs() / 50_000.0 < 0.03, "traced area {area}");
         assert_eq!(sub.outline.as_ref().map(|o| o.len()), Some(4));
+
+        // Draw its Tc flow path: 40 units (100 ft) down, then 80 units (200 ft) across.
+        let (id, label) = (sub.id, sub.label());
+        doc.windows.clear();
+        script(h.state_mut(), &format!("tc-path:{label}"));
+        h.step();
+        for w in [pos2(110.0, 110.0), pos2(110.0, 150.0), pos2(190.0, 150.0)] {
+            let s = h.state_mut().world_to_screen(w);
+            click(&mut h, s);
+        }
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        let app = h.state_mut();
+        assert_eq!(app.tool.name(), "Select", "Enter finishes the path");
+        let doc = app.doc();
+        let st = doc
+            .windows
+            .iter()
+            .find_map(|w| match w {
+                wavestorm_ui::windows::Window::Edit(e) if e.node == id => Some(e),
+                _ => None,
+            })
+            .expect("the subcatchment's edit dialog opens");
+        assert_eq!(st.tab, 2, "on the Tc tab");
+        let ps = st.tc_path.as_ref().expect("flow path dialog");
+        assert_eq!(ps.legs.len(), 2);
+        assert!((ps.legs[0].0 - 100.0).abs() < 3.0 && (ps.legs[1].0 - 200.0).abs() < 4.0, "legs {:?}", ps.legs);
+        // First leg sheet flow (within the 100 ft limit), then shallow concentrated flow.
+        let segs = ps.segments(&[]);
+        let kinds: Vec<&str> = segs.iter().map(|s| s.kind.label()).collect();
+        assert_eq!(kinds, ["Sheet Flow", "Shallow Concentrated Flow"]);
     }
 }

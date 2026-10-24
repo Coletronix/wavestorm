@@ -20,11 +20,25 @@ pub struct Prefs {
     pub show_messages: bool,
     /// Folder holding rainfall library files (.hcr, .huh, .idf, *-Rain.txt); desktop only.
     pub rainfall_folder: String,
+    /// Save changed projects to their own files automatically (desktop; projects that have
+    /// been saved once).
+    pub autosave: bool,
+    /// Minutes between automatic saves.
+    pub autosave_minutes: f64,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { theme: ThemeKind::Classic, backup_minutes: 5.0, multiple_project_reports: false, show_tips: true, show_messages: true, rainfall_folder: String::new() }
+        Prefs {
+            theme: ThemeKind::Classic,
+            backup_minutes: 5.0,
+            multiple_project_reports: false,
+            show_tips: true,
+            show_messages: true,
+            rainfall_folder: String::new(),
+            autosave: false,
+            autosave_minutes: 2.0,
+        }
     }
 }
 
@@ -43,6 +57,12 @@ impl Prefs {
     /// Seconds between backups, or None when backups are off.
     pub fn backup_interval(&self) -> Option<f64> {
         (self.backup_minutes.is_finite() && self.backup_minutes > 0.0).then_some(self.backup_minutes * 60.0)
+    }
+
+    /// Seconds between automatic saves, or None when autosave is off (always off in the
+    /// browser, where projects are files the user downloads).
+    pub fn autosave_interval(&self) -> Option<f64> {
+        (cfg!(not(target_arch = "wasm32")) && self.autosave && self.autosave_minutes.is_finite()).then_some(self.autosave_minutes.max(0.25) * 60.0)
     }
 }
 

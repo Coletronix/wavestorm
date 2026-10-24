@@ -64,6 +64,8 @@ pub enum WindowAction {
     SaveFile { name: String, bytes: Vec<u8>, ext: &'static str },
     /// Replace the project's rainfall events, or add/update them by name.
     SetEvents { events: Vec<wavestorm_core::rainfall::RainEvent>, replace: bool },
+    /// Start drawing subcatchment `n`'s Tc flow path on the diagram.
+    DrawTcPath(NodeId),
 }
 
 /// Shows every window of the document; returns follow-up actions.

@@ -74,7 +74,17 @@ Lag (CN) method:  Tc = L^0.8 (S+1)^0.7 / (1140 Y^0.5)  hours, Y in percent.\n\
 Kirpich:  Tc = 0.0078 L^0.77 s^-0.385  minutes times an adjustment factor.\n\
 Kerby:  Tc = 1.44 (L N)^0.467 s^-0.235  minutes.\n\
 Lake or reservoir:  wave celerity V = (g D)^0.5.\n\
-A minimum Tc can be set on the Advanced settings tab.",
+A minimum Tc can be set on the Advanced settings tab.\n\n\
+Drawing the flow path: select a subcatchment and use the Tc Flow Path tool (beside Measure, \
+or Draw Flow Path on Diagram on the Tc tab, or the node's right-click menu). Click along the \
+longest flow path from the hydraulically most distant point to the outlet; every clicked point \
+can start a new segment. Double-click or press Enter to finish (Backspace removes the last \
+point, Esc cancels). Then choose the flow type of each leg: consecutive legs of one type \
+become one segment, and sheet flow beyond the limit (100 ft by default; TR-55 allows 300 ft) \
+continues as shallow concentrated flow. Lengths are measured with the background's calibrated \
+scale; slope and surface still have to be entered for each segment (they are copied from an \
+existing segment of the same type when there is one). The path is kept with the subcatchment \
+and shown while it is selected.",
     },
     Topic {
         id: "rainfall",

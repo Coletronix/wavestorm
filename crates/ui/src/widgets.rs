@@ -110,28 +110,41 @@ fn push_button(ui: &mut Ui, label: &str, width: f32, enabled: bool, latched: boo
 
 /// A small square icon button for toolbars; `draw` paints the icon inside `rect`.
 pub fn tool_button(ui: &mut Ui, tip: &str, selected: bool, draw: impl FnOnce(&egui::Painter, Rect, &Tokens)) -> Response {
+    tool_button_enabled(ui, tip, selected, true, draw)
+}
+
+/// [`tool_button`] that can be disabled: a disabled button ignores clicks and its icon is
+/// greyed out.
+pub fn tool_button_enabled(ui: &mut Ui, tip: &str, selected: bool, enabled: bool, draw: impl FnOnce(&egui::Painter, Rect, &Tokens)) -> Response {
     let t = Tokens::get(ui.ctx());
     let size = if t.glass { 30.0 } else { 24.0 };
-    let (rect, resp) = ui.allocate_exact_size(vec2(size, size), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(size, size), if enabled { Sense::click() } else { Sense::hover() });
+    let pressed = enabled && (selected || resp.is_pointer_button_down_on());
+    let hot = enabled && resp.hovered();
     if ui.is_rect_visible(rect) && t.glass {
         let p = ui.painter();
-        if selected || resp.is_pointer_button_down_on() {
+        if pressed {
             crate::glass::glow(p, rect.center(), size * 0.9, crate::glass::alpha(crate::glass::IRIS[2], 0.22));
             crate::glass::surface(p, rect, 9.0, crate::glass::Surface::Selected, &t);
         } else {
-            let kind = if resp.hovered() { crate::glass::Surface::Hover } else { crate::glass::Surface::Key };
-            crate::glass::surface(p, rect, 9.0, kind, &t);
+            crate::glass::surface(p, rect, 9.0, if hot { crate::glass::Surface::Hover } else { crate::glass::Surface::Key }, &t);
         }
         draw(p, rect.shrink(6.0), &t);
+        if !enabled {
+            p.rect_filled(rect.shrink(3.0), 7.0, crate::glass::alpha(Color32::from_rgb(10, 12, 22), 0.65));
+        }
     } else if ui.is_rect_visible(rect) {
         let p = ui.painter();
-        if selected || resp.is_pointer_button_down_on() {
+        if pressed {
             p.rect_filled(rect, t.radius as f32, if t.bevel { t.light.gamma_multiply(0.6) } else { t.shadow });
             bevel(p, rect, false, &t);
-        } else if resp.hovered() {
+        } else if hot {
             bevel(p, rect, true, &t);
         }
         draw(p, rect.shrink(4.0), &t);
+        if !enabled {
+            p.rect_filled(rect.shrink(1.0), 0.0, crate::glass::alpha(t.face, 0.65));
+        }
     }
     if resp.hovered() {
         set_status_hint(ui.ctx(), tip);

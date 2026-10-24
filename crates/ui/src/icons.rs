@@ -267,6 +267,8 @@ pub enum Glyph {
     Calibrate,
     Trace,
     Measure,
+    /// Draw a subcatchment's Tc flow path: a bent path with a clock.
+    TcPath,
     Pointer,
     Undo,
     Redo,
@@ -486,6 +488,23 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
                 let h = if j % 2 == 0 { s * 0.2 } else { s * 0.12 };
                 p.line_segment([pos2(x, bar.min.y), pos2(x, bar.min.y + h)], Stroke::new(1.0, if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink }));
             }
+        }
+        Glyph::TcPath => {
+            let at = |fx: f32, fy: f32| pos2(r.min.x + s * fx, r.min.y + s * fy);
+            let blue = k(Color32::from_rgb(30, 90, 200));
+            let pts = vec![at(0.05, 0.3), at(0.35, 0.5), at(0.25, 0.8), at(0.9, 0.95)];
+            p.add(Shape::line(pts.clone(), Stroke::new(1.6, blue)));
+            for q in &pts[..3] {
+                p.rect_filled(Rect::from_center_size(*q, vec2(3.0, 3.0)), 0.0, ink);
+            }
+            let tip = at(0.95, 0.96);
+            p.add(Shape::convex_polygon(vec![tip, tip + vec2(-4.5, -3.5), tip + vec2(-3.0, 2.0)], blue, Stroke::NONE));
+            // A small clock: Tc is a time.
+            let cc = at(0.72, 0.3);
+            p.circle_filled(cc, s * 0.26, Color32::WHITE);
+            p.circle_stroke(cc, s * 0.26, Stroke::new(1.2, if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink }));
+            p.line_segment([cc, cc + vec2(0.0, -s * 0.17)], Stroke::new(1.2, Color32::from_rgb(20, 20, 20)));
+            p.line_segment([cc, cc + vec2(s * 0.12, 0.0)], Stroke::new(1.2, Color32::from_rgb(20, 20, 20)));
         }
         Glyph::Pointer => {
             let pts = vec![r.min + vec2(4.0, 1.0), r.min + vec2(4.0, s * 0.85), r.min + vec2(s * 0.42, s * 0.62), r.min + vec2(s * 0.75, s * 0.62)];
@@ -723,6 +742,23 @@ pub fn draw_glass_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             if g == Glyph::Measure {
                 pen.dot(at(0.18, 0.92), s * 0.05);
             }
+        }
+        Glyph::TcPath => {
+            // A bent flow path with beads at its breaks and an arrowhead at the outlet, and a
+            // small glass clock: Tc is a travel time.
+            let pts = vec![at(0.06, 0.34), at(0.36, 0.54), at(0.26, 0.82), at(0.84, 0.92)];
+            pen.line(pts.clone());
+            let (a, b) = (pts[2], pts[3]);
+            let d = (b - a).normalized();
+            let side = vec2(-d.y, d.x);
+            pen.line(vec![b - d * s * 0.16 + side * s * 0.1, b, b - d * s * 0.16 - side * s * 0.1]);
+            for q in &pts[..3] {
+                pen.dot(*q, s * 0.06);
+            }
+            let cc = at(0.72, 0.3);
+            pen.circle(cc, s * 0.22, true);
+            pen.seg(cc, cc + vec2(0.0, -s * 0.13));
+            pen.seg(cc, cc + vec2(s * 0.1, 0.0));
         }
         Glyph::LandUse => {
             // A leaf with its midrib and stem.

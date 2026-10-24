@@ -15,8 +15,11 @@ pub enum Tool {
     Calibrate { points: Vec<Pos2> },
     /// Click the corners of a subcatchment outline; close to create the subcatchment.
     Trace { points: Vec<Pos2> },
-    /// Measure a polyline length (e.g. a Tc flow path).
+    /// Measure a polyline length.
     Measure { points: Vec<Pos2> },
+    /// Draw subcatchment `node`'s Tc flow path, from its most distant point to the outlet; each
+    /// clicked point can start a new Tc segment.
+    TcPath { node: NodeId, points: Vec<Pos2> },
     /// Drag the background image.
     MoveUnderlay,
 }
@@ -28,6 +31,7 @@ impl Tool {
             Tool::Calibrate { .. } => "Calibrate",
             Tool::Trace { .. } => "Trace Subcatchment",
             Tool::Measure { .. } => "Measure",
+            Tool::TcPath { .. } => "Tc Flow Path",
             Tool::MoveUnderlay => "Move Background",
         }
     }
@@ -63,6 +67,8 @@ pub enum CanvasAction {
     /// Finished trace: outline in world coordinates.
     Traced(Vec<Pos2>),
     Measured(Vec<Pos2>),
+    /// Finished Tc flow path for a subcatchment (world coordinates, upstream end first).
+    TcPath(NodeId, Vec<Pos2>),
     Convert(NodeId, NodeType),
     ClearOutflows(NodeId),
 }
@@ -182,6 +188,12 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
     draw_grid(&painter, doc, canvas, &t);
     draw_underlay(&painter, doc, canvas);
     draw_outlines(&painter, doc, canvas, &t);
+    for n in doc.project.nodes.iter().filter(|n| doc.is_selected(n.id)) {
+        if let Some(path) = &n.tc_path {
+            let pts: Vec<Pos2> = path.iter().map(|q| wp(*q)).collect();
+            draw_tc_path(&painter, doc, canvas, &pts, None, &t);
+        }
+    }
     draw_arrows(&painter, doc, canvas, it, &t);
     draw_nodes(&painter, doc, canvas, it, &t);
 
@@ -223,6 +235,25 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
             }
             if let Some(a) = finished {
                 actions.push(a);
+                *tool = Tool::Select;
+            }
+        }
+        Tool::TcPath { node, points } => {
+            if resp.clicked()
+                && let Some(w) = world_ptr
+            {
+                // The second click of a double-click lands on the last point; don't repeat it.
+                if points.last().is_none_or(|l| (to_screen(&doc.view, canvas, *l) - to_screen(&doc.view, canvas, w)).length() > 3.0) {
+                    points.push(w);
+                }
+            }
+            if ui.input(|i| i.key_pressed(Key::Backspace)) {
+                points.pop();
+            }
+            let finish = (resp.double_clicked() || ui.input(|i| i.key_pressed(Key::Enter))) && points.len() >= 2;
+            draw_tc_path(&painter, doc, canvas, points, if finish { None } else { world_ptr }, &t);
+            if finish {
+                actions.push(CanvasAction::TcPath(*node, points.clone()));
                 *tool = Tool::Select;
             }
         }
@@ -493,6 +524,52 @@ fn handle_pos(doc: &Doc, canvas: Rect, from: NodeId, k: usize) -> Option<Pos2> {
     Some(c + off.get(k).copied().unwrap_or(Vec2::ZERO) * d)
 }
 
+/// Screen tip and back centre of the arrowhead of node `from`'s outflow `k` (for automation).
+pub fn arrowhead(doc: &Doc, canvas: Rect, from: NodeId, k: usize) -> Option<(Pos2, Pos2)> {
+    let d = doc.project.diagram.symbol_size as f32 * doc.view.zoom;
+    let (a, tip) = arrow_geom(doc, canvas, from, k)?;
+    Some((tip, tip - (tip - a).normalized() * (d * 0.22).clamp(6.0, 18.0)))
+}
+
+/// Distance from `p` to the segment `a`–`b`.
+fn dist_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
+    let ab = b - a;
+    let f = if ab.length_sq() > 0.0 { ((p - a).dot(ab) / ab.length_sq()).clamp(0.0, 1.0) } else { 0.0 };
+    (a + ab * f - p).length()
+}
+
+/// The arrowhead (outflow handle) under screen point `p`: node and outflow index. Arrows of
+/// every node with outflows count, plus the loose handles of selected nodes. The whole head is
+/// the target (tip back along the arrow by its drawn size, with a few pixels of slack), and
+/// the nearest wins when heads overlap.
+fn handle_at(doc: &Doc, canvas: Rect, p: Pos2) -> Option<(NodeId, usize)> {
+    let d = doc.project.diagram.symbol_size as f32 * doc.view.zoom;
+    let connected_head = (d * 0.22).clamp(6.0, 18.0);
+    let loose_head = (d * 0.2).clamp(6.0, 14.0);
+    let mut best: Option<((NodeId, usize), f32)> = None;
+    for n in &doc.project.nodes {
+        let selected = doc.is_selected(n.id);
+        for k in 0..n.node_type().outflow_count() {
+            let connected = n.outflows.get(k).copied().flatten().is_some();
+            if !connected && !selected {
+                continue;
+            }
+            let Some(tip) = handle_pos(doc, canvas, n.id, k) else { continue };
+            let (from, head) = match arrow_geom(doc, canvas, n.id, k) {
+                Some((a, _)) => (a, connected_head),
+                None => (to_screen(&doc.view, canvas, wp(n.pos)), loose_head),
+            };
+            let back = tip - (tip - from).normalized() * head;
+            let dist = dist_to_segment(p, tip, back);
+            let reach = (head * 0.55).max(8.0);
+            if dist <= reach && best.is_none_or(|(_, b)| dist < b) {
+                best = Some(((n.id, k), dist));
+            }
+        }
+    }
+    best.map(|(h, _)| h)
+}
+
 fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &Tokens) {
     let d = doc.project.diagram.symbol_size as f32 * doc.view.zoom;
     let font = (d * 0.27).clamp(6.0, 22.0);
@@ -552,6 +629,32 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
     }
 }
 
+/// A Tc flow path: a dashed line in the hint colour with a dot at each segment break and an
+/// arrowhead at the outlet end; `cursor` extends it to the pointer while drawing.
+fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor: Option<Pos2>, t: &Tokens) {
+    let mut s: Vec<Pos2> = pts.iter().map(|q| to_screen(&doc.view, canvas, *q)).collect();
+    if let Some(c) = cursor {
+        s.push(to_screen(&doc.view, canvas, c));
+    }
+    let color = t.hint;
+    let stroke = Stroke::new(2.0, color);
+    for w in s.windows(2) {
+        if t.glass {
+            p.extend(Shape::dashed_line(&[w[0] + vec2(0.8, 2.0), w[1] + vec2(0.8, 2.0)], Stroke::new(2.5, crate::glass::alpha(Color32::BLACK, 0.5)), 8.0, 5.0));
+        }
+        p.extend(Shape::dashed_line(&[w[0], w[1]], stroke, 8.0, 5.0));
+    }
+    for q in &s {
+        p.circle_filled(*q, 3.5, t.canvas);
+        p.circle_stroke(*q, 3.5, stroke);
+    }
+    if let [.., a, b] = s.as_slice()
+        && (*b - *a).length() > 1.0
+    {
+        arrow_head(p, *b, *b - *a, 10.0, stroke, t);
+    }
+}
+
 fn draw_polyline(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor: Option<Pos2>, closed_preview: bool, color: Color32) {
     let mut s: Vec<Pos2> = pts.iter().map(|q| to_screen(&doc.view, canvas, *q)).collect();
     if let Some(c) = cursor {
@@ -589,26 +692,11 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
     } else if resp.drag_started_by(egui::PointerButton::Primary)
         && let (Some(p), Some(_w)) = (resp.interact_pointer_pos(), world)
     {
-        // Arrow handles first (only when not over a symbol's body).
-        let mut handle = None;
-        for n in &doc.project.nodes {
-            if !(doc.is_selected(n.id) || n.outflows.iter().any(|o| o.is_some())) {
-                continue;
-            }
-            for k in 0..n.node_type().outflow_count() {
-                if n.outflows[k].is_none() && !doc.is_selected(n.id) {
-                    continue;
-                }
-                if let Some(h) = handle_pos(doc, canvas, n.id, k)
-                    && (h - p).length() < 9.0
-                {
-                    handle = Some((n.id, k));
-                }
-            }
-        }
-        let start = resp.interact_pointer_pos().map(|q| q - resp.drag_delta()).unwrap_or(p);
+        // A drag only "starts" once the pointer has moved a few pixels, so hit-test where the
+        // button went down, not where the pointer is now. Arrowheads come before node bodies.
+        let start = ui.input(|i| i.pointer.press_origin()).unwrap_or(p);
         let start_world = to_world(&doc.view, canvas, start);
-        if let Some((from, k)) = handle {
+        if let Some((from, k)) = handle_at(doc, canvas, start) {
             it.drag = Some(Drag::Reroute { from, k, at: p });
         } else if let Some(id) = node_at(&doc.project, start_world, d) {
             if !doc.is_selected(id) {
@@ -721,6 +809,17 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
                 }
             }
         }
+    }
+
+    // Show which arrowheads can be grabbed.
+    if matches!(it.drag, Some(Drag::Reroute { .. })) {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    } else if it.drag.is_none()
+        && resp.hovered()
+        && let Some(hp) = ui.input(|i| i.pointer.hover_pos())
+        && handle_at(doc, canvas, hp).is_some()
+    {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
 
     // Clicks.

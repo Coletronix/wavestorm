@@ -14,7 +14,7 @@ use wavestorm_core::link::{LinkElevation, LinkSource, ManualHydrograph, interpol
 use wavestorm_core::outlets::{OutletDevice, Routing};
 use wavestorm_core::project::{Node, NodeData, NodeId, NodeType, Tailwater};
 use wavestorm_core::storage::{CustomKind, StorageVolume, VolumeShape};
-use wavestorm_core::tc::{self, TcKind, TcSegment};
+use wavestorm_core::tc::{self, PathFlow, TcKind, TcSegment};
 use wavestorm_core::units::Units;
 
 pub struct EditState {
@@ -34,6 +34,45 @@ pub struct EditState {
     /// Text of the Area grid while editing (area, CN, description).
     pub area_rows: Vec<Vec<String>>,
     pub add_kind: usize,
+    /// The Tc flow-path dialog: a drawn path being divided into Tc segments.
+    pub tc_path: Option<TcPathState>,
+}
+
+/// A Tc flow path drawn on the diagram, split into legs at the clicked points. Each leg gets a
+/// flow type; consecutive legs of one type become one Tc segment (`tc::segments_from_path`).
+pub struct TcPathState {
+    /// The path in diagram units, upstream end first.
+    pub points: Vec<[f64; 2]>,
+    /// Leg lengths (ft) and flow types.
+    pub legs: Vec<(f64, PathFlow)>,
+    pub limit_sheet: bool,
+    /// Sheet flow longer than this (ft) continues as shallow concentrated flow.
+    pub sheet_limit: f64,
+    /// Replace the subcatchment's Tc segments (otherwise the new ones are added after them).
+    pub replace: bool,
+    /// The background has a calibrated scale (otherwise 1 diagram unit = 1 ft).
+    pub calibrated: bool,
+}
+
+impl TcPathState {
+    /// Legs of `points` measured with the background scale `feet_per_unit`; the first leg starts
+    /// as sheet flow and the rest as shallow concentrated flow.
+    pub fn new(points: Vec<[f64; 2]>, feet_per_unit: Option<f64>) -> Self {
+        let fpu = feet_per_unit.filter(|f| f.is_finite() && *f > 0.0);
+        let legs = points
+            .windows(2)
+            .map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]) * fpu.unwrap_or(1.0))
+            .filter(|l| *l > 1e-6)
+            .enumerate()
+            .map(|(i, l)| (l, if i == 0 { PathFlow::Sheet } else { PathFlow::Shallow }))
+            .collect();
+        TcPathState { points, legs, limit_sheet: true, sheet_limit: tc::SHEET_LIMIT_FT, replace: true, calibrated: fpu.is_some() }
+    }
+
+    /// The Tc segments this division gives, taking slope and cover from `template`.
+    pub fn segments(&self, template: &[TcSegment]) -> Vec<TcSegment> {
+        tc::segments_from_path(&self.legs, self.limit_sheet.then_some(self.sheet_limit), template)
+    }
 }
 
 /// Editable text of a link's time x event flow grid (flows in display units, blanks allowed).
@@ -134,6 +173,7 @@ impl EditState {
             chamber: None,
             area_rows: Vec::new(),
             add_kind: 0,
+            tc_path: None,
         }
     }
 }
@@ -210,7 +250,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
                     ui.add_sized(vec2(ui.available_width(), 260.0), egui::TextEdit::multiline(&mut st.draft.notes));
                 }
                 _ => match st.draft.node_type() {
-                    NodeType::Subcat => subcat_tab(ui, st, &units, tab, doc),
+                    NodeType::Subcat => subcat_tab(ui, st, &units, tab, doc, actions),
                     NodeType::Reach => reach_tab(ui, st, &units),
                     NodeType::Pond => pond_tab(ui, st, &units, tab, doc),
                     NodeType::Link => {
@@ -252,6 +292,7 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
         }
     }
     tc_editor(ctx, st, &units, doc);
+    tc_path_editor(ctx, st, &units);
     volume_editor(ctx, st, &units);
     if let Some(w) = &mut st.chamber {
         match super::chamber::show(ctx, &st.draft.title(), w, &units) {
@@ -374,7 +415,8 @@ fn general(ui: &mut Ui, st: &mut EditState, project: &wavestorm_core::project::P
 
 // ------------------------------------------------------------------ subcatchment
 
-fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) {
+fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, actions: &mut Vec<WindowAction>) {
+    let path = st.draft.tc_path.clone();
     let NodeData::Subcat(sc) = &mut st.draft.data else { return };
     let large = sc.large_units;
     let area_unit = if large { u.area_label() } else if u.metric() { "m²" } else { "sq-ft" };
@@ -493,7 +535,101 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc) 
                 }
             }
         });
-        let _ = t;
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            let draw = widgets::button(ui, "Draw Flow Path on Diagram", 0.0).on_hover_text(
+                "Click along the longest flow path on the diagram, from the hydraulically most distant point to the outlet. Each clicked point can start a new segment; double-click or press Enter to finish, Backspace removes a point, Esc cancels. The segment lengths are measured from the path; enter slope and surface for each segment.",
+            );
+            if draw.clicked() {
+                actions.push(WindowAction::DrawTcPath(st.node));
+            }
+            if let Some(p) = &path
+                && widgets::button(ui, "Divide Drawn Path...", 0.0).on_hover_text("Reassign the flow types of the path drawn earlier").clicked()
+            {
+                st.tc_path = Some(TcPathState::new(p.clone(), doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit)));
+            }
+        });
+        if let Some(p) = &path {
+            let fpu = doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit).unwrap_or(1.0);
+            let len: f64 = p.windows(2).map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]) * fpu).sum();
+            ui.label(RichText::new(format!("Drawn flow path: {} long, {} legs (shown on the diagram while this subcatchment is selected).", u.fmt_len(len), p.len().saturating_sub(1))).color(t.text_dim));
+        }
+    }
+}
+
+/// The Tc flow-path dialog: one row per leg of the drawn path with its measured length and a
+/// flow type, the sheet-flow limit, and a preview of the resulting segments.
+fn tc_path_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
+    let Some(ps) = &mut st.tc_path else { return };
+    let NodeData::Subcat(sc) = &st.draft.data else {
+        st.tc_path = None;
+        return;
+    };
+    let mut result = Buttons::None;
+    let preview = ps.segments(&sc.tc);
+    crate::frame::Win::new("Tc Flow Path").id(egui::Id::new(("tc-path", st.node))).collapsible(false).resizable(false).show(ctx, |ui| {
+        let t = Tokens::get(ui.ctx());
+        if !ps.calibrated {
+            ui.colored_label(t.warning, "The background is not calibrated: lengths use 1 diagram unit = 1 ft. Calibrate the background first for real lengths.");
+        }
+        ui.label("Choose the type of flow along each leg of the path (upstream first). Consecutive legs of the same type become one segment.");
+        ui.add_space(4.0);
+        let options: Vec<(PathFlow, String)> = PathFlow::ALL.iter().map(|f| (*f, f.label().to_string())).collect();
+        egui::Grid::new("tc-legs").num_columns(3).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
+            ui.label(RichText::new("Leg").strong());
+            ui.label(RichText::new(format!("Length ({})", u.len_label())).strong());
+            ui.label(RichText::new("Flow").strong());
+            ui.end_row();
+            for (i, (len, flow)) in ps.legs.iter_mut().enumerate() {
+                ui.label(format!("{}", i + 1));
+                ui.label(wavestorm_core::units::group(u.len(*len), 1));
+                widgets::combo(ui, &format!("leg{i}"), flow, &options, 200.0);
+                ui.end_row();
+            }
+        });
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            widgets::check(ui, &mut ps.limit_sheet, "Limit sheet flow to")
+                .on_hover_text("Sheet flow beyond this length continues as shallow concentrated flow. TR-55 (1986) allows up to 300 ft; current NRCS guidance (NEH 630 Ch. 15) recommends 100 ft.");
+            let mut shown = u.len(ps.sheet_limit);
+            if widgets::num_box(ui, ui.id().with("sheet-limit"), &mut shown, 0, 70.0, Some(10.0)) && shown.is_finite() {
+                ps.sheet_limit = u.len_in(shown).clamp(0.0, 1000.0);
+            }
+            ui.label(u.len_label());
+        });
+        ui.horizontal(|ui| {
+            if widgets::radio(ui, ps.replace, "Replace the Tc segments").clicked() {
+                ps.replace = true;
+            }
+            if widgets::radio(ui, !ps.replace, "Add after them").clicked() {
+                ps.replace = false;
+            }
+        });
+        ui.add_space(6.0);
+        ui.label(RichText::new("Resulting segments:").strong());
+        for s in &preview {
+            ui.label(format!("  {}  {}", s.kind.label(), u.fmt_len(s.kind.length())));
+        }
+        ui.label(RichText::new("Lengths come from the path; check each segment's slope and surface afterwards (Edit... on the Tc tab).").color(t.text_dim));
+        result = ok_cancel_apply(ui, false, "tc");
+    });
+    match result {
+        Buttons::Ok | Buttons::Apply => {
+            let points = ps.points.clone();
+            let replace = ps.replace;
+            if let NodeData::Subcat(sc) = &mut st.draft.data {
+                if replace {
+                    sc.tc = preview;
+                } else {
+                    sc.tc.extend(preview);
+                }
+            }
+            st.draft.tc_path = Some(points);
+            st.sel_row = None;
+            st.tc_path = None;
+        }
+        Buttons::Cancel => st.tc_path = None,
+        Buttons::None => {}
     }
 }
 

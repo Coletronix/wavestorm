@@ -69,6 +69,12 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 - Drag-and-drop nodes, multiple projects in tabs, undo history, notes and pop-up field tips.
 - A background image or PDF underlay with two-point scale calibration. You can trace
   subcatchment outlines on it, and the areas are measured automatically.
+- Draw a subcatchment's time-of-concentration flow path on the diagram. The Tc segment lengths
+  are measured from it (sheet flow is capped at 100 ft by default); you only enter slope and
+  surface.
+- Unsaved work is never lost. Changes are kept in local storage (browser storage on the web)
+  and reopened if the page or program closes before you save or export. The desktop version
+  can also autosave projects to their files on a timer.
 
 **Themes** (View > Theme)
 - **Classic**: the familiar engineering-software look, with bevelled grey dialogs.

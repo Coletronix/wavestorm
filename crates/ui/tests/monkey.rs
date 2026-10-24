@@ -115,6 +115,28 @@ fn palette_drop_creates_a_node() {
     assert_eq!(doc.project.nodes.len(), before);
 }
 
+/// An arrow can be grabbed anywhere on its head (not just at the tip), even when the pointer
+/// moves off quickly, and dropped on another node to reroute it — in both layouts.
+#[test]
+fn arrowheads_are_easy_to_grab() {
+    for theme in ["theme:classic", "theme:glass"] {
+        let mut h = harness();
+        script(h.state_mut(), theme);
+        h.run_steps(4);
+        let app = h.state_mut();
+        let find = |app: &mut WaveStormApp, l: &str| app.doc().project.by_label(l).map(|n| n.id).unwrap();
+        let (s1, r1, p1) = (find(app, "1S"), find(app, "1R"), find(app, "1P"));
+        assert_eq!(app.doc().project.node(s1).unwrap().outflows[0], Some(r1));
+        let (tip, back) = app.arrowhead_screen(s1, 0).expect("1S has an arrow");
+        let grab = tip + (back - tip) * 0.7;
+        let pos = app.doc().project.node(p1).unwrap().pos;
+        let target = app.world_to_screen(pos2(pos[0] as f32, pos[1] as f32));
+        drag(&mut h, grab, target, Modifiers::NONE);
+        h.run_steps(2);
+        assert_eq!(h.state_mut().doc().project.node(s1).unwrap().outflows[0], Some(p1), "{theme}: rerouted to 1P");
+    }
+}
+
 #[test]
 fn glass_palette_and_dock_work() {
     let mut h = harness();

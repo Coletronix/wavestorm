@@ -228,12 +228,146 @@ pub fn total_minutes(segments: &[TcSegment], cn: f64, decimals: u32) -> f64 {
     segments.iter().map(|s| rounded_minutes(s.kind.evaluate(cn).minutes, decimals)).sum()
 }
 
+impl TcKind {
+    /// The same segment with flow length `len` (ft).
+    pub fn with_length(mut self, len: f64) -> TcKind {
+        match &mut self {
+            TcKind::Direct { length, .. }
+            | TcKind::Sheet { length, .. }
+            | TcKind::SheetMcCuenSpiess { length, .. }
+            | TcKind::Shallow { length, .. }
+            | TcKind::Channel { length, .. }
+            | TcKind::Lag { length, .. }
+            | TcKind::Kirpich { length, .. }
+            | TcKind::Kerby { length, .. }
+            | TcKind::Lake { length, .. } => *length = len,
+        }
+        self
+    }
+}
+
+/// Flow type of one leg of a flow path drawn on the diagram.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathFlow {
+    Sheet,
+    Shallow,
+    Channel,
+    Pipe,
+    Lake,
+}
+
+impl PathFlow {
+    pub const ALL: [PathFlow; 5] = [PathFlow::Sheet, PathFlow::Shallow, PathFlow::Channel, PathFlow::Pipe, PathFlow::Lake];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PathFlow::Sheet => "Sheet Flow",
+            PathFlow::Shallow => "Shallow Concentrated",
+            PathFlow::Channel => "Channel",
+            PathFlow::Pipe => "Pipe",
+            PathFlow::Lake => "Lake",
+        }
+    }
+
+    /// Whether an existing segment is of this flow type (its parameters are reused).
+    fn matches(self, kind: &TcKind) -> bool {
+        match (self, kind) {
+            (PathFlow::Sheet, TcKind::Sheet { .. } | TcKind::SheetMcCuenSpiess { .. }) => true,
+            (PathFlow::Shallow, TcKind::Shallow { .. }) => true,
+            (PathFlow::Channel, TcKind::Channel { section, .. }) => !matches!(section, Section::Pipe { .. }),
+            (PathFlow::Pipe, TcKind::Channel { section, .. }) => matches!(section, Section::Pipe { .. }),
+            (PathFlow::Lake, TcKind::Lake { .. }) => true,
+            _ => false,
+        }
+    }
+
+    /// A new segment of this type with typical starting values (to be checked by the user).
+    pub fn default_kind(self) -> TcKind {
+        match self {
+            PathFlow::Sheet => TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.15, p2: 3.0, surface: "Grass: Short".into() },
+            PathFlow::Shallow => TcKind::Shallow { length: 300.0, slope: 0.02, kv: 16.1345, surface: "Unpaved".into() },
+            PathFlow::Channel => TcKind::Channel { length: 500.0, slope: 0.01, n: 0.030, section: Section::Trapezoidal { bottom: 2.0, z_left: 2.0, z_right: 2.0, depth: 1.0 } },
+            PathFlow::Pipe => TcKind::Channel { length: 200.0, slope: 0.01, n: 0.013, section: Section::circular(1.5) },
+            PathFlow::Lake => TcKind::Lake { length: 500.0, mean_depth: 5.0 },
+        }
+    }
+}
+
+/// The default sheet-flow limit for drawn flow paths (ft). TR-55 (1986) caps sheet flow at
+/// 300 ft; current NRCS guidance (NEH Part 630, Ch. 15) recommends no more than 100 ft.
+pub const SHEET_LIMIT_FT: f64 = 100.0;
+
+/// Builds Tc segments from the legs of a flow path drawn on the diagram (`(length ft, type)`
+/// in flow order). Sheet flow beyond `sheet_limit` ft continues as shallow concentrated flow,
+/// and consecutive legs of the same type become one segment. Only lengths come from the path:
+/// slope, roughness, surface and section are copied from the first segment of the same type in
+/// `template` (the subcatchment's existing segments) or take [`PathFlow::default_kind`].
+pub fn segments_from_path(legs: &[(f64, PathFlow)], sheet_limit: Option<f64>, template: &[TcSegment]) -> Vec<TcSegment> {
+    let mut runs: Vec<(PathFlow, f64)> = Vec::new();
+    let mut push = |flow: PathFlow, len: f64| {
+        if len <= 0.0 {
+            return;
+        }
+        match runs.last_mut() {
+            Some((f, l)) if *f == flow => *l += len,
+            _ => runs.push((flow, len)),
+        }
+    };
+    let mut sheet_used = 0.0;
+    for &(len, flow) in legs {
+        if !(len.is_finite() && len > 0.0) {
+            continue;
+        }
+        match (flow, sheet_limit) {
+            (PathFlow::Sheet, Some(limit)) => {
+                let take = (limit - sheet_used).clamp(0.0, len);
+                sheet_used += take;
+                push(PathFlow::Sheet, take);
+                push(PathFlow::Shallow, len - take);
+            }
+            _ => push(flow, len),
+        }
+    }
+    runs.into_iter()
+        .map(|(flow, len)| {
+            let base = template.iter().find(|s| flow.matches(&s.kind)).map(|s| s.kind.clone()).unwrap_or_else(|| flow.default_kind());
+            TcSegment { kind: base.with_length(len), description: "Drawn flow path".into() }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn seg(kind: TcKind) -> TcSegment {
         TcSegment { kind, description: String::new() }
+    }
+
+    #[test]
+    fn drawn_path_becomes_segments() {
+        use PathFlow::*;
+        // A 250 ft first leg: 100 ft of sheet flow, the rest shallow, merged with the next
+        // shallow leg; then two channel legs merge into one segment.
+        let legs = [(250.0, Sheet), (300.0, Shallow), (400.0, Channel), (200.0, Channel)];
+        let segs = segments_from_path(&legs, Some(SHEET_LIMIT_FT), &[]);
+        let got: Vec<(&str, f64)> = segs.iter().map(|s| (s.kind.label(), s.kind.length())).collect();
+        assert_eq!(got, vec![("Sheet Flow", 100.0), ("Shallow Concentrated Flow", 450.0), ("Trapezoidal Channel", 600.0)]);
+        // Without a limit the whole first leg is sheet flow.
+        let segs = segments_from_path(&legs[..1], None, &[]);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].kind.length(), 250.0);
+        // Slope and cover come from an existing segment of the same type.
+        let existing = [seg(TcKind::Shallow { length: 10.0, slope: 0.035, kv: 20.3282, surface: "Paved".into() })];
+        let segs = segments_from_path(&[(80.0, Shallow), (0.0, Sheet), (f64::NAN, Pipe)], Some(100.0), &existing);
+        assert_eq!(segs.len(), 1, "empty and invalid legs are skipped");
+        match &segs[0].kind {
+            TcKind::Shallow { length, slope, surface, .. } => assert_eq!((*length, *slope, surface.as_str()), (80.0, 0.035, "Paved")),
+            k => panic!("unexpected {k:?}"),
+        }
+        // Pipes and channels are told apart by section.
+        let pipe = segments_from_path(&[(50.0, Pipe)], None, &[]);
+        assert!(matches!(&pipe[0].kind, TcKind::Channel { section: Section::Pipe { .. }, .. }));
     }
 
     #[test]

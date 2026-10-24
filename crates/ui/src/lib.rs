@@ -14,6 +14,7 @@ pub mod library;
 pub mod logo;
 pub mod platform;
 pub mod prefs;
+pub mod recovery;
 pub mod reports;
 pub mod samples;
 pub mod section_view;
@@ -52,6 +53,8 @@ pub struct WaveStormApp {
     untitled: usize,
     canvas_rect: Rect,
     last_backup: f64,
+    last_autosave: f64,
+    recovery: recovery::Recovery,
     /// The window title last sent to the platform.
     window_title: String,
 }
@@ -74,11 +77,23 @@ impl WaveStormApp {
     }
 
     fn with(platform: Platform, prefs: Prefs, persist_prefs: bool) -> Self {
-        let mut doc = Doc::new(samples::sample_project(), None);
-        doc.dirty = false;
+        // Unsaved work left by the last session comes back in place of the sample project.
+        let restored = if persist_prefs { recovery::take() } else { Vec::new() };
+        let status = match restored.len() {
+            0 => "Ready".to_string(),
+            1 => "Restored a project with unsaved changes from your last session (save or export it to keep it)".to_string(),
+            n => format!("Restored {n} projects with unsaved changes from your last session (save or export them to keep them)"),
+        };
+        let docs = if restored.is_empty() {
+            let mut doc = Doc::new(samples::sample_project(), None);
+            doc.dirty = false;
+            vec![doc]
+        } else {
+            restored
+        };
         library::init(&prefs.rainfall_folder, persist_prefs);
         WaveStormApp {
-            docs: vec![doc],
+            docs,
             active: 0,
             theme: prefs.theme,
             prefs,
@@ -87,7 +102,7 @@ impl WaveStormApp {
             tool: Tool::Select,
             interaction: Interaction::default(),
             palette_drag: None,
-            status: "Ready".into(),
+            status,
             clipboard: Vec::new(),
             context_node: None,
             error: None,
@@ -95,6 +110,8 @@ impl WaveStormApp {
             untitled: 1,
             canvas_rect: Rect::NOTHING,
             last_backup: 0.0,
+            last_autosave: 0.0,
+            recovery: recovery::Recovery::default(),
             window_title: String::new(),
         }
     }
@@ -352,22 +369,71 @@ impl WaveStormApp {
         self.prefs = prefs;
     }
 
-    /// Writes a timed backup (`<project>.bak`) of changed projects at the interval set in the
-    /// General settings (desktop).
+    /// Keeps unsaved work safe: the recovery copy in local storage (desktop and browser, see
+    /// `recovery`), and on the desktop the timed backup (`<project>.bak`) and, when turned on in
+    /// the General settings, autosave of changed projects to their own files.
     fn autosave(&mut self, ctx: &egui::Context) {
-        let now = ctx.input(|i| i.time);
-        let Some(interval) = self.prefs.backup_interval() else { return };
-        if now - self.last_backup < interval {
-            return;
+        if self.persist_prefs
+            && let Some(problem) = self.recovery.update(ctx, &self.docs)
+        {
+            self.status = problem;
         }
-        self.last_backup = now;
-        #[cfg(not(target_arch = "wasm32"))]
-        for d in &self.docs {
-            if let (true, Some(path)) = (d.dirty, &d.path)
-                && let Ok(json) = d.project.to_json()
-            {
-                let _ = std::fs::write(format!("{path}.bak"), json);
+        let now = ctx.input(|i| i.time);
+        // Timers only matter while a saved project has unsaved changes; then wake up once when
+        // the next one is due (the app is otherwise idle and would not notice the time pass).
+        let pending = self.docs.iter().any(|d| d.dirty && d.path.is_some());
+        let mut next: Option<f64> = None;
+        if let Some(interval) = self.prefs.backup_interval() {
+            if now - self.last_backup >= interval {
+                self.last_backup = now;
+                #[cfg(not(target_arch = "wasm32"))]
+                for d in &self.docs {
+                    if let (true, Some(path)) = (d.dirty, &d.path)
+                        && let Ok(json) = d.project.to_json()
+                    {
+                        let _ = std::fs::write(format!("{path}.bak"), json);
+                    }
+                }
             }
+            next = Some(self.last_backup + interval);
+        }
+        if let Some(interval) = self.prefs.autosave_interval() {
+            if now - self.last_autosave >= interval {
+                self.last_autosave = now;
+                let saved = self.save_changed_to_files();
+                if saved > 0 {
+                    self.status = format!("Autosaved {saved} project{}", if saved == 1 { "" } else { "s" });
+                }
+            }
+            next = Some(next.map_or(self.last_autosave + interval, |n| n.min(self.last_autosave + interval)));
+        }
+        if pending && let Some(at) = next {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64((at - now).max(0.05)));
+        }
+    }
+
+    /// Saves every changed project that has a file to that file (in its own format); returns
+    /// how many were saved. Desktop only.
+    fn save_changed_to_files(&mut self) -> usize {
+        #[cfg(target_arch = "wasm32")]
+        {
+            0
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut saved = 0;
+            for d in &mut self.docs {
+                let Some(path) = d.path.clone().filter(|_| d.dirty) else { continue };
+                let bytes = if d.hcp { Ok(wavestorm_core::hcp::export_bytes(&d.project)) } else { d.project.to_json().map(String::into_bytes) };
+                match bytes.map(|b| std::fs::write(&path, b).map_err(|e| e.to_string())) {
+                    Ok(Ok(())) => {
+                        d.dirty = false;
+                        saved += 1;
+                    }
+                    Ok(Err(e)) | Err(e) => self.status = format!("Autosave of {path} failed: {e}"),
+                }
+            }
+            saved
         }
     }
 
@@ -881,6 +947,12 @@ impl WaveStormApp {
         diagram::to_screen(&self.doc().view, canvas, w)
     }
 
+    /// Screen tip and back of an outflow's arrowhead (for tests and automation).
+    pub fn arrowhead_screen(&mut self, from: NodeId, k: usize) -> Option<(Pos2, Pos2)> {
+        let canvas = self.canvas_rect;
+        diagram::arrowhead(self.doc(), canvas, from, k)
+    }
+
     fn zoom(&mut self, f: f32) {
         let canvas = self.canvas_rect;
         if canvas.is_finite() {
@@ -971,7 +1043,25 @@ impl WaveStormApp {
             Cmd::Calibrate => matches!(self.tool, Tool::Calibrate { .. }),
             Cmd::Trace => matches!(self.tool, Tool::Trace { .. }),
             Cmd::Measure => matches!(self.tool, Tool::Measure { .. }),
+            Cmd::TcPath => matches!(self.tool, Tool::TcPath { .. }),
             _ => false,
+        }
+    }
+
+    /// The one selected subcatchment, if exactly one is selected.
+    fn selected_subcat(&self) -> Option<NodeId> {
+        let doc = self.docs.get(self.active)?;
+        match doc.selection.as_slice() {
+            [id] => doc.project.node(*id).filter(|n| n.node_type() == NodeType::Subcat).map(|n| n.id),
+            _ => None,
+        }
+    }
+
+    /// Whether a command can run now (its button is greyed out otherwise).
+    fn cmd_enabled(&self, c: Cmd) -> bool {
+        match c {
+            Cmd::TcPath => self.selected_subcat().is_some() || self.cmd_active(c),
+            _ => true,
         }
     }
 
@@ -1044,6 +1134,11 @@ impl WaveStormApp {
                 self.tool = Tool::Measure { points: Vec::new() };
                 self.status = "Click points along the path; double-click or Enter to finish".into();
             }
+            Cmd::TcPath => {
+                if let Some(id) = self.selected_subcat() {
+                    self.start_tc_path(id);
+                }
+            }
             Cmd::Undo => {
                 self.doc().undo();
             }
@@ -1055,7 +1150,9 @@ impl WaveStormApp {
 
     /// A tool button for `c`; runs it when clicked.
     fn cmd_button(&mut self, ui: &mut Ui, c: Cmd) {
-        if widgets::tool_button(ui, c.tip(), self.cmd_active(c), |p, r, t| icons::draw_glyph(p, c.glyph(), r, t)).clicked() {
+        let enabled = self.cmd_enabled(c);
+        let tip = if enabled { c.tip() } else { c.disabled_tip() };
+        if widgets::tool_button_enabled(ui, tip, self.cmd_active(c), enabled, |p, r, t| icons::draw_glyph(p, c.glyph(), r, t)).clicked() {
             self.run(c);
         }
     }
@@ -1100,7 +1197,7 @@ impl WaveStormApp {
             ui.spacing_mut().item_spacing.y = 2.0;
             let groups: [&[Cmd]; 3] = [
                 &[Cmd::Select, Cmd::Units, Cmd::LandUse, Cmd::Calculation, Cmd::Diagram, Cmd::General, Cmd::Idf, Cmd::Print, Cmd::Messages],
-                &[Cmd::Underlay, Cmd::Calibrate, Cmd::Trace, Cmd::Measure],
+                &[Cmd::Underlay, Cmd::Calibrate, Cmd::Trace, Cmd::Measure, Cmd::TcPath],
                 &[Cmd::Undo, Cmd::Redo],
             ];
             for (i, group) in groups.into_iter().enumerate() {
@@ -1250,6 +1347,7 @@ impl WaveStormApp {
                     let u = doc.project.units;
                     self.status = format!("Measured length = {}", u.fmt_len(len * fpu));
                 }
+                CanvasAction::TcPath(id, points) => self.finish_tc_path(id, points),
                 CanvasAction::Convert(id, t) => self.convert(id, t),
                 CanvasAction::ClearOutflows(id) => self.doc().edit("Node Reroute", |p| {
                     if let Some(n) = p.node_mut(id) {
@@ -1345,6 +1443,10 @@ impl WaveStormApp {
                     self.area_from_outline(id);
                     close = true;
                 }
+                if n.node_type() == NodeType::Subcat && ui.button("Draw Tc Flow Path").on_hover_text("Measure the Tc segment lengths from a path drawn on the diagram").clicked() {
+                    self.start_tc_path(id);
+                    close = true;
+                }
             });
         });
         let clicked_elsewhere = ctx.input(|i| i.pointer.any_pressed()) && !resp.response.contains_pointer();
@@ -1397,8 +1499,40 @@ impl WaveStormApp {
                     Err(e) => self.error = Some(e),
                 },
                 WindowAction::SetEvents { events, replace } => self.set_events(events, replace),
+                WindowAction::DrawTcPath(id) => self.start_tc_path(id),
             }
         }
+    }
+
+    /// Starts drawing subcatchment `id`'s Tc flow path on the diagram.
+    fn start_tc_path(&mut self, id: NodeId) {
+        self.doc().selection = vec![id];
+        self.tool = Tool::TcPath { node: id, points: Vec::new() };
+        let calibrated = self.doc().project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit).is_some();
+        self.status = if calibrated {
+            "Click along the Tc flow path from its most distant point to the outlet; double-click or Enter to finish (Backspace undoes a point, Esc cancels)".into()
+        } else {
+            "No calibrated background: lengths will use 1 diagram unit = 1 ft. Click the flow path; double-click or Enter to finish.".into()
+        };
+    }
+
+    /// A finished Tc flow path: opens (or returns to) the subcatchment's edit dialog on the Tc
+    /// tab with the path ready to divide into segments.
+    fn finish_tc_path(&mut self, id: NodeId, points: Vec<Pos2>) {
+        let points: Vec<[f64; 2]> = points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
+        let fpu = self.doc().project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit);
+        if !self.doc().windows.iter().any(|w| matches!(w, Window::Edit(e) if e.node == id)) {
+            self.open_edit(id);
+        }
+        for w in &mut self.doc().windows {
+            if let Window::Edit(e) = w
+                && e.node == id
+            {
+                e.tab = 2;
+                e.tc_path = Some(dialogs::node::TcPathState::new(points.clone(), fpu));
+            }
+        }
+        self.status = "Choose the flow type of each leg of the path, then OK".into();
     }
 
     fn error_dialog(&mut self, ctx: &egui::Context) {
@@ -1551,7 +1685,7 @@ impl WaveStormApp {
     fn glass_dock(&mut self, ui: &mut Ui, canvas: Rect) {
         let t = Tokens::get(ui.ctx());
         let groups: [&[Cmd]; 4] = [
-            &[Cmd::Select, Cmd::Trace, Cmd::Measure, Cmd::Calibrate, Cmd::Underlay],
+            &[Cmd::Select, Cmd::Trace, Cmd::Measure, Cmd::TcPath, Cmd::Calibrate, Cmd::Underlay],
             &[Cmd::ZoomOut, Cmd::ZoomIn, Cmd::ZoomAll, Cmd::ZoomSelected],
             &[Cmd::Edit, Cmd::Delete],
             &[Cmd::Report, Cmd::Compare, Cmd::ProjectReports, Cmd::PrintDiagram],
@@ -1705,6 +1839,7 @@ enum Cmd {
     Calibrate,
     Trace,
     Measure,
+    TcPath,
     Undo,
     Redo,
 }
@@ -1738,8 +1873,17 @@ impl Cmd {
             Cmd::Calibrate => Glyph::Calibrate,
             Cmd::Trace => Glyph::Trace,
             Cmd::Measure => Glyph::Measure,
+            Cmd::TcPath => Glyph::TcPath,
             Cmd::Undo => Glyph::Undo,
             Cmd::Redo => Glyph::Redo,
+        }
+    }
+
+    /// The tip of a greyed-out button: why it can't run now.
+    fn disabled_tip(self) -> &'static str {
+        match self {
+            Cmd::TcPath => "Draw Tc flow path: select one subcatchment first",
+            _ => self.tip(),
         }
     }
 
@@ -1771,6 +1915,7 @@ impl Cmd {
             Cmd::Calibrate => "Calibrate background scale",
             Cmd::Trace => "Trace a subcatchment outline",
             Cmd::Measure => "Measure length",
+            Cmd::TcPath => "Draw the selected subcatchment's Tc flow path (segment lengths are measured from it)",
             Cmd::Undo => "Undo",
             Cmd::Redo => "Redo",
         }
@@ -1828,6 +1973,11 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
         "select" => {
             if let Some(id) = find(app, arg) {
                 app.doc().selection = vec![id];
+            }
+        }
+        "tc-path" => {
+            if let Some(id) = find(app, arg) {
+                app.start_tc_path(id);
             }
         }
         "tab" => {
