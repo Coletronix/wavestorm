@@ -7,6 +7,27 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-23
+
+### Added
+- **Tc flow path drawing:** select a subcatchment and click its longest flow path on the
+  diagram. Use the new Tc Flow Path button beside Measure (greyed out until one subcatchment is
+  selected), Draw Flow Path on Diagram on the Tc tab, or the right-click menu. Then choose the
+  flow type of each leg. The Tc segment lengths come from the path (calibrated background
+  scale), consecutive legs of one type merge, and sheet flow beyond 100 ft (adjustable)
+  continues as shallow concentrated flow. Slope and surface are still entered per segment.
+  The path is saved with the subcatchment and shown while it is selected.
+- **Unsaved-work recovery:** a moment after every change, projects with unsaved changes are
+  kept in local storage — browser storage on the web, the settings folder on the desktop. If
+  the page or program closes before they are saved or exported, they reopen next time.
+- **Desktop autosave** (Settings > General): save changed projects to their own files every N
+  minutes. Off by default.
+
+### Fixed
+- Routing arrows are easier to grab: the whole arrowhead is the target, not just its tip, and
+  the press point is used rather than where the pointer had moved by the time the drag began.
+  The pointer shows a grab hand over arrowheads.
+
 ## [0.2.2] - 2026-10-23
 
 ### Fixed
@@ -103,7 +124,8 @@ First tagged release.
 - Stor-Ind+Trans reach attenuation can differ from the reference application (~2 % vs ~4 % on
   one published example).
 
-[Unreleased]: https://github.com/Coletronix/wavestorm/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Coletronix/wavestorm/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Coletronix/wavestorm/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Coletronix/wavestorm/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Coletronix/wavestorm/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Coletronix/wavestorm/compare/v0.1.0...v0.2.0
