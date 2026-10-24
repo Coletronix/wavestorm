@@ -14,6 +14,8 @@ const EMR_SETBKMODE: u32 = 18;
 const EMR_SETPOLYFILLMODE: u32 = 19;
 const EMR_SETTEXTALIGN: u32 = 22;
 const EMR_SETTEXTCOLOR: u32 = 24;
+const EMR_SAVEDC: u32 = 33;
+const EMR_RESTOREDC: u32 = 34;
 const EMR_SELECTOBJECT: u32 = 37;
 const EMR_CREATEPEN: u32 = 38;
 const EMR_CREATEBRUSHINDIRECT: u32 = 39;
@@ -21,6 +23,11 @@ const EMR_DELETEOBJECT: u32 = 40;
 const EMR_ELLIPSE: u32 = 42;
 const EMR_RECTANGLE: u32 = 43;
 const EMR_EOF: u32 = 14;
+const EMR_BEGINPATH: u32 = 59;
+const EMR_ENDPATH: u32 = 60;
+const EMR_SELECTCLIPPATH: u32 = 67;
+const EMR_STRETCHDIBITS: u32 = 81;
+const EMR_ALPHABLEND: u32 = 114;
 const EMR_EXTCREATEFONTINDIRECTW: u32 = 82;
 const EMR_EXTTEXTOUTW: u32 = 84;
 
@@ -103,6 +110,8 @@ struct State {
     text_color: Option<u32>,
     text_align: Option<u32>,
     dash: Option<(f32, f32)>,
+    /// Opacity of fills (below 1: drawn by alpha-blending through a clip path).
+    alpha: f32,
     bounds: [i32; 4],
 }
 
@@ -305,14 +314,124 @@ impl State {
         self.w.rec(ty, &b);
     }
 
+    /// EMR_STRETCHDIBITS with a 24-bit bottom-up DIB.
+    #[allow(clippy::too_many_arguments)]
+    fn image(&mut self, x: i32, y: i32, w: i32, h: i32, px_w: u32, px_h: u32, rgb: &[u8]) {
+        let (pw, ph) = (px_w as usize, px_h as usize);
+        if pw == 0 || ph == 0 || w <= 0 || h <= 0 || rgb.len() < pw * ph * 3 {
+            return;
+        }
+        self.grow(x, y);
+        self.grow(x + w, y + h);
+        let stride = (pw * 3 + 3) & !3;
+        let mut b = Vec::new();
+        for v in [x, y, x + w, y + h] {
+            push32(&mut b, v);
+        }
+        for v in [x, y, 0, 0, px_w as i32, px_h as i32] {
+            push32(&mut b, v);
+        }
+        pushu(&mut b, 80); // offBmiSrc (record start to BITMAPINFOHEADER)
+        pushu(&mut b, 40);
+        pushu(&mut b, 120); // offBitsSrc
+        pushu(&mut b, (stride * ph) as u32);
+        pushu(&mut b, 0); // DIB_RGB_COLORS
+        pushu(&mut b, 0x00CC_0020); // SRCCOPY
+        push32(&mut b, w);
+        push32(&mut b, h);
+        // BITMAPINFOHEADER.
+        pushu(&mut b, 40);
+        push32(&mut b, px_w as i32);
+        push32(&mut b, px_h as i32);
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&24u16.to_le_bytes());
+        for v in [0u32, (stride * ph) as u32, 0, 0, 0, 0] {
+            pushu(&mut b, v);
+        }
+        for row in (0..ph).rev() {
+            let line = &rgb[row * pw * 3..(row + 1) * pw * 3];
+            for px in line.as_chunks::<3>().0 {
+                b.extend_from_slice(&[px[2], px[1], px[0]]);
+            }
+            b.resize(b.len() + stride - pw * 3, 0);
+        }
+        self.w.rec(EMR_STRETCHDIBITS, &b);
+    }
+
     fn shape(&mut self, ty: u32, pts: &[(f32, f32)], fill: Option<Rgb>, stroke: Stroke) {
         if fill.is_none() && stroke.is_none() {
             return;
         }
+        let p: Vec<(i32, i32)> = pts.iter().map(|p| (u(p.0), u(p.1))).collect();
+        if let Some(f) = fill
+            && self.alpha < 0.999
+        {
+            self.translucent(&p, f);
+            if stroke.is_some() {
+                self.set_pen(stroke);
+                self.set_brush(None);
+                self.poly(ty, &p);
+            }
+            return;
+        }
         self.set_pen(stroke);
         self.set_brush(fill);
-        let p: Vec<(i32, i32)> = pts.iter().map(|p| (u(p.0), u(p.1))).collect();
         self.poly(ty, &p);
+    }
+
+    /// Fills a polygon at the current opacity: the polygon becomes the clip path and one pixel
+    /// of `fill` is alpha-blended (EMR_ALPHABLEND, constant alpha) over its bounding box.
+    fn translucent(&mut self, pts: &[(i32, i32)], fill: Rgb) {
+        let Some(first) = pts.first() else { return };
+        let mut r = [first.0, first.1, first.0, first.1];
+        for p in pts {
+            r = [r[0].min(p.0), r[1].min(p.1), r[2].max(p.0), r[3].max(p.1)];
+        }
+        if r[2] <= r[0] || r[3] <= r[1] {
+            return;
+        }
+        self.w.rec(EMR_SAVEDC, &[]);
+        self.w.rec(EMR_BEGINPATH, &[]);
+        self.poly(EMR_POLYGON, pts);
+        self.w.rec(EMR_ENDPATH, &[]);
+        self.w.rec(EMR_SELECTCLIPPATH, &5u32.to_le_bytes()); // RGN_COPY
+        let mut b = Vec::new();
+        for v in r {
+            push32(&mut b, v);
+        }
+        for v in [r[0], r[1], r[2] - r[0], r[3] - r[1]] {
+            push32(&mut b, v);
+        }
+        // BLENDFUNCTION: AC_SRC_OVER, flags, constant alpha 255, AC_SRC_ALPHA (the pixel carries
+        // the alpha; more readers honour that than the constant alpha alone).
+        b.extend_from_slice(&[0, 0, 255, 1]);
+        push32(&mut b, 0);
+        push32(&mut b, 0);
+        for v in [1.0f32, 0.0, 0.0, 1.0, 0.0, 0.0] {
+            b.extend_from_slice(&v.to_le_bytes()); // XformSrc: identity
+        }
+        pushu(&mut b, 0); // BkColorSrc
+        pushu(&mut b, 0); // DIB_RGB_COLORS
+        pushu(&mut b, 108); // offBmiSrc
+        pushu(&mut b, 40);
+        pushu(&mut b, 148); // offBitsSrc
+        pushu(&mut b, 4);
+        push32(&mut b, 1); // cxSrc
+        push32(&mut b, 1); // cySrc
+        // BITMAPINFOHEADER: 1 x 1, 32-bit; then the pixel (premultiplied BGRA).
+        pushu(&mut b, 40);
+        push32(&mut b, 1);
+        push32(&mut b, 1);
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&32u16.to_le_bytes());
+        for v in [0u32, 4, 0, 0, 0, 0] {
+            pushu(&mut b, v);
+        }
+        let a = self.alpha.clamp(0.0, 1.0);
+        let pm = |v: f32| (v.clamp(0.0, 1.0) * a * 255.0).round() as u8;
+        b.extend_from_slice(&[pm(fill.2), pm(fill.1), pm(fill.0), (a * 255.0).round() as u8]);
+        self.w.rec(EMR_ALPHABLEND, &b);
+        self.w.rec(EMR_RESTOREDC, &(-1i32).to_le_bytes());
     }
 
     fn boxed(&mut self, ty: u32, x0: f32, y0: f32, x1: f32, y1: f32, fill: Option<Rgb>, stroke: Stroke) {
@@ -335,7 +454,7 @@ impl State {
 /// Serialises `page` as an EMF file.
 pub fn page_to_emf(page: &Page) -> Vec<u8> {
     let (fw, fh) = (u(page.width).max(1), u(page.height).max(1));
-    let mut s = State { w: Writer::default(), pen: None, brush: None, font: None, text_color: None, text_align: None, dash: None, bounds: [i32::MAX, i32::MAX, i32::MIN, i32::MIN] };
+    let mut s = State { w: Writer::default(), pen: None, brush: None, font: None, text_color: None, text_align: None, dash: None, alpha: 1.0, bounds: [i32::MAX, i32::MAX, i32::MIN, i32::MIN] };
     s.w.rec(EMR_SETBKMODE, &1u32.to_le_bytes()); // TRANSPARENT
     s.w.rec(EMR_SETPOLYFILLMODE, &1u32.to_le_bytes()); // ALTERNATE
     for op in page.ops() {
@@ -362,6 +481,7 @@ pub fn page_to_emf(page: &Page) -> Vec<u8> {
                 }
             }
             Op::Dash(d) => s.dash = *d,
+            Op::FillAlpha(a) => s.alpha = *a,
             Op::Polyline { pts, width, color } => {
                 s.set_pen(Some((*width, *color)));
                 let p: Vec<(i32, i32)> = pts.iter().map(|p| (u(p.0), u(p.1))).collect();
@@ -370,6 +490,7 @@ pub fn page_to_emf(page: &Page) -> Vec<u8> {
             Op::Polygon { pts, fill, stroke } => s.shape(EMR_POLYGON, pts, *fill, *stroke),
             Op::Rect { x, y, w, h, fill, stroke } => s.boxed(EMR_RECTANGLE, *x, *y, x + w, y + h, *fill, *stroke),
             Op::Circle { cx, cy, r, fill, stroke } => s.boxed(EMR_ELLIPSE, cx - r, cy - r, cx + r, cy + r, *fill, *stroke),
+            Op::Image { x, y, w, h, px_w, px_h, rgb } => s.image(u(*x), u(*y), u(*w), u(*h), *px_w, *px_h, rgb),
         }
     }
     // Release the GDI objects before the end of the file.

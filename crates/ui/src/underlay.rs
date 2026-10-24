@@ -53,6 +53,29 @@ fn decode_image(bytes: &[u8]) -> Result<Raster, String> {
     Ok(Raster { width: rgba.width(), height: rgba.height(), rgba: rgba.into_raw() })
 }
 
+/// The visible background as a raster for printing (longest side at most 1600 px, opacity
+/// applied against white), or `None` when there is none.
+pub fn print_background(project: &wavestorm_core::project::Project) -> Option<wavestorm_core::printing::PrintBackground> {
+    let u = project.diagram.underlay.as_ref().filter(|u| u.visible)?;
+    // The same raster the diagram texture is made from, so `scale` applies to its pixels.
+    let r = rasterize(&u.bytes, u.page, 150.0).ok()?;
+    let size = [r.width as f64 * u.scale, r.height as f64 * u.scale];
+    let img = image::RgbaImage::from_raw(r.width, r.height, r.rgba)?;
+    let img = if r.width.max(r.height) > 1600 { image::DynamicImage::ImageRgba8(img).thumbnail(1600, 1600).to_rgba8() } else { img };
+    let alpha = u.opacity.clamp(0.05, 1.0);
+    let mut rgb = Vec::with_capacity(img.width() as usize * img.height() as usize * 3);
+    for p in img.pixels() {
+        let a = alpha * p.0[3] as f32 / 255.0;
+        rgb.extend(p.0[..3].iter().map(|c| (255.0 - a * (255.0 - *c as f32)).round() as u8));
+    }
+    Some(wavestorm_core::printing::PrintBackground {
+        rect: [u.origin[0], u.origin[1], u.origin[0] + size[0], u.origin[1] + size[1]],
+        width: img.width(),
+        height: img.height(),
+        rgb: std::sync::Arc::new(rgb),
+    })
+}
+
 pub fn texture(ctx: &Context, name: &str, r: &Raster) -> TextureHandle {
     let img = ColorImage::from_rgba_unmultiplied([r.width as usize, r.height as usize], &r.rgba);
     ctx.load_texture(name, img, TextureOptions::LINEAR)

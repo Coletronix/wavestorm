@@ -359,6 +359,7 @@ pub fn show_node_report(ctx: &egui::Context, doc: &mut Doc, st: &mut ReportState
                         tables: st.table,
                         date: crate::dialogs::misc::today(),
                         only: vec![node.id],
+                        background: None,
                     }));
                 }
                 let export = widgets::button(ui, "Export", 62.0);
@@ -903,6 +904,7 @@ pub fn show_compare(ctx: &egui::Context, doc: &mut Doc, st: &mut CompareState, a
                         tables: false,
                         date: crate::dialogs::misc::today(),
                         only: st.nodes.clone(),
+                        background: None,
                     };
                     actions.push(WindowAction::PrintPdf(o));
                 }

@@ -255,12 +255,8 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
     for n in doc.project.nodes.iter().filter(|n| doc.is_selected(n.id) && !pending.contains(&n.id)) {
         if let Some(path) = &n.tc_path {
             let pts: Vec<Pos2> = path.iter().map(|q| wp(*q)).collect();
-            let labels = if n.tc_path_breaks.is_empty() {
-                (0..pts.len()).map(|i| Some(wavestorm_core::tc::point_label(i))).collect()
-            } else {
-                wavestorm_core::tc::path_labels(pts.len(), &n.tc_path_breaks)
-            };
-            let flows = leg_flows(n, pts.len().saturating_sub(1));
+            let labels = drawing::tc_path_labels(n);
+            let flows = drawing::tc_leg_flows(n);
             draw_tc_path(&painter, doc, canvas, &pts, None, &labels, &flows, &t);
         }
     }
@@ -690,6 +686,8 @@ fn fill_polygon(p: &egui::Painter, doc: &Doc, canvas: Rect, poly: &[Pt], fill: C
 /// colour) shows the remainder; each drawn sub-area has its own colour (as on the Area tab)
 /// and, when there is room, its curve number.
 fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
+    let obstacles = drawing::label_obstacles(&doc.project);
+    let soft: Vec<&[Pt]> = obstacles.iter().map(Vec::as_slice).collect();
     for n in &doc.project.nodes {
         let Some(o) = &n.outline else { continue };
         if o.len() < 3 {
@@ -705,14 +703,37 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
                 let c = subarea_color(i, t);
                 fill_polygon(p, doc, canvas, so, a(c, if sel { 110 } else { 80 }));
                 let sp: Vec<Pos2> = so.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
-                p.add(Shape::closed_line(sp.clone(), Stroke::new(1.5, c)));
-                let r = Rect::from_points(&sp);
-                if r.width() > 44.0 && r.height() > 22.0 {
-                    let at = to_screen(&doc.view, canvas, wp(drawing::centroid(so)));
-                    let label = format!("CN {}", wavestorm_core::units::group(area.cn, 0));
-                    p.text(at + vec2(0.8, 0.8), Align2::CENTER_CENTER, &label, FontId::proportional(11.0), if t.is_dark() { Color32::BLACK } else { Color32::WHITE });
-                    p.text(at, Align2::CENTER_CENTER, label, FontId::proportional(11.0), if t.is_dark() { Color32::WHITE } else { icons::ink(t, Color32::from_rgb(20, 20, 20)) });
+                p.add(Shape::closed_line(sp, Stroke::new(1.5, c)));
+            }
+            // Curve-number labels: each drawn sub-area, and the remainder (placed clear of them),
+            // away from node symbols and Tc paths where they fit.
+            let drawn: Vec<&[Pt]> = sc.areas.iter().filter_map(|a| a.outline.as_deref()).collect();
+            for area in &sc.areas {
+                let (region, hard) = match &area.outline {
+                    Some(so) => (so.as_slice(), &[][..]),
+                    None if area.remainder && !drawn.is_empty() => (o.as_slice(), drawn.as_slice()),
+                    None => continue,
+                };
+                // Skip the search for shapes too small (or too far off screen) to label.
+                let r = Rect::from_points(&region.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect::<Vec<_>>());
+                if r.width().min(r.height()) < 16.0 || !canvas.intersects(r) {
+                    continue;
                 }
+                let label = format!("CN {}", wavestorm_core::units::group(area.cn, 0));
+                let font = FontId::proportional(11.0);
+                let width = p.layout_no_wrap(label.clone(), font.clone(), Color32::WHITE).size().x;
+                // The label must fit: its half-width (roughly) and half-height inside the clearance.
+                let fits = |clear: f64| {
+                    let clear = clear as f32 * doc.view.zoom;
+                    clear >= 8.0 && clear >= width * 0.45
+                };
+                let (at, clear) = drawing::place_label(region, hard, &soft, fits);
+                if !fits(clear) {
+                    continue;
+                }
+                let at = to_screen(&doc.view, canvas, wp(at));
+                p.text(at + vec2(0.8, 0.8), Align2::CENTER_CENTER, &label, font.clone(), if t.is_dark() { Color32::BLACK } else { Color32::WHITE });
+                p.text(at, Align2::CENTER_CENTER, label, font, if t.is_dark() { Color32::WHITE } else { icons::ink(t, Color32::from_rgb(20, 20, 20)) });
             }
         }
         p.add(Shape::closed_line(pts, Stroke::new(if sel { 2.5 } else { 1.5 }, t.subcat.1)));
@@ -974,12 +995,6 @@ pub fn flow_color(f: wavestorm_core::tc::PathFlow, t: &Tokens) -> Color32 {
         PathFlow::Pipe => icons::ink(t, Color32::from_rgb(140, 70, 210)),
         PathFlow::Lake => icons::ink(t, Color32::from_rgb(0, 150, 160)),
     }
-}
-
-/// The flow type of each leg of a stored path, from the Tc segments measured from it.
-fn leg_flows(n: &wavestorm_core::project::Node, legs: usize) -> Vec<Option<wavestorm_core::tc::PathFlow>> {
-    let NodeData::Subcat(sc) = &n.data else { return vec![None; legs] };
-    (0..legs).map(|i| sc.tc.iter().find(|s| s.path.is_some_and(|[a, b]| a <= i && i < b)).and_then(|s| wavestorm_core::tc::path_flow_of(&s.kind))).collect()
 }
 
 /// `labels[i]` is point `i`'s letter (None: a point inside a segment, drawn smaller and

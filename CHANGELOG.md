@@ -32,11 +32,23 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
   - Drawings move and scale with it, and the calibration follows the size, so measured areas
     and lengths don't change. The Background Settings scale field does the same.
   - The background can be locked in Background Settings.
+- **The printed diagram (PDF report and EMF export) shows what the screen shows:** the
+  background, outlines and sub-areas with their translucent colour fills, every
+  subcatchment's Tc path (coloured legs, lettered segment ends), and CN labels.
+  - Every sub-area and remainder label is printed, shrunk to fit when its area is small.
+- The remainder of a subcatchment with drawn sub-areas is labelled with its CN, placed in
+  the open space clear of the sub-areas (and of node symbols and Tc paths where it fits).
 
 ### Changed
 - Drawn areas and Tc path lengths are re-measured when the background is calibrated.
 - Moving a subcatchment's symbol moves its sub-areas and Tc path with its outline.
 - Concave outlines are filled correctly on the diagram.
+- Sub-area labels sit in the roomiest part of the shape rather than at its centroid, so
+  concave shapes keep their label inside.
+
+### Fixed
+- Peak-flow boxes on report hydrographs no longer overlap each other or the summary lines.
+- Report pages that continue onto a second page no longer repeat the page number.
 
 ## [0.5.0] - 2026-10-23
 

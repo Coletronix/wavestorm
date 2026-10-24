@@ -19,11 +19,64 @@ pub struct PrintOptions {
     pub date: String,
     /// Print summaries for these nodes only (all nodes when empty).
     pub only: Vec<crate::project::NodeId>,
+    /// The background raster to print behind the routing diagram (decoded by the caller).
+    pub background: Option<PrintBackground>,
+}
+
+/// A decoded background for the printed diagram.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrintBackground {
+    /// Its rectangle in diagram units: x0, y0, x1, y1.
+    pub rect: [f64; 4],
+    pub width: u32,
+    pub height: u32,
+    /// 8-bit RGB, rows top to bottom (opacity already applied against white).
+    pub rgb: std::sync::Arc<Vec<u8>>,
 }
 
 impl Default for PrintOptions {
     fn default() -> Self {
-        PrintOptions { diagram: true, node_listing: true, area_listing: true, summaries: true, graphs: true, tables: false, date: String::new(), only: Vec::new() }
+        PrintOptions { diagram: true, node_listing: true, area_listing: true, summaries: true, graphs: true, tables: false, date: String::new(), only: Vec::new(), background: None }
+    }
+}
+
+/// Colours of the drawn sub-areas, in Area row order (as on the screen diagram).
+const SUBAREA_COLORS: [(u8, u8, u8); 8] = [(245, 158, 11), (59, 130, 246), (168, 85, 247), (236, 72, 153), (20, 184, 166), (132, 204, 22), (249, 115, 22), (14, 165, 233)];
+
+/// Fill opacities of subcatchment outlines and drawn sub-areas (as on the screen diagram).
+const OUTLINE_ALPHA: f32 = 34.0 / 255.0;
+const SUBAREA_ALPHA: f32 = 80.0 / 255.0;
+/// Text size of the sub-area curve-number labels, and the smallest they shrink to (so they stay
+/// legible when zoomed in on the PDF).
+const LABEL_SIZE: f32 = 8.0;
+const MIN_LABEL_SIZE: f32 = 2.0;
+/// Tc path legs without a flow type, and the point markers.
+const TC_HINT: Rgb = Rgb(0.42, 0.42, 0.45);
+
+fn subarea_color(i: usize) -> Rgb {
+    let (r, g, b) = SUBAREA_COLORS[i % SUBAREA_COLORS.len()];
+    Rgb::from_u8(r, g, b)
+}
+
+/// Text with a white halo, readable over a background image.
+#[allow(clippy::too_many_arguments)]
+fn halo_text(page: &mut Page, x: f32, y: f32, size: f32, font: Font, align: Align, color: Rgb, text: &str) {
+    let r = (size * 0.1).max(0.3);
+    for (dx, dy) in [(-r, 0.0), (r, 0.0), (0.0, -r), (0.0, r), (-r, -r), (r, -r), (-r, r), (r, r)] {
+        page.text(x + dx, y + dy, size, font, align, Rgb::WHITE, text);
+    }
+    page.text(x, y, size, font, align, color, text);
+}
+
+/// The colour of a Tc flow type (the node colours, as on the screen diagram).
+fn flow_color(f: crate::tc::PathFlow) -> Rgb {
+    use crate::tc::PathFlow;
+    match f {
+        PathFlow::Sheet => node_color(NodeType::Subcat).1,
+        PathFlow::Shallow => node_color(NodeType::Reach).1,
+        PathFlow::Channel => node_color(NodeType::Pond).1,
+        PathFlow::Pipe => Rgb::from_u8(140, 70, 210),
+        PathFlow::Lake => Rgb::from_u8(0, 150, 160),
     }
 }
 
@@ -72,8 +125,10 @@ impl Ctx<'_> {
         }
         for l in lines {
             if y + lh > page.height - MARGIN {
-                let full = std::mem::replace(page, self.new_page(false));
+                // Add the full page first so the new one is numbered after it.
+                let full = std::mem::replace(page, Page::new(0.0, 0.0));
                 self.doc.add(full);
+                *page = self.new_page(false);
                 y = BODY_TOP;
             }
             page.text(MARGIN, y + size, size, Font::Mono, Align::Left, Rgb::BLACK, l);
@@ -144,6 +199,19 @@ fn diagram_draw(c: &mut Ctx) -> Page {
         y0 = y0.min(y - sym);
         y1 = y1.max(y + sym * 1.4);
     }
+    for p in nodes.iter().flat_map(|n| n.outline.iter().chain(n.tc_path.iter())).flatten() {
+        x0 = x0.min(p[0] as f32);
+        x1 = x1.max(p[0] as f32);
+        y0 = y0.min(p[1] as f32);
+        y1 = y1.max(p[1] as f32);
+    }
+    let background = c.opts.background.as_ref().filter(|b| b.rect.iter().all(|v| v.is_finite()) && b.rect[2] > b.rect[0] && b.rect[3] > b.rect[1]);
+    if let Some(b) = background {
+        x0 = x0.min(b.rect[0] as f32);
+        y0 = y0.min(b.rect[1] as f32);
+        x1 = x1.max(b.rect[2] as f32);
+        y1 = y1.max(b.rect[3] as f32);
+    }
     let area = (MARGIN + 18.0, MARGIN + 18.0, w - MARGIN - 18.0, h - MARGIN - 80.0);
     let s = ((area.2 - area.0) / (x1 - x0)).min((area.3 - area.1) / (y1 - y0)).min(2.0);
     let ox = area.0 + ((area.2 - area.0) - (x1 - x0) * s) / 2.0;
@@ -151,6 +219,91 @@ fn diagram_draw(c: &mut Ctx) -> Page {
     let tx = |x: f64| ox + (x as f32 - x0) * s;
     let ty = |y: f64| oy + (y as f32 - y0) * s;
     let d = sym * s;
+    if let Some(b) = background {
+        let (bx, by) = (tx(b.rect[0]), ty(b.rect[1]));
+        page.image(bx, by, tx(b.rect[2]) - bx, ty(b.rect[3]) - by, b.width, b.height, b.rgb.clone());
+    }
+    // Subcatchment outlines and their drawn sub-areas, filled translucently as on the screen.
+    let obstacles = crate::drawing::label_obstacles(c.project);
+    let soft: Vec<&[[f64; 2]]> = obstacles.iter().map(Vec::as_slice).collect();
+    let mut labels: Vec<(f32, f32, f32, String)> = Vec::new();
+    let pts_of = |o: &[[f64; 2]]| -> Vec<(f32, f32)> { o.iter().map(|q| (tx(q[0]), ty(q[1]))).collect() };
+    for n in &nodes {
+        let Some(o) = n.outline.as_ref().filter(|o| o.len() >= 3) else { continue };
+        let edge = node_color(NodeType::Subcat).1;
+        let outline = pts_of(o);
+        page.fill_alpha(OUTLINE_ALPHA);
+        page.polygon(&outline, Some(edge), None);
+        let NodeData::Subcat(sc) = &n.data else {
+            page.fill_alpha(1.0);
+            page.polygon(&outline, None, Some((1.2, edge)));
+            continue;
+        };
+        page.fill_alpha(SUBAREA_ALPHA);
+        for (i, area) in sc.areas.iter().enumerate() {
+            let Some(so) = area.outline.as_ref().filter(|o| o.len() >= 3) else { continue };
+            let col = subarea_color(i);
+            page.polygon(&pts_of(so), Some(col), Some((1.2, col)));
+        }
+        page.fill_alpha(1.0);
+        page.polygon(&outline, None, Some((1.2, edge)));
+        // Curve-number labels: each drawn sub-area, and the remainder (placed clear of them),
+        // away from node symbols and Tc paths where they fit. Drawn after the Tc paths.
+        let drawn: Vec<&[[f64; 2]]> = sc.areas.iter().filter_map(|a| a.outline.as_deref()).filter(|o| o.len() >= 3).collect();
+        for area in &sc.areas {
+            let (region, hard) = match &area.outline {
+                Some(so) => (so.as_slice(), &[][..]),
+                None if area.remainder && !drawn.is_empty() => (o.as_slice(), drawn.as_slice()),
+                None => continue,
+            };
+            // Every label is printed: at full size where it fits, else shrunk to its spot.
+            let label = format!("CN {}", crate::units::group(area.cn, 0));
+            let unit_width = crate::pdf::text_width(&label, Font::SansBold, 1.0);
+            let fitting_size = |clear: f64| {
+                let clear = clear as f32 * s;
+                (clear / 0.7).min(clear / (unit_width * 0.45))
+            };
+            let (at, clear) = crate::drawing::place_label(region, hard, &soft, |c| fitting_size(c) >= LABEL_SIZE);
+            let size = fitting_size(clear).clamp(MIN_LABEL_SIZE, LABEL_SIZE);
+            labels.push((tx(at[0]), ty(at[1]) + size * 0.35, size, label));
+        }
+    }
+    // Tc flow paths: dashed legs coloured by flow type, lettered segment ends, an arrowhead at
+    // the outlet.
+    for n in &nodes {
+        let Some(path) = n.tc_path.as_ref().filter(|p| p.len() >= 2) else { continue };
+        let pts = pts_of(path);
+        let (flows, letters) = (crate::drawing::tc_leg_flows(n), crate::drawing::tc_path_labels(n));
+        let leg_color = |i: usize| flows.get(i).copied().flatten().map_or(TC_HINT, flow_color);
+        // A pale casing under the dashes keeps them visible over dark backgrounds.
+        page.polyline(&pts, 2.8, Rgb(0.97, 0.97, 0.97));
+        page.dashed(4.0, 2.5);
+        for (i, w) in pts.windows(2).enumerate() {
+            page.line(w[0].0, w[0].1, w[1].0, w[1].1, 1.6, leg_color(i));
+        }
+        page.solid();
+        if let [.., a, b] = pts.as_slice() {
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let len = dx.hypot(dy);
+            if len > 0.5 {
+                let (ux, uy, k) = (dx / len, dy / len, 6.0);
+                let c = leg_color(pts.len() - 2);
+                page.polygon(&[*b, (b.0 - ux * k - uy * k * 0.45, b.1 - uy * k + ux * k * 0.45), (b.0 - ux * k + uy * k * 0.45, b.1 - uy * k - ux * k * 0.45)], Some(Rgb::WHITE), Some((0.9, c)));
+            }
+        }
+        for (i, q) in pts.iter().enumerate() {
+            match letters.get(i).cloned().flatten() {
+                Some(letter) => {
+                    page.circle(q.0, q.1, 2.2, Some(Rgb::WHITE), Some((0.9, TC_HINT)));
+                    halo_text(&mut page, q.0 + 3.0, q.1 - 3.5, 8.0, Font::SansBold, Align::Left, Rgb::from_u8(40, 40, 48), &letter);
+                }
+                None => page.circle(q.0, q.1, 1.1, Some(TC_HINT), None),
+            }
+        }
+    }
+    for (x, y, size, label) in &labels {
+        halo_text(&mut page, *x, *y, *size, Font::SansBold, Align::Center, Rgb::from_u8(20, 20, 20), label);
+    }
     // Arrows first.
     for n in &nodes {
         for (k, t) in n.outflows.iter().enumerate() {
@@ -208,8 +361,8 @@ fn diagram_draw(c: &mut Ctx) -> Page {
 }
 
 /// The routing diagram page as an EMF vector graphic (landscape letter, with title block).
-pub fn diagram_emf(project: &Project, results: &Results, date: &str) -> Vec<u8> {
-    let opts = PrintOptions { date: date.to_string(), ..Default::default() };
+pub fn diagram_emf(project: &Project, results: &Results, date: &str, background: Option<PrintBackground>) -> Vec<u8> {
+    let opts = PrintOptions { date: date.to_string(), background, ..Default::default() };
     let mut c = Ctx { project, results, opts: &opts, doc: Document::new(&project.title) };
     crate::emf::page_to_emf(&diagram_draw(&mut c))
 }
@@ -286,18 +439,39 @@ fn hydro_chart(page: &mut Page, x: f32, y: f32, w: f32, h: f32, title: &str, ser
     }
     page.text((plot.0 + plot.2) / 2.0, plot.3 + 22.0, 8.5, Font::SansBold, Align::Center, Rgb::BLACK, "Time (hours)");
     page.text_vertical(plot.0 - 28.0, (plot.1 + plot.3) / 2.0, 8.5, Font::SansBold, Rgb::BLACK, &format!("Flow ({flow_label})"));
-    for (name, hg, color) in series {
+    for (_, hg, color) in series {
         let pts: Vec<(f32, f32)> = (0..hg.len()).map(|i| (sx(hg.time(i)), sy(to_flow(hg.q[i])))).collect();
         page.polyline(&pts, 1.3, *color);
+    }
+    // Peak labels, each placed clear of the summary lines and the labels already placed.
+    let mut taken: Vec<(f32, f32, f32, f32)> = summary
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let w = crate::pdf::text_width(line, Font::SansBold, 9.5);
+            let base = plot.1 + 14.0 + i as f32 * 12.0;
+            (plot.2 - 4.0 - w, base - 9.5, w, 12.0)
+        })
+        .collect();
+    for (_, hg, color) in series {
         let p = hg.peak();
-        if p.value > 0.0 {
-            let label = format!("{:.2} {flow_label}", to_flow(p.value));
-            let lw = crate::pdf::text_width(&label, Font::Sans, 7.0) + 6.0;
-            let (lx, ly) = ((sx(p.time) + 4.0).min(plot.2 - lw), (sy(to_flow(p.value)) - 12.0).max(plot.1));
-            page.rect(lx, ly, lw, 10.0, Some(Rgb::from_u8(255, 255, 220)), Some((0.5, *color)));
-            page.text(lx + 3.0, ly + 7.5, 7.0, Font::Sans, Align::Left, Rgb::BLACK, &label);
+        if p.value.is_nan() || p.value <= 0.0 {
+            continue;
         }
-        let _ = name;
+        let label = format!("{:.2} {flow_label}", to_flow(p.value));
+        let (lw, lh) = (crate::pdf::text_width(&label, Font::Sans, 7.0) + 6.0, 10.0);
+        let (px, py) = (sx(p.time), sy(to_flow(p.value)));
+        let fit = |x: f32, y: f32| (x.clamp(plot.0, (plot.2 - lw).max(plot.0)), y.clamp(plot.1, (plot.3 - lh).max(plot.1)));
+        let overlaps = |r: (f32, f32)| taken.iter().any(|t| r.0 < t.0 + t.2 && t.0 < r.0 + lw && r.1 < t.1 + t.3 && t.1 < r.1 + lh);
+        // Above-right of the peak, else above-left, then stepping further down the plot.
+        let candidates = (0..12).flat_map(|k| {
+            let y = py - 12.0 + k as f32 * (lh + 1.0);
+            [fit(px + 4.0, y), fit(px - 4.0 - lw, y)]
+        });
+        let (lx, ly) = candidates.into_iter().find(|r| !overlaps(*r)).unwrap_or(fit(px + 4.0, py - 12.0));
+        taken.push((lx, ly, lw, lh));
+        page.rect(lx, ly, lw, lh, Some(Rgb::from_u8(255, 255, 220)), Some((0.5, *color)));
+        page.text(lx + 3.0, ly + 7.5, 7.0, Font::Sans, Align::Left, Rgb::BLACK, &label);
     }
     // Legend.
     let lx = plot.2 + 8.0;
@@ -375,8 +549,9 @@ fn node_pages(c: &mut Ctx, node: &Node) {
     if c.opts.graphs && c.results.node(node.id).is_some() {
         let chart_h = 300.0;
         if y + chart_h > page.height - MARGIN {
-            let full = std::mem::replace(&mut page, c.new_page(false));
+            let full = std::mem::replace(&mut page, Page::new(0.0, 0.0));
             c.doc.add(full);
+            page = c.new_page(false);
             y = BODY_TOP;
         }
         let pw = page.width;
@@ -463,9 +638,48 @@ mod tests {
             let t = node_summary_emf(&p, &results, id).unwrap();
             assert_eq!(&t[40..44], b" EMF");
         }
-        let d = diagram_emf(&p, &results, "1/2/2026");
+        let d = diagram_emf(&p, &results, "1/2/2026", None);
         assert_eq!(&d[40..44], b" EMF");
         assert!(node_graph_emf(&p, &results, 9999).is_none());
+    }
+
+    #[test]
+    fn diagram_prints_outlines_sub_areas_and_background() {
+        let mut p = Project::default();
+        let s = p.add_node(NodeType::Subcat, [50.0, 50.0]);
+        {
+            let n = p.node_mut(s).unwrap();
+            n.outline = Some(vec![[0.0, 0.0], [300.0, 0.0], [300.0, 300.0], [0.0, 300.0]]);
+            n.tc_path = Some(vec![[20.0, 20.0], [150.0, 250.0], [280.0, 280.0]]);
+            if let NodeData::Subcat(sc) = &mut n.data {
+                sc.areas.clear();
+                let mut a = crate::cn::SubArea::new(1000.0, 80.0, "Brush");
+                a.outline = Some(vec![[10.0, 10.0], [140.0, 10.0], [140.0, 140.0], [10.0, 140.0]]);
+                sc.areas.push(a);
+                // Far too small for a full-size label: printed shrunk.
+                let mut tiny = crate::cn::SubArea::new(10.0, 55.0, "Pad");
+                tiny.outline = Some(vec![[200.0, 200.0], [203.0, 200.0], [203.0, 203.0], [200.0, 203.0]]);
+                sc.areas.push(tiny);
+                let mut rest = crate::cn::SubArea::new(1000.0, 61.0, "Open");
+                rest.remainder = true;
+                sc.areas.push(rest);
+            }
+        }
+        let results = crate::calc::calculate(&p);
+        let bg = PrintBackground { rect: [-20.0, -20.0, 120.0, 120.0], width: 2, height: 2, rgb: std::sync::Arc::new(vec![200; 12]) };
+        let with = PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, background: Some(bg.clone()), ..Default::default() };
+        let pdf = report_pdf(&p, &results, &with);
+        let text = String::from_utf8_lossy(&pdf);
+        assert!(text.contains("/Subtype /Image") && text.contains("/XObject") && text.contains("Do Q"));
+        assert!(text.contains("CN 80") && text.contains("CN 61") && text.contains("CN 55"), "sub-area, remainder and tiny sub-area labels");
+        assert!(text.contains("/ExtGState") && text.contains("/ca 0.31"), "translucent fills");
+        assert!(text.contains("(A) Tj") && text.contains("(C) Tj"), "Tc path letters");
+        let without = report_pdf(&p, &results, &PrintOptions { background: None, ..with.clone() });
+        assert!(!String::from_utf8_lossy(&without).contains("/Subtype /Image"));
+        let mut c = Ctx { project: &p, results: &results, opts: &with, doc: Document::new("t") };
+        let emf = crate::emf::page_to_emf(&diagram_draw(&mut c));
+        assert_eq!(&emf[40..44], b" EMF");
+        assert!(emf.len() > 100);
     }
 
     #[test]

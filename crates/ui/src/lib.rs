@@ -714,7 +714,8 @@ impl WaveStormApp {
                     }
                     if ui.button("Diagram (EMF)...").clicked() {
                         let doc = self.doc();
-                        let bytes = wavestorm_core::printing::diagram_emf(&doc.project, &doc.results, &dialogs::misc::today());
+                        let background = underlay::print_background(&doc.project);
+                        let bytes = wavestorm_core::printing::diagram_emf(&doc.project, &doc.results, &dialogs::misc::today(), background);
                         let name = format!("{} diagram.emf", sanitize(&doc.project.title));
                         if let Err(e) = self.platform.save(&name, None, &bytes, "emf") {
                             self.error = Some(e);
@@ -887,7 +888,7 @@ impl WaveStormApp {
                     ui.close();
                 }
                 if ui.button("Diagram (PDF)...").clicked() {
-                    let o = wavestorm_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new() };
+                    let o = wavestorm_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new(), background: None };
                     self.print_pdf(&o);
                     ui.close();
                 }
@@ -1108,7 +1109,11 @@ impl WaveStormApp {
 
     fn print_pdf(&mut self, opts: &wavestorm_core::printing::PrintOptions) {
         let doc = self.doc();
-        let bytes = wavestorm_core::printing::report_pdf(&doc.project, &doc.results, opts);
+        let mut opts = opts.clone();
+        if opts.diagram {
+            opts.background = underlay::print_background(&doc.project);
+        }
+        let bytes = wavestorm_core::printing::report_pdf(&doc.project, &doc.results, &opts);
         let name = format!("{} report.pdf", sanitize(&doc.project.title));
         match self.platform.save(&name, None, &bytes, "pdf") {
             Ok(Some(p)) => self.status = format!("Report saved to {p}"),
@@ -1236,7 +1241,7 @@ impl WaveStormApp {
             Cmd::ProjectReports => self.open_window(Window::ProjectReport(reports::ProjectReportState::default())),
             Cmd::Print => self.open_window(Window::Print(dialogs::misc::PrintState::default())),
             Cmd::PrintDiagram => {
-                let o = wavestorm_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new() };
+                let o = wavestorm_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new(), background: None };
                 self.print_pdf(&o);
             }
             Cmd::Notes => {

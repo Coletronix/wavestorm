@@ -153,6 +153,16 @@ Keep this section updated at the end of every session.
      opens when new hints/warnings/errors appear (`announce_calculation`, General pref).
   7. EMF export of node graphs/summaries and the diagram (`core::emf`, from the `pdf::Page`
      display list).
+  7b. The printed/EMF diagram matches the screen: background raster (`PrintOptions.background`,
+     decoded by `ui::underlay::print_background`, ≤1600 px, opacity pre-applied), translucent
+     outline/sub-area fills (`Page::fill_alpha`: PDF ExtGState `/ca`; EMF clip path +
+     EMR_ALPHABLEND with a premultiplied 32-bit pixel, which LibreOffice honours and Inkscape
+     ignores), every subcatchment's Tc path, and CN labels for drawn sub-areas and the
+     remainder (`drawing::place_label`: grid search for the most clearance, avoiding node
+     symbols and Tc paths when the label still fits; same placement on screen). Printed labels
+     are always shown, shrunk (down to 2 pt) to fit their spot; the screen omits ones that do
+     not fit at its fixed size. Chart peak
+     boxes are placed clear of each other and of the summary lines.
   8. `.hcp` open/save (`core::hcp`): unmodelled keys are kept losslessly in `foreign` fields.
      On the user's example, reach 2R matches the published inflow within 0.4 % and the flood
      depth line exactly, but our Stor-Ind+Trans attenuates 2 % where the reference shows 4 %

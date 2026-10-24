@@ -88,10 +88,14 @@ pub enum Op {
     Line { x1: f32, y1: f32, x2: f32, y2: f32, width: f32, color: Rgb },
     /// Sets the dash pattern for later strokes (`None` = solid).
     Dash(Option<(f32, f32)>),
+    /// Sets the opacity (0..1) of later fills.
+    FillAlpha(f32),
     Polyline { pts: Vec<(f32, f32)>, width: f32, color: Rgb },
     Polygon { pts: Vec<(f32, f32)>, fill: Option<Rgb>, stroke: Stroke },
     Rect { x: f32, y: f32, w: f32, h: f32, fill: Option<Rgb>, stroke: Stroke },
     Circle { cx: f32, cy: f32, r: f32, fill: Option<Rgb>, stroke: Stroke },
+    /// A raster (8-bit RGB, rows top to bottom, `px_w` x `px_h` pixels) stretched over a box.
+    Image { x: f32, y: f32, w: f32, h: f32, px_w: u32, px_h: u32, rgb: std::sync::Arc<Vec<u8>> },
 }
 
 /// One page being drawn.
@@ -186,12 +190,46 @@ impl Page {
         self.ops.push(Op::Circle { cx, cy, r, fill, stroke });
     }
 
+    /// Sets the opacity of later fills (1 = opaque).
+    pub fn fill_alpha(&mut self, alpha: f32) {
+        self.ops.push(Op::FillAlpha(if alpha.is_finite() { alpha.clamp(0.0, 1.0) } else { 1.0 }));
+    }
+
+    /// The fill opacities used on the page, in percent.
+    fn alphas(&self) -> Vec<u32> {
+        let mut v: Vec<u32> = self.ops.iter().filter_map(|op| if let Op::FillAlpha(a) = op { Some(alpha_pct(*a)) } else { None }).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
+    /// Stretches an RGB raster over a box; ignored when `rgb` is shorter than the pixel count.
+    #[allow(clippy::too_many_arguments)]
+    pub fn image(&mut self, x: f32, y: f32, w: f32, h: f32, px_w: u32, px_h: u32, rgb: std::sync::Arc<Vec<u8>>) {
+        if px_w > 0 && px_h > 0 && rgb.len() >= px_w as usize * px_h as usize * 3 {
+            self.ops.push(Op::Image { x, y, w, h, px_w, px_h, rgb });
+        }
+    }
+
+    /// The images on the page, in drawing order.
+    fn images(&self) -> impl Iterator<Item = (u32, u32, &[u8])> {
+        self.ops.iter().filter_map(|op| match op {
+            Op::Image { px_w, px_h, rgb, .. } => Some((*px_w, *px_h, rgb.as_slice())),
+            _ => None,
+        })
+    }
+
     /// The page content as a PDF content stream.
     fn pdf_content(&self) -> String {
         let mut o = String::new();
         let y = |v: f32| self.height - v;
+        let mut image_no = 0;
         for op in &self.ops {
             match op {
+                Op::Image { x, y: iy, w, h, .. } => {
+                    let _ = writeln!(o, "q {} 0 0 {} {} {} cm /Im{image_no} Do Q", num(*w), num(*h), num(*x), num(y(*iy + *h)));
+                    image_no += 1;
+                }
                 Op::Text { x, y: ty, size, font, align, color, text } => {
                     let w = text_width(text, *font, *size);
                     let x = match align {
@@ -212,6 +250,9 @@ impl Page {
                     let _ = writeln!(o, "[{} {}] 0 d", num(*on), num(*off));
                 }
                 Op::Dash(None) => o.push_str("[] 0 d\n"),
+                Op::FillAlpha(a) => {
+                    let _ = writeln!(o, "/GA{} gs", alpha_pct(*a));
+                }
                 Op::Polyline { pts, width, color } => {
                     let Some(first) = pts.first() else { continue };
                     let _ = write!(o, "{} {} {} RG {} w 1 j {} {} m", num(color.0), num(color.1), num(color.2), num(*width), num(first.0), num(y(first.1)));
@@ -252,6 +293,10 @@ impl Page {
             (false, false) => " n\n",
         });
     }
+}
+
+fn alpha_pct(a: f32) -> u32 {
+    (a.clamp(0.0, 1.0) * 100.0).round() as u32
 }
 
 /// The 32-gon used to draw circles in PDF output.
@@ -299,10 +344,17 @@ impl Document {
             objects.push(format!("<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>").into_bytes());
         }
         objects.push(format!("<< /Title ({}) /Producer (WAVEStorm) >>", escape(&self.title)).into_bytes());
+        // Image objects follow the pages, in page order.
+        let mut next_image = 8 + 2 * n;
         for (i, p) in self.pages.iter().enumerate() {
+            let xobjects: Vec<String> = p.images().enumerate().map(|(k, _)| format!("/Im{k} {} 0 R", next_image + k)).collect();
+            next_image += xobjects.len();
+            let xobject = if xobjects.is_empty() { String::new() } else { format!(" /XObject << {} >>", xobjects.join(" ")) };
+            let states: Vec<String> = p.alphas().iter().map(|a| format!("/GA{a} << /ca {} >>", num(*a as f32 / 100.0))).collect();
+            let gstate = if states.is_empty() { String::new() } else { format!(" /ExtGState << {} >>", states.join(" ")) };
             objects.push(
                 format!(
-                    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> /Contents {} 0 R >>",
+                    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >>{xobject}{gstate} >> /Contents {} 0 R >>",
                     num(p.width),
                     num(p.height),
                     page_obj(i) + 1
@@ -314,6 +366,14 @@ impl Document {
             stream.extend_from_slice(content.as_bytes());
             stream.extend_from_slice(b"\nendstream");
             objects.push(stream);
+        }
+        for p in &self.pages {
+            for (w, h, rgb) in p.images() {
+                let mut img = format!("<< /Type /XObject /Subtype /Image /Width {w} /Height {h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length {} >>\nstream\n", w as usize * h as usize * 3).into_bytes();
+                img.extend_from_slice(&rgb[..w as usize * h as usize * 3]);
+                img.extend_from_slice(b"\nendstream");
+                objects.push(img);
+            }
         }
         for (i, body) in objects.iter().enumerate() {
             offsets.push(out.len());

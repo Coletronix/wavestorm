@@ -187,6 +187,87 @@ pub fn clamp_inside(p: Pt, poly: &[Pt]) -> Pt {
     if poly.len() < 3 || point_in_polygon(p, poly) { p } else { nearest_on_boundary(p, poly) }
 }
 
+/// Where to put a label in `region` outside every polygon of `holes`: the sampled point
+/// farthest from all their edges, with that distance (a grid search refined around the best
+/// sample). `None` when no sample lands in the region.
+pub fn label_spot(region: &[Pt], holes: &[&[Pt]]) -> Option<(Pt, f64)> {
+    if region.len() < 3 {
+        return None;
+    }
+    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for q in region {
+        lo = [lo[0].min(q[0]), lo[1].min(q[1])];
+        hi = [hi[0].max(q[0]), hi[1].max(q[1])];
+    }
+    // Holes outside the region's bounding box can neither contain a point of it nor be nearer
+    // than its own boundary.
+    let holes: Vec<&[Pt]> = holes
+        .iter()
+        .copied()
+        .filter(|h| h.iter().any(|q| q[0] >= lo[0]) && h.iter().any(|q| q[0] <= hi[0]) && h.iter().any(|q| q[1] >= lo[1]) && h.iter().any(|q| q[1] <= hi[1]))
+        .collect();
+    let clearance = |p: Pt| -> Option<f64> {
+        if !point_in_polygon(p, region) || holes.iter().any(|h| h.len() >= 3 && point_in_polygon(p, h)) {
+            return None;
+        }
+        let d = std::iter::once(region).chain(holes.iter().copied()).filter(|h| h.len() >= 2).map(|h| dist(p, nearest_on_boundary(p, h))).fold(f64::INFINITY, f64::min);
+        Some(d)
+    };
+    let search = |lo: Pt, hi: Pt, n: usize, best: Option<(Pt, f64)>| {
+        let mut best = best;
+        for i in 0..n {
+            for j in 0..n {
+                let p = [lo[0] + (hi[0] - lo[0]) * (i as f64 + 0.5) / n as f64, lo[1] + (hi[1] - lo[1]) * (j as f64 + 0.5) / n as f64];
+                if let Some(d) = clearance(p)
+                    && best.is_none_or(|(_, b)| d > b)
+                {
+                    best = Some((p, d));
+                }
+            }
+        }
+        best
+    };
+    const N: usize = 24;
+    let best = search(lo, hi, N, None)?;
+    let cell = [(hi[0] - lo[0]) / N as f64, (hi[1] - lo[1]) / N as f64];
+    search([best.0[0] - cell[0], best.0[1] - cell[1]], [best.0[0] + cell[0], best.0[1] + cell[1]], 8, Some(best))
+}
+
+/// What area labels should keep clear of when they can: boxes around the node symbols and
+/// their names, and the Tc paths (each as a zero-area polygon running out and back, so its
+/// boundary is the path).
+pub fn label_obstacles(p: &Project) -> Vec<Vec<Pt>> {
+    let d = p.diagram.symbol_size;
+    let symbols = p.nodes.iter().filter(|n| !matches!(n.data, NodeData::Text(_))).map(|n| {
+        let [x, y] = n.pos;
+        let bottom = if n.name.is_empty() { d * 0.55 } else { d * 0.9 };
+        vec![[x - d * 0.65, y - d * 0.55], [x + d * 0.65, y - d * 0.55], [x + d * 0.65, y + bottom], [x - d * 0.65, y + bottom]]
+    });
+    let paths = p.nodes.iter().filter_map(|n| n.tc_path.as_ref()).filter(|t| t.len() >= 2).map(|t| t.iter().chain(t.iter().rev().skip(1)).copied().collect());
+    symbols.chain(paths).collect()
+}
+
+/// Where to put a label in `region`, with its clearance: clear of `soft` too when the label
+/// `fits` (given the clearance) there, else the roomiest spot clear of `hard` only (whether or
+/// not it fits, so callers can shrink the label), else the region's centroid with no room.
+pub fn place_label(region: &[Pt], hard: &[&[Pt]], soft: &[&[Pt]], fits: impl Fn(f64) -> bool) -> (Pt, f64) {
+    let all = [hard, soft].concat();
+    label_spot(region, &all).filter(|(_, d)| fits(*d)).or_else(|| label_spot(region, hard)).unwrap_or((centroid(region), 0.0))
+}
+
+/// The letters of a node's Tc path points (every point when no segment ends are recorded).
+pub fn tc_path_labels(n: &Node) -> Vec<Option<String>> {
+    let len = n.tc_path.as_ref().map_or(0, Vec::len);
+    if n.tc_path_breaks.is_empty() { (0..len).map(|i| Some(crate::tc::point_label(i))).collect() } else { crate::tc::path_labels(len, &n.tc_path_breaks) }
+}
+
+/// The flow type of each leg of a node's stored Tc path, from the Tc segments measured from it.
+pub fn tc_leg_flows(n: &Node) -> Vec<Option<crate::tc::PathFlow>> {
+    let legs = n.tc_path.as_ref().map_or(0, |p| p.len().saturating_sub(1));
+    let NodeData::Subcat(sc) = &n.data else { return vec![None; legs] };
+    (0..legs).map(|i| sc.tc.iter().find(|s| s.path.is_some_and(|[a, b]| a <= i && i < b)).and_then(|s| crate::tc::path_flow_of(&s.kind))).collect()
+}
+
 /// Why a drawn sub-area cannot be used, if it cannot.
 pub fn subarea_problem(shape: &[Pt], outline: &[Pt], others: &[&[Pt]]) -> Option<&'static str> {
     if shape.len() < 3 || polygon_area(shape) <= 0.0 {
@@ -374,6 +455,20 @@ mod tests {
     use super::*;
     use crate::project::NodeType;
     use crate::tc::{PathFlow, PathLeg, TcSegment, segments_from_path};
+
+    #[test]
+    fn label_spot_avoids_holes() {
+        let square = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]];
+        let (p, d) = label_spot(&square, &[]).unwrap();
+        assert!((p[0] - 50.0).abs() < 3.0 && (p[1] - 50.0).abs() < 3.0 && d > 47.0, "{p:?} {d}");
+        // The left 60% is a drawn sub-area: the label goes in the strip to its right.
+        let left: [Pt; 4] = [[0.0, 0.0], [60.0, 0.0], [60.0, 100.0], [0.0, 100.0]];
+        let (p, d) = label_spot(&square, &[&left]).unwrap();
+        assert!(p[0] > 60.0 && (d - 20.0).abs() < 2.0, "{p:?} {d}");
+        assert!(!point_in_polygon(p, &left));
+        assert!(label_spot(&square, &[&square]).is_none_or(|(_, d)| d < 1e-6));
+        assert!(label_spot(&square[..2], &[]).is_none());
+    }
 
     fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<Pt> {
         vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
