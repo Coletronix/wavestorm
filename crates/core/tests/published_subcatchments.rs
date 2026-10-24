@@ -131,7 +131,7 @@ fn add_subcat(p: &mut Project, areas: &[(f64, f64)], tc: f64) -> NodeId {
     if let Some(n) = p.node_mut(id) {
         n.data = NodeData::Subcat(Subcatchment {
             areas: areas.iter().map(|&(a, cn)| SubArea::new(a * AC, cn, "area")).collect(),
-            tc: vec![TcSegment { kind: TcKind::Direct { minutes: tc, length: 0.0, velocity: 0.0 }, description: String::new() }],
+            tc: vec![TcSegment::new(TcKind::Direct { minutes: tc, length: 0.0, velocity: 0.0 }, "")],
             uh: None,
             large_units: true,
         });

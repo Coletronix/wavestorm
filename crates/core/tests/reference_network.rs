@@ -19,7 +19,7 @@ fn subcat(p: &mut Project, area: f64, cn: f64, tc: f64, to: NodeId) -> NodeId {
     n.outflows[0] = Some(to);
     n.data = NodeData::Subcat(Subcatchment {
         areas: vec![SubArea::new(area * AC, cn, "test area")],
-        tc: vec![TcSegment { kind: TcKind::Direct { minutes: tc, length: 0.0, velocity: 0.0 }, description: String::new() }],
+        tc: vec![TcSegment::new(TcKind::Direct { minutes: tc, length: 0.0, velocity: 0.0 }, "")],
         uh: None,
         large_units: true,
     });

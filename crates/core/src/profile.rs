@@ -241,8 +241,8 @@ mod tests {
             n.data = NodeData::Subcat(Subcatchment {
                 areas: vec![SubArea::new(5.0 * 43_560.0, 75.0, "area")],
                 tc: vec![
-                    TcSegment { kind: TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.24, p2: 3.0, surface: "Grass".into() }, description: "AB".into() },
-                    TcSegment { kind: TcKind::Shallow { length: 400.0, slope: 0.01, kv: 16.13, surface: "Unpaved".into() }, description: String::new() },
+                    TcSegment::new(TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.24, p2: 3.0, surface: "Grass".into() }, "AB"),
+                    TcSegment::new(TcKind::Shallow { length: 400.0, slope: 0.01, kv: 16.13, surface: "Unpaved".into() }, ""),
                 ],
                 uh: None,
                 large_units: true,

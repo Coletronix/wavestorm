@@ -10,7 +10,7 @@ use wavestorm_core::tc::{TcKind, TcSegment};
 const AC: f64 = 43_560.0;
 
 fn seg(kind: TcKind, desc: &str) -> TcSegment {
-    TcSegment { kind, description: desc.into() }
+    TcSegment::new(kind, desc)
 }
 
 fn subcat(p: &mut Project, number: &str, name: &str, pos: [f64; 2], areas: Vec<SubArea>, tc: Vec<TcSegment>, to: NodeId) -> NodeId {

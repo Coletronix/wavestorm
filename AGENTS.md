@@ -300,11 +300,26 @@ Keep this section updated at the end of every session.
   sheet limit (default `tc::SHEET_LIMIT_FT` = 100 ft), replace or append; OK writes the
   segments into the draft and `Node::tc_path` (shown while the node is selected). Segment logic
   is `core::tc::segments_from_path` (tested): only lengths come from the path; slope/cover are
-  copied from an existing segment of the same type or default.
-- Unsaved-work recovery (`ui::recovery`): `DELAY` (1 s) after any change, dirty projects are
-  written to `store` key `recovery` (localStorage / config file; falls back to no background
-  image, then reports a failure once); restored automatically at start (non-headless) in place
-  of the sample. Desktop autosave pref (`autosave`, `autosave_minutes`, off by default) saves
+  copied from an existing segment of the same type or default. Path points are lettered
+  A, B, C… (`tc::point_label`, drawn on the diagram); segments are described "A to B" and
+  remember their span in `TcSegment::path` (`TcSegment::new` for plain ones). The sheet limit
+  is applied by `tc::limit_sheet_flow`, which inserts a point where it falls inside a leg
+  (unless within `SPLIT_SLACK_FT`), so letters stay consistent; `TcPathState::reset`
+  recomputes from the drawn points when the limit changes. Deleting segments drops the path
+  once none references it (`dialogs::node::drop_orphan_path`); "Remove Drawn Path" keeps the
+  segments.
+- Session (`ui::recovery`, store key `session`; 0.3.0's `recovery` key is still read): `DELAY`
+  (1 s) after any change the open projects are recorded — saved files by path, unsaved or
+  file-less ones (always on the web) with their JSON, plus the front tab. At start (non-headless)
+  they are reopened; missing files are skipped; with nothing to reopen no project is open and
+  `start_page` shows (New / Open / Open Sample / recent list; Project and View menus only).
+  Code must not assume a document exists: `doc()` creates one, so empty-state paths
+  (`draw`, `shortcuts`, `sync_underlay`) check `docs.is_empty()` first; `close_active` may leave
+  none. Headless apps still start with the sample project. Recent projects
+  (`platform::recent`, store key `recent`, old plain-path list still read): paths on the
+  desktop (8), project copies in browser storage on the web (6, oldest dropped when storage is
+  full); Project > Recent Projects sits under Open...; entries whose file is gone are reported
+  and forgotten. Desktop autosave pref (`autosave`, `autosave_minutes`, off by default) saves
   dirty projects that have a path; the `.bak` timer remains. Timers wake the idle app with
   `request_repaint_after` only while saved projects have unsaved changes.
 - Arrow grabbing: `diagram::handle_at` hit-tests the whole arrowhead from the press origin

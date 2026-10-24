@@ -729,10 +729,7 @@ mod tests {
             n.name = "Test Area".into();
             n.data = NodeData::Subcat(Subcatchment {
                 areas: vec![SubArea::new(10.0 * 43_560.0, 70.0, "Woods, Good, HSG C")],
-                tc: vec![crate::tc::TcSegment {
-                    kind: TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.4, p2: 3.0, surface: "Woods: Light underbrush".into() },
-                    description: String::new(),
-                }],
+                tc: vec![crate::tc::TcSegment::new(TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.4, p2: 3.0, surface: "Woods: Light underbrush".into() }, "")],
                 uh: None,
                 large_units: true,
             });
@@ -761,7 +758,7 @@ mod tests {
                 n.outflows[0] = Some(link);
                 n.data = NodeData::Subcat(Subcatchment {
                     areas: vec![SubArea::new(area * 43_560.0, cn, "area")],
-                    tc: vec![crate::tc::TcSegment { kind: TcKind::Direct { minutes: 10.0, length: 0.0, velocity: 0.0 }, description: String::new() }],
+                    tc: vec![crate::tc::TcSegment::new(TcKind::Direct { minutes: 10.0, length: 0.0, velocity: 0.0 }, "")],
                     uh: None,
                     large_units: true,
                 });

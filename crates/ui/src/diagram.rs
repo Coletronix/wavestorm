@@ -644,9 +644,15 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
         }
         p.extend(Shape::dashed_line(&[w[0], w[1]], stroke, 8.0, 5.0));
     }
-    for q in &s {
+    // Each drawn point is lettered A, B, C, … (the Tc segments are described "A to B", …).
+    for (i, q) in s.iter().enumerate().take(pts.len()) {
         p.circle_filled(*q, 3.5, t.canvas);
         p.circle_stroke(*q, 3.5, stroke);
+        let at = *q + vec2(6.0, -6.0);
+        let label = wavestorm_core::tc::point_label(i);
+        let font = FontId::proportional(12.5);
+        p.text(at + vec2(1.0, 1.0), Align2::LEFT_BOTTOM, &label, font.clone(), if t.is_dark() { Color32::BLACK } else { Color32::WHITE });
+        p.text(at, Align2::LEFT_BOTTOM, &label, font, color);
     }
     if let [.., a, b] = s.as_slice()
         && (*b - *a).length() > 1.0

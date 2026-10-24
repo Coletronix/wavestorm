@@ -251,29 +251,91 @@ pub mod store {
     }
 }
 
-/// Recently opened project paths (desktop only), most recent first.
-#[cfg(not(target_arch = "wasm32"))]
+/// Recently opened or saved projects, most recent first: file paths on the desktop; in the
+/// browser (no file paths) copies of the projects themselves, kept in browser storage.
 pub mod recent {
-    fn file() -> Option<std::path::PathBuf> {
-        super::store::config_file("recent.json")
+    use serde::{Deserialize, Serialize};
+    use wavestorm_core::project::Project;
+
+    const KEY: &str = "recent";
+    const MAX_DESKTOP: usize = 8;
+    const MAX_WEB: usize = 6;
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    pub struct Entry {
+        pub name: String,
+        #[serde(default)]
+        pub path: Option<String>,
+        /// The project (`.waves` JSON), for entries without a file (browser).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub data: Option<String>,
     }
 
-    pub fn list() -> Vec<String> {
-        file().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()).unwrap_or_default()
+    impl Entry {
+        /// What the menu shows: the path on the desktop, the name in the browser.
+        pub fn label(&self) -> &str {
+            self.path.as_deref().unwrap_or(&self.name)
+        }
+
+        /// The project file's bytes, or None when the file is gone.
+        pub fn bytes(&self) -> Option<Vec<u8>> {
+            if let Some(d) = &self.data {
+                return Some(d.clone().into_bytes());
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(p) = &self.path {
+                return std::fs::read(p).ok();
+            }
+            None
+        }
     }
 
-    pub fn push(path: &str) {
+    fn file_name(p: &str) -> String {
+        std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.to_string())
+    }
+
+    pub fn list() -> Vec<Entry> {
+        let Some(text) = super::store::read(KEY) else { return Vec::new() };
+        if let Ok(v) = serde_json::from_str::<Vec<Entry>>(&text) {
+            return v;
+        }
+        // Earlier desktop lists were plain paths.
+        serde_json::from_str::<Vec<String>>(&text).map(|v| v.into_iter().map(|p| Entry { name: file_name(&p), path: Some(p), data: None }).collect()).unwrap_or_default()
+    }
+
+    /// Records an opened or saved project: by its path when it has one (desktop); in the
+    /// browser, as a copy of the project under its file name.
+    pub fn push(name: &str, path: Option<&str>, project: &Project) {
+        let entry = match path {
+            Some(p) => Entry { name: file_name(p), path: Some(p.to_string()), data: None },
+            None if cfg!(target_arch = "wasm32") => match project.to_json() {
+                Ok(j) => Entry { name: name.to_string(), path: None, data: Some(j) },
+                Err(_) => return,
+            },
+            None => return,
+        };
         let mut v = list();
-        v.retain(|p| p != path);
-        v.insert(0, path.to_string());
-        v.truncate(8);
-        if let Some(f) = file() {
-            if let Some(dir) = f.parent() {
-                let _ = std::fs::create_dir_all(dir);
+        v.retain(|e| if entry.path.is_some() { e.path != entry.path } else { e.path.is_some() || e.name != entry.name });
+        v.insert(0, entry);
+        v.truncate(if cfg!(target_arch = "wasm32") { MAX_WEB } else { MAX_DESKTOP });
+        save(v);
+    }
+
+    /// Drops an entry whose file is gone.
+    pub fn forget(e: &Entry) {
+        let mut v = list();
+        v.retain(|x| x != e);
+        save(v);
+    }
+
+    fn save(mut v: Vec<Entry>) {
+        // Browser storage is limited: drop the oldest copies until the list fits.
+        loop {
+            let Ok(t) = serde_json::to_string_pretty(&v) else { return };
+            if super::store::try_write(KEY, &t).is_ok() || v.is_empty() {
+                return;
             }
-            if let Ok(t) = serde_json::to_string_pretty(&v) {
-                let _ = std::fs::write(f, t);
-            }
+            v.pop();
         }
     }
 }

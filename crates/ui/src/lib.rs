@@ -77,24 +77,26 @@ impl WaveStormApp {
     }
 
     fn with(platform: Platform, prefs: Prefs, persist_prefs: bool) -> Self {
-        // Unsaved work left by the last session comes back in place of the sample project.
-        let restored = if persist_prefs { recovery::take() } else { Vec::new() };
-        let status = match restored.len() {
-            0 => "Ready".to_string(),
-            1 => "Restored a project with unsaved changes from your last session (save or export it to keep it)".to_string(),
-            n => format!("Restored {n} projects with unsaved changes from your last session (save or export them to keep them)"),
-        };
-        let docs = if restored.is_empty() {
+        // The projects open at the end of the last session come back (with any unsaved changes);
+        // with none to reopen, nothing is open. Automated runs start with the sample project.
+        let (docs, active) = if persist_prefs {
+            recovery::take()
+        } else {
             let mut doc = Doc::new(samples::sample_project(), None);
             doc.dirty = false;
-            vec![doc]
-        } else {
-            restored
+            (vec![doc], 0)
+        };
+        let unsaved = docs.iter().filter(|d| d.dirty).count();
+        let plural = |n: usize| if n == 1 { "" } else { "s" };
+        let status = match (persist_prefs, docs.len(), unsaved) {
+            (false, _, _) | (true, 0, _) => "Ready".to_string(),
+            (true, n, 0) => format!("Reopened {n} project{} from your last session", plural(n)),
+            (true, n, u) => format!("Reopened {n} project{} from your last session, {u} with unsaved changes (save or export to keep them)", plural(n)),
         };
         library::init(&prefs.rainfall_folder, persist_prefs);
         WaveStormApp {
             docs,
-            active: 0,
+            active,
             theme: prefs.theme,
             prefs,
             persist_prefs,
@@ -142,21 +144,18 @@ impl WaveStormApp {
     fn handle_incoming(&mut self, _ctx: &egui::Context, item: Incoming) -> Result<(), String> {
         match item.purpose {
             Purpose::OpenProject => {
-                let is_hcp = item.name.to_ascii_lowercase().ends_with(".hcp") || wavestorm_core::hcp::looks_like_hcp(&item.bytes);
-                let (project, warnings) = if is_hcp {
-                    wavestorm_core::hcp::import_bytes(&item.bytes)?
-                } else {
-                    let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a WAVEStorm project (not text).".to_string())?;
-                    (Project::from_json(&text)?, Vec::new())
-                };
+                let (project, is_hcp, warnings) = project_from_bytes(&item.name, item.bytes)?;
                 // Replace an untouched empty first project.
                 if self.docs.len() == 1 && !self.docs[0].dirty && self.docs[0].project.nodes.is_empty() {
                     self.docs.clear();
                 }
-                #[cfg(not(target_arch = "wasm32"))]
-                if let Some(p) = &item.path {
-                    platform::recent::push(p);
+                // An already open file is switched to rather than opened twice.
+                if let Some(i) = item.path.as_ref().and_then(|p| self.docs.iter().position(|d| d.path.as_ref() == Some(p))) {
+                    self.active = i;
+                    self.status = format!("{} is already open", item.name);
+                    return Ok(());
                 }
+                platform::recent::push(&item.name, item.path.as_deref(), &project);
                 let mut doc = Doc::new(project, item.path);
                 doc.hcp = is_hcp;
                 self.docs.push(doc);
@@ -266,6 +265,9 @@ impl WaveStormApp {
 
     /// Rebuilds the underlay texture when the background changes.
     fn sync_underlay(&mut self, ctx: &egui::Context) {
+        if self.docs.is_empty() {
+            return;
+        }
         let doc = self.doc();
         let key = doc.project.diagram.underlay.as_ref().map(|u| (u.bytes.len(), u.page));
         if key == doc.underlay_key {
@@ -312,13 +314,13 @@ impl WaveStormApp {
                 doc.hcp = hcp;
                 doc.path = Some(p.clone());
                 doc.dirty = false;
-                #[cfg(not(target_arch = "wasm32"))]
-                platform::recent::push(&p);
+                platform::recent::push(&name, Some(&p), &doc.project);
                 self.status = format!("Saved {p}");
             }
             Ok(None) => {
                 if cfg!(target_arch = "wasm32") {
                     doc.dirty = false;
+                    platform::recent::push(&name, None, &doc.project);
                     self.status = format!("Downloaded {name}");
                 }
             }
@@ -374,7 +376,7 @@ impl WaveStormApp {
     /// the General settings, autosave of changed projects to their own files.
     fn autosave(&mut self, ctx: &egui::Context) {
         if self.persist_prefs
-            && let Some(problem) = self.recovery.update(ctx, &self.docs)
+            && let Some(problem) = self.recovery.update(ctx, &self.docs, self.active)
         {
             self.status = problem;
         }
@@ -574,6 +576,15 @@ impl WaveStormApp {
         }
         let (cmd, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
         let pressed = |k: Key| ctx.input(|i| i.key_pressed(k));
+        if self.docs.is_empty() {
+            // Only opening and creating projects make sense with none open.
+            if cmd && pressed(Key::O) {
+                self.platform.pick(Purpose::OpenProject);
+            } else if cmd && pressed(Key::N) {
+                self.new_project();
+            }
+            return;
+        }
         if cmd && pressed(Key::Z) {
             if shift { self.doc().redo() } else { self.doc().undo() };
         } else if cmd && pressed(Key::Y) {
@@ -601,19 +612,51 @@ impl WaveStormApp {
 
     // ---------------------------------------------------------------- menus
 
+    /// New, Open..., Recent Projects and Open Sample Project (Project menu and start page menu).
+    fn open_items(&mut self, ui: &mut Ui) {
+        if ui.button("New").clicked() {
+            self.new_project();
+        }
+        if ui.button("Open...").clicked() {
+            self.platform.pick(Purpose::OpenProject);
+        }
+        ui.menu_button("Recent Projects", |ui| {
+            let recent = platform::recent::list();
+            if recent.is_empty() {
+                ui.add_enabled(false, egui::Button::new("(none yet)"));
+            }
+            for e in recent {
+                if ui.button(e.label()).clicked() {
+                    self.open_recent(&e);
+                    ui.close();
+                }
+            }
+        });
+        if ui.button("Open Sample Project").clicked() {
+            self.open_sample();
+        }
+    }
+
+    fn open_sample(&mut self) {
+        self.docs.push(Doc::new(samples::sample_project(), None));
+        self.active = self.docs.len() - 1;
+    }
+
+    /// Opens a recent project; one whose file is gone is reported and dropped from the list.
+    fn open_recent(&mut self, e: &platform::recent::Entry) {
+        match e.bytes() {
+            Some(bytes) => self.platform.push(Incoming { purpose: Purpose::OpenProject, name: e.name.clone(), path: e.path.clone(), bytes }),
+            None => {
+                platform::recent::forget(e);
+                self.error = Some(format!("{} can no longer be opened (it was moved, renamed or deleted), so it was removed from the recent projects.", e.label()));
+            }
+        }
+    }
+
     fn menu_bar(&mut self, ui: &mut Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("Project", |ui| {
-                if ui.button("New").clicked() {
-                    self.new_project();
-                }
-                if ui.button("Open...").clicked() {
-                    self.platform.pick(Purpose::OpenProject);
-                }
-                if ui.button("Open Sample Project").clicked() {
-                    self.docs.push(Doc::new(samples::sample_project(), None));
-                    self.active = self.docs.len() - 1;
-                }
+                self.open_items(ui);
                 if ui.button("Close").clicked() {
                     self.close_active();
                 }
@@ -626,22 +669,6 @@ impl WaveStormApp {
                 }
                 if ui.button("Save as .hcp (interchange)...").clicked() {
                     self.save_hcp();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    let recent = platform::recent::list();
-                    ui.add_enabled_ui(!recent.is_empty(), |ui| {
-                        ui.menu_button("Recent Projects", |ui| {
-                            for path in recent {
-                                if ui.button(&path).clicked() {
-                                    if let Err(e) = self.platform.open_path(&path) {
-                                        self.error = Some(e);
-                                    }
-                                    ui.close();
-                                }
-                            }
-                        });
-                    });
                 }
                 if ui.button("Add (Merge) Project...").clicked() {
                     self.platform.pick(Purpose::MergeProject);
@@ -834,14 +861,7 @@ impl WaveStormApp {
                     self.open_window(Window::Storms(reports::CurveState::idf()));
                 }
                 ui.separator();
-                ui.menu_button("Theme", |ui| {
-                    for k in ThemeKind::ALL {
-                        if ui.radio(self.theme == k, k.label()).clicked() {
-                            self.set_prefs(Prefs { theme: k, ..self.prefs.clone() });
-                            ui.close();
-                        }
-                    }
-                });
+                self.theme_menu(ui);
             });
             ui.menu_button("Print", |ui| {
                 if ui.button("Report (PDF)...").clicked() {
@@ -916,10 +936,12 @@ impl WaveStormApp {
             return;
         }
         self.docs.remove(self.active);
+        // Closing the last project leaves nothing open (the start page shows).
+        self.active = self.active.min(self.docs.len().saturating_sub(1));
+        self.tool = Tool::Select;
         if self.docs.is_empty() {
-            self.new_project();
+            self.status = "No project open".into();
         }
-        self.active = self.active.min(self.docs.len() - 1);
     }
 
     fn create_node(&mut self, t: NodeType) {
@@ -1529,7 +1551,8 @@ impl WaveStormApp {
                 && e.node == id
             {
                 e.tab = 2;
-                e.tc_path = Some(dialogs::node::TcPathState::new(points.clone(), fpu));
+                // A newly drawn path starts from fresh flow types.
+                e.tc_path = Some(dialogs::node::TcPathState::new(points.clone(), fpu, &[]));
             }
         }
         self.status = "Choose the flow type of each leg of the path, then OK".into();
@@ -1783,6 +1806,12 @@ impl WaveStormApp {
         self.sync_underlay(&ctx);
         self.autosave(&ctx);
         self.shortcuts(&ctx);
+        if self.docs.is_empty() {
+            self.start_page(ui, &ctx, &t);
+            self.error_dialog(&ctx);
+            self.set_title(&ctx, "WAVEStorm".into());
+            return;
+        }
 
         let actions = if t.glass { self.glass_chrome(ui, &ctx, &t) } else { self.classic_chrome(ui, &ctx, &t) };
         self.canvas_actions(actions, &ctx);
@@ -1798,15 +1827,109 @@ impl WaveStormApp {
             self.open_window(Window::Help(help::HelpState::topic(topic)));
         }
         self.error_dialog(&ctx);
-        // Only send the title when it changes: every viewport command also requests another
-        // frame, which would keep the app repainting forever (and lagging behind the mouse).
         let title = format!("{} - WAVEStorm", self.doc().title());
+        self.set_title(&ctx, title);
+        let _ = Stroke::NONE;
+        let _ = Color32::BLACK;
+    }
+
+    /// Sets the window title. Only sent when it changes: every viewport command also requests
+    /// another frame, which would keep the app repainting forever (and lagging behind the mouse).
+    fn set_title(&mut self, ctx: &egui::Context, title: String) {
         if title != self.window_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.window_title = title;
         }
-        let _ = Stroke::NONE;
-        let _ = Color32::BLACK;
+    }
+
+    /// The Theme submenu (View menu and the start page).
+    fn theme_menu(&mut self, ui: &mut Ui) {
+        ui.menu_button("Theme", |ui| {
+            for k in ThemeKind::ALL {
+                if ui.radio(self.theme == k, k.label()).clicked() {
+                    self.set_prefs(Prefs { theme: k, ..self.prefs.clone() });
+                    ui.close();
+                }
+            }
+        });
+    }
+
+    /// With no project open: a menu bar (Project and View), the status line, and a start page
+    /// with New, Open..., Open Sample Project and the recent projects.
+    fn start_page(&mut self, ui: &mut Ui, ctx: &egui::Context, t: &Tokens) {
+        if t.glass {
+            glass::backdrop(&ctx.layer_painter(egui::LayerId::background()), ctx.content_rect());
+        }
+        let bar = if t.glass { egui::Frame::NONE.inner_margin(egui::Margin { left: 20, right: 20, top: 14, bottom: 8 }) } else { egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 1)) };
+        egui::Panel::top("start-menu").frame(bar).show(ui, |ui| {
+            if t.glass {
+                glass::surface(ui.painter(), ui.max_rect().expand2(vec2(12.0, 6.0)), 16.0, glass::Surface::Rail, t);
+            }
+            egui::MenuBar::new().ui(ui, |ui| {
+                ui.menu_button("Project", |ui| {
+                    self.open_items(ui);
+                    ui.separator();
+                    if ui.button("Import TR-20 Input File...").clicked() {
+                        self.platform.pick(Purpose::ImportTr20);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        ui.separator();
+                        if ui.button("Exit").clicked() {
+                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    }
+                });
+                ui.menu_button("View", |ui| self.theme_menu(ui));
+            });
+        });
+        let status = if t.glass { egui::Frame::NONE.inner_margin(egui::Margin::symmetric(16, 4)) } else { egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(6, 3)) };
+        egui::Panel::bottom("start-status").frame(status).show(ui, |ui| {
+            ui.label(egui::RichText::new(&self.status).size(12.0).color(t.text_dim));
+        });
+        let fill = if t.glass { Color32::TRANSPARENT } else { t.face };
+        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(fill)).show(ui, |ui| {
+            let width = 560.0f32.min(ui.available_width() - 32.0);
+            let recent = platform::recent::list();
+            let height = 330.0 + 26.0 * recent.len().clamp(1, 8) as f32;
+            let card = Rect::from_center_size(ui.max_rect().center(), vec2(width, height.min(ui.available_height() - 24.0)));
+            if t.glass {
+                glass::surface(ui.painter(), card, 18.0, glass::Surface::Float, t);
+            } else {
+                ui.painter().rect_filled(card, t.radius as f32, t.face);
+                widgets::bevel(ui.painter(), card, true, t);
+            }
+            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(card.shrink(24.0)).layout(egui::Layout::top_down(egui::Align::Center)));
+            logo::show(&mut inner, 360.0);
+            inner.add_space(8.0);
+            inner.label(egui::RichText::new("No project is open").size(16.0).color(t.text));
+            inner.add_space(12.0);
+            inner.horizontal(|ui| {
+                ui.add_space(((width - 48.0) - 3.0 * 150.0 - 2.0 * 8.0).max(0.0) / 2.0);
+                ui.spacing_mut().item_spacing.x = 8.0;
+                if widgets::button(ui, "New Project", 150.0).clicked() {
+                    self.new_project();
+                }
+                if widgets::button(ui, "Open Project...", 150.0).clicked() {
+                    self.platform.pick(Purpose::OpenProject);
+                }
+                if widgets::button(ui, "Open Sample Project", 150.0).clicked() {
+                    self.open_sample();
+                }
+            });
+            inner.add_space(16.0);
+            inner.label(egui::RichText::new("Recent projects").strong().color(t.text));
+            inner.add_space(4.0);
+            if recent.is_empty() {
+                inner.label(egui::RichText::new(if cfg!(target_arch = "wasm32") { "Projects you open or download appear here." } else { "Projects you open or save appear here." }).color(t.text_dim));
+            }
+            for e in recent.iter().take(8) {
+                let resp = inner.add(egui::Button::new(egui::RichText::new(e.label()).color(t.text)).frame(false)).on_hover_text("Open this project");
+                if resp.clicked() {
+                    self.open_recent(e);
+                }
+            }
+        });
     }
 }
 
@@ -1929,6 +2052,20 @@ fn separator(ui: &mut Ui) {
     ui.painter().line_segment([pos2(x, r.min.y + 2.0), pos2(x, r.max.y - 2.0)], Stroke::new(1.0, t.shadow));
     if t.bevel {
         ui.painter().line_segment([pos2(x + 1.0, r.min.y + 2.0), pos2(x + 1.0, r.max.y - 2.0)], Stroke::new(1.0, t.light));
+    }
+}
+
+/// Reads a project file's bytes: a `.waves` project (JSON) or the reference application's
+/// interchange format (`.hcp`, by extension or content). Returns the project, whether it was
+/// `.hcp`, and any import warnings.
+pub fn project_from_bytes(name: &str, bytes: Vec<u8>) -> Result<(Project, bool, Vec<String>), String> {
+    let is_hcp = name.to_ascii_lowercase().ends_with(".hcp") || wavestorm_core::hcp::looks_like_hcp(&bytes);
+    if is_hcp {
+        let (p, w) = wavestorm_core::hcp::import_bytes(&bytes)?;
+        Ok((p, true, w))
+    } else {
+        let text = String::from_utf8(bytes).map_err(|_| "The file is not a WAVEStorm project (not text).".to_string())?;
+        Ok((Project::from_json(&text)?, false, Vec::new()))
     }
 }
 
@@ -2112,6 +2249,7 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
             app.styled = false;
         }
         "new" => app.new_project(),
+        "close" => app.close_active(),
         "trace" => app.start_trace(),
         "help" => app.open_window(Window::Help(help::HelpState::topic(if arg.is_empty() { "start" } else { arg }))),
         "about" => app.open_window(Window::About),

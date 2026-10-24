@@ -41,9 +41,13 @@ pub struct EditState {
 /// A Tc flow path drawn on the diagram, split into legs at the clicked points. Each leg gets a
 /// flow type; consecutive legs of one type become one Tc segment (`tc::segments_from_path`).
 pub struct TcPathState {
-    /// The path in diagram units, upstream end first.
+    /// The path as drawn (diagram units, upstream end first, repeated points removed).
+    pub drawn: Vec<[f64; 2]>,
+    /// Feet per diagram unit used for the lengths.
+    pub fpu: f64,
+    /// The path's points after the sheet-flow limit (which may add one), labelled A, B, C, …
     pub points: Vec<[f64; 2]>,
-    /// Leg lengths (ft) and flow types.
+    /// Leg lengths (ft) and flow types; leg `i` runs from point `i` to `i + 1`.
     pub legs: Vec<(f64, PathFlow)>,
     pub limit_sheet: bool,
     /// Sheet flow longer than this (ft) continues as shallow concentrated flow.
@@ -55,23 +59,91 @@ pub struct TcPathState {
 }
 
 impl TcPathState {
-    /// Legs of `points` measured with the background scale `feet_per_unit`; the first leg starts
-    /// as sheet flow and the rest as shallow concentrated flow.
-    pub fn new(points: Vec<[f64; 2]>, feet_per_unit: Option<f64>) -> Self {
+    /// Legs of `points` measured with the background scale `feet_per_unit` (repeated points are
+    /// dropped so leg `i` runs from point `i` to `i + 1`). Legs covered by one of `existing`'s
+    /// path segments keep its flow type; otherwise the first leg starts as sheet flow and the
+    /// rest as shallow concentrated flow.
+    pub fn new(points: Vec<[f64; 2]>, feet_per_unit: Option<f64>, existing: &[TcSegment]) -> Self {
         let fpu = feet_per_unit.filter(|f| f.is_finite() && *f > 0.0);
-        let legs = points
+        let mut drawn: Vec<[f64; 2]> = Vec::with_capacity(points.len());
+        for p in points {
+            if drawn.last().is_none_or(|l: &[f64; 2]| (p[0] - l[0]).hypot(p[1] - l[1]) > 1e-9) {
+                drawn.push(p);
+            }
+        }
+        let mut st = TcPathState {
+            drawn,
+            fpu: fpu.unwrap_or(1.0),
+            points: Vec::new(),
+            legs: Vec::new(),
+            limit_sheet: true,
+            sheet_limit: tc::SHEET_LIMIT_FT,
+            replace: true,
+            calibrated: fpu.is_some(),
+        };
+        st.reset(existing);
+        st
+    }
+
+    /// Recomputes the points and legs from the drawn path: flow types from `existing`'s path
+    /// segments where they cover a leg, else sheet flow first and shallow flow after; then the
+    /// sheet-flow limit. Called when the path is opened and when the limit settings change.
+    pub fn reset(&mut self, existing: &[TcSegment]) {
+        self.points = self.drawn.clone();
+        self.legs = self
+            .drawn
             .windows(2)
-            .map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]) * fpu.unwrap_or(1.0))
-            .filter(|l| *l > 1e-6)
             .enumerate()
-            .map(|(i, l)| (l, if i == 0 { PathFlow::Sheet } else { PathFlow::Shallow }))
+            .map(|(i, w)| {
+                let len = (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]) * self.fpu;
+                let kept = existing.iter().find(|s| s.path.is_some_and(|[a, b]| a <= i && i < b)).and_then(|s| tc::path_flow_of(&s.kind));
+                (len, kept.unwrap_or(if i == 0 { PathFlow::Sheet } else { PathFlow::Shallow }))
+            })
             .collect();
-        TcPathState { points, legs, limit_sheet: true, sheet_limit: tc::SHEET_LIMIT_FT, replace: true, calibrated: fpu.is_some() }
+        if self.limit_sheet {
+            tc::limit_sheet_flow(&mut self.points, &mut self.legs, self.sheet_limit);
+        }
+    }
+
+    /// The path points and legs to store, with the sheet-flow limit applied to the chosen types
+    /// (normally already satisfied; a leg changed to sheet flow may be divided).
+    pub fn resolved(&self) -> (Vec<[f64; 2]>, Vec<(f64, PathFlow)>) {
+        let (mut points, mut legs) = (self.points.clone(), self.legs.clone());
+        if self.limit_sheet {
+            tc::limit_sheet_flow(&mut points, &mut legs, self.sheet_limit);
+        }
+        (points, legs)
     }
 
     /// The Tc segments this division gives, taking slope and cover from `template`.
     pub fn segments(&self, template: &[TcSegment]) -> Vec<TcSegment> {
-        tc::segments_from_path(&self.legs, self.limit_sheet.then_some(self.sheet_limit), template)
+        tc::segments_from_path(&self.resolved().1, template)
+    }
+
+    /// Writes the segments and the lettered path into subcatchment `node` (the dialog's OK).
+    pub fn apply(&self, node: &mut Node) {
+        let NodeData::Subcat(sc) = &mut node.data else { return };
+        let segs = self.segments(&sc.tc);
+        if self.replace {
+            sc.tc = segs;
+        } else {
+            // Kept segments no longer refer to a path (only one path is stored).
+            for s in &mut sc.tc {
+                s.path = None;
+            }
+            sc.tc.extend(segs);
+        }
+        node.tc_path = Some(self.resolved().0);
+    }
+}
+
+/// Removes a subcatchment's drawn flow path once none of its Tc segments was measured from it
+/// (after segments are deleted), so the path disappears from the diagram too.
+pub fn drop_orphan_path(node: &mut Node) {
+    if let NodeData::Subcat(sc) = &node.data
+        && !sc.tc.iter().any(|s| s.path.is_some())
+    {
+        node.tc_path = None;
     }
 }
 
@@ -489,6 +561,7 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
         let ev = widgets::list_table(ui, "tc", &cols, &rows, &mut st.sel_row, 180.0);
         let mut edit = ev.double_clicked;
         let sel = st.sel_row.filter(|i| *i < sc.tc.len());
+        let mut deleted = false;
         ui.horizontal(|ui| {
             if widgets::button_enabled(ui, "Edit...", 70.0, sel.is_some()).clicked() {
                 edit = sel;
@@ -498,6 +571,7 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
             {
                 sc.tc.remove(i);
                 st.sel_row = None;
+                deleted = true;
             }
             if widgets::button_enabled(ui, "Move Up", 70.0, sel.is_some_and(|i| i > 0)).clicked()
                 && let Some(i) = sel
@@ -531,7 +605,7 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
             ];
             for (label, kind) in kinds {
                 if widgets::button(ui, label, 0.0).clicked() {
-                    st.tc_edit = Some((None, TcSegment { kind, description: String::new() }));
+                    st.tc_edit = Some((None, TcSegment::new(kind, "")));
                 }
             }
         });
@@ -543,16 +617,27 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
             if draw.clicked() {
                 actions.push(WindowAction::DrawTcPath(st.node));
             }
-            if let Some(p) = &path
-                && widgets::button(ui, "Divide Drawn Path...", 0.0).on_hover_text("Reassign the flow types of the path drawn earlier").clicked()
-            {
-                st.tc_path = Some(TcPathState::new(p.clone(), doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit)));
+            if let Some(p) = &path {
+                if widgets::button(ui, "Divide Drawn Path...", 0.0).on_hover_text("Reassign the flow types of the path drawn earlier").clicked() {
+                    st.tc_path = Some(TcPathState::new(p.clone(), doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit), &sc.tc));
+                }
+                if widgets::button(ui, "Remove Drawn Path", 0.0).on_hover_text("Remove the path from the diagram; the Tc segments stay as they are").clicked() {
+                    st.draft.tc_path = None;
+                    for s in &mut sc.tc {
+                        s.path = None;
+                    }
+                }
             }
         });
         if let Some(p) = &path {
             let fpu = doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit).unwrap_or(1.0);
             let len: f64 = p.windows(2).map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]) * fpu).sum();
             ui.label(RichText::new(format!("Drawn flow path: {} long, {} legs (shown on the diagram while this subcatchment is selected).", u.fmt_len(len), p.len().saturating_sub(1))).color(t.text_dim));
+        }
+        // A drawn path goes with its segments: once none measured from it is left, it is
+        // removed from the subcatchment (and the diagram).
+        if deleted {
+            drop_orphan_path(&mut st.draft);
         }
     }
 }
@@ -581,22 +666,29 @@ fn tc_path_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
             ui.label(RichText::new("Flow").strong());
             ui.end_row();
             for (i, (len, flow)) in ps.legs.iter_mut().enumerate() {
-                ui.label(format!("{}", i + 1));
+                ui.label(format!("{} to {}", tc::point_label(i), tc::point_label(i + 1)));
                 ui.label(wavestorm_core::units::group(u.len(*len), 1));
                 widgets::combo(ui, &format!("leg{i}"), flow, &options, 200.0);
                 ui.end_row();
             }
         });
+        ui.label(RichText::new("The letters are shown at the path's points on the diagram.").color(t.text_dim));
         ui.add_space(6.0);
+        let mut limit_changed = false;
         ui.horizontal(|ui| {
-            widgets::check(ui, &mut ps.limit_sheet, "Limit sheet flow to")
-                .on_hover_text("Sheet flow beyond this length continues as shallow concentrated flow. TR-55 (1986) allows up to 300 ft; current NRCS guidance (NEH 630 Ch. 15) recommends 100 ft.");
+            limit_changed |= widgets::check(ui, &mut ps.limit_sheet, "Limit sheet flow to")
+                .on_hover_text("Sheet flow ends this far along the path, at a new point if it falls within a leg; the rest continues as shallow concentrated flow. TR-55 (1986) allows up to 300 ft; current NRCS guidance (NEH 630 Ch. 15) recommends 100 ft.")
+                .changed();
             let mut shown = u.len(ps.sheet_limit);
             if widgets::num_box(ui, ui.id().with("sheet-limit"), &mut shown, 0, 70.0, Some(10.0)) && shown.is_finite() {
                 ps.sheet_limit = u.len_in(shown).clamp(0.0, 1000.0);
+                limit_changed = true;
             }
             ui.label(u.len_label());
         });
+        if limit_changed {
+            ps.reset(&[]);
+        }
         ui.horizontal(|ui| {
             if widgets::radio(ui, ps.replace, "Replace the Tc segments").clicked() {
                 ps.replace = true;
@@ -608,23 +700,14 @@ fn tc_path_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
         ui.add_space(6.0);
         ui.label(RichText::new("Resulting segments:").strong());
         for s in &preview {
-            ui.label(format!("  {}  {}", s.kind.label(), u.fmt_len(s.kind.length())));
+            ui.label(format!("  {}  {}  {}", s.description, s.kind.label(), u.fmt_len(s.kind.length())));
         }
         ui.label(RichText::new("Lengths come from the path; check each segment's slope and surface afterwards (Edit... on the Tc tab).").color(t.text_dim));
         result = ok_cancel_apply(ui, false, "tc");
     });
     match result {
         Buttons::Ok | Buttons::Apply => {
-            let points = ps.points.clone();
-            let replace = ps.replace;
-            if let NodeData::Subcat(sc) = &mut st.draft.data {
-                if replace {
-                    sc.tc = preview;
-                } else {
-                    sc.tc.extend(preview);
-                }
-            }
-            st.draft.tc_path = Some(points);
+            ps.apply(&mut st.draft);
             st.sel_row = None;
             st.tc_path = None;
         }

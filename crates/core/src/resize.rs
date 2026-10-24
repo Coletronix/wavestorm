@@ -232,7 +232,7 @@ mod tests {
             n.outflows[0] = Some(id);
             n.data = NodeData::Subcat(Subcatchment {
                 areas: vec![SubArea::new(25.0 * AC, 75.0, "Mixed cover, HSG C")],
-                tc: vec![TcSegment { kind: TcKind::Direct { minutes: 15.0, length: 0.0, velocity: 0.0 }, description: String::new() }],
+                tc: vec![TcSegment::new(TcKind::Direct { minutes: 15.0, length: 0.0, velocity: 0.0 }, "")],
                 uh: None,
                 large_units: true,
             });

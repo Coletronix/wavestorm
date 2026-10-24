@@ -7,7 +7,7 @@ use wavestorm_ui::{WaveStormApp, script};
 #[test]
 fn app_goes_idle_without_input() {
     for theme in ["theme:classic", "theme:dark", "theme:glass"] {
-        for extra in ["", "report:1P", "edit:1P", "settings"] {
+        for extra in ["", "report:1P", "edit:1P", "settings", "close"] {
             let ctx = egui::Context::default();
             let mut app = WaveStormApp::headless();
             script(&mut app, theme);

@@ -978,7 +978,7 @@ mod tests {
             n.outflows[0] = Some(pond);
             n.data = NodeData::Subcat(Subcatchment {
                 areas: vec![SubArea::new(25.0 * AC, 60.0, "Woods, Fair, HSG B")],
-                tc: vec![TcSegment { kind: TcKind::Direct { minutes: 23.2, length: 0.0, velocity: 0.0 }, description: String::new() }],
+                tc: vec![TcSegment::new(TcKind::Direct { minutes: 23.2, length: 0.0, velocity: 0.0 }, "")],
                 uh: None,
                 large_units: true,
             });
@@ -1088,7 +1088,7 @@ mod tests {
 
     fn set_tc(p: &mut Project, s: NodeId, minutes: f64) {
         if let Some(Node { data: NodeData::Subcat(sc), .. }) = p.node_mut(s) {
-            sc.tc = vec![TcSegment { kind: TcKind::Direct { minutes, length: 0.0, velocity: 0.0 }, description: String::new() }];
+            sc.tc = vec![TcSegment::new(TcKind::Direct { minutes, length: 0.0, velocity: 0.0 }, "")];
         }
     }
 
@@ -1138,7 +1138,7 @@ mod tests {
         use crate::geometry::Section;
         let (mut p, s, _) = project_with_pond();
         if let Some(Node { data: NodeData::Subcat(sc), .. }) = p.node_mut(s) {
-            sc.tc.push(TcSegment { kind: TcKind::Channel { length: 100.0, slope: 0.01, n: 0.03, section: Section::Rectangular { width: 1.0, depth: 0.5 } }, description: String::new() });
+            sc.tc.push(TcSegment::new(TcKind::Channel { length: 100.0, slope: 0.01, n: 0.03, section: Section::Rectangular { width: 1.0, depth: 0.5 } }, ""));
         }
         let r = calculate(&p);
         assert!(has_msg(&r, 47, s, "of capacity of segment #2"), "{:?}", r.messages);

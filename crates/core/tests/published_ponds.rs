@@ -84,7 +84,7 @@ fn model(depth: f64, inflow: (f64, f64, f64), pond: Pond) -> (Project, NodeId) {
         n.outflows[0] = Some(pid);
         n.data = NodeData::Subcat(Subcatchment {
             areas: vec![SubArea::new(inflow.0 * AC, inflow.1, "post-development")],
-            tc: vec![TcSegment { kind: TcKind::Direct { minutes: inflow.2, length: 0.0, velocity: 0.0 }, description: String::new() }],
+            tc: vec![TcSegment::new(TcKind::Direct { minutes: inflow.2, length: 0.0, velocity: 0.0 }, "")],
             uh: None,
             large_units: true,
         });
@@ -283,7 +283,7 @@ fn wet_basin_with_orifice_and_overflow_grate() {
             n.outflows[0] = Some(pid);
             n.data = NodeData::Subcat(Subcatchment {
                 areas: areas.iter().map(|&(a, cn)| SubArea::new(a * AC, cn, "area")).collect(),
-                tc: vec![TcSegment { kind: TcKind::Direct { minutes: 5.0, length: 0.0, velocity: 0.0 }, description: String::new() }],
+                tc: vec![TcSegment::new(TcKind::Direct { minutes: 5.0, length: 0.0, velocity: 0.0 }, "")],
                 uh: None,
                 large_units: true,
             });
@@ -346,7 +346,7 @@ fn basin_with_primary_and_secondary_culverts() {
             n.outflows[0] = Some(pid);
             n.data = NodeData::Subcat(Subcatchment {
                 areas: vec![SubArea::new(1.086 * AC, 75.0, "a"), SubArea::new(1.01 * AC, 70.0, "b")],
-                tc: vec![TcSegment { kind: TcKind::Direct { minutes: 8.9, length: 0.0, velocity: 0.0 }, description: String::new() }],
+                tc: vec![TcSegment::new(TcKind::Direct { minutes: 8.9, length: 0.0, velocity: 0.0 }, "")],
                 uh: None,
                 large_units: true,
             });

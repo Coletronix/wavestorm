@@ -467,12 +467,12 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
                     Some(kind) => {
                         let description = r.take("Desc").unwrap_or_default();
                         r.keep(&mut foreign, &scope);
-                        sc.tc.push(TcSegment { kind, description });
+                        sc.tc.push(TcSegment::new(kind, description));
                     }
                     None => {
                         warnings.push(format!("Node {label}: Tc method {:?} is not supported; kept unchanged with no travel time", r.get("Method").unwrap_or("")));
                         r.keep(&mut foreign, &scope);
-                        sc.tc.push(TcSegment { kind: TcKind::Direct { minutes: 0.0, length: 0.0, velocity: 0.0 }, description: String::new() });
+                        sc.tc.push(TcSegment::new(TcKind::Direct { minutes: 0.0, length: 0.0, velocity: 0.0 }, ""));
                     }
                 }
             }

@@ -295,7 +295,7 @@ impl Builder {
                 let (Some(&area), Some(&cn), Some(&tc)) = (nums.first(), nums.get(1), nums.get(2)) else { return self.bad(kw, f) };
                 let data = NodeData::Subcat(Subcatchment {
                     areas: vec![SubArea::new(area * SQFT_PER_SQMI, cn, &format!("TR-20 RUNOFF, CN {cn}"))],
-                    tc: vec![TcSegment { kind: TcKind::Direct { minutes: tc * 60.0, length: 0.0, velocity: 0.0 }, description: "TR-20 Tc".into() }],
+                    tc: vec![TcSegment::new(TcKind::Direct { minutes: tc * 60.0, length: 0.0, velocity: 0.0 }, "TR-20 Tc")],
                     uh: None,
                     large_units: true,
                 });

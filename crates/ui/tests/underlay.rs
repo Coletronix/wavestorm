@@ -138,7 +138,22 @@ fn calibrate_and_trace_subcatchment() {
         assert!((ps.legs[0].0 - 100.0).abs() < 3.0 && (ps.legs[1].0 - 200.0).abs() < 4.0, "legs {:?}", ps.legs);
         // First leg sheet flow (within the 100 ft limit), then shallow concentrated flow.
         let segs = ps.segments(&[]);
-        let kinds: Vec<&str> = segs.iter().map(|s| s.kind.label()).collect();
-        assert_eq!(kinds, ["Sheet Flow", "Shallow Concentrated Flow"]);
+        let kinds: Vec<(&str, &str)> = segs.iter().map(|s| (s.kind.label(), s.description.as_str())).collect();
+        assert_eq!(kinds, [("Sheet Flow", "A to B"), ("Shallow Concentrated Flow", "B to C")]);
+        // OK writes the segments and the lettered path into the subcatchment.
+        let mut node = doc.project.node(id).unwrap().clone();
+        ps.apply(&mut node);
+        assert_eq!(node.tc_path.as_ref().map(Vec::len), Some(3));
+        let NodeData::Subcat(sc) = &mut node.data else { panic!() };
+        assert_eq!(sc.tc.len(), 2);
+        // Deleting one path segment keeps the path; deleting the last one removes it.
+        sc.tc.remove(0);
+        wavestorm_ui::dialogs::node::drop_orphan_path(&mut node);
+        assert!(node.tc_path.is_some());
+        if let NodeData::Subcat(sc) = &mut node.data {
+            sc.tc.clear();
+        }
+        wavestorm_ui::dialogs::node::drop_orphan_path(&mut node);
+        assert!(node.tc_path.is_none(), "the path goes with its last segment");
     }
 }
