@@ -7,6 +7,8 @@ All notable changes to WAVEStorm (called StormWAVES in 0.1.0) are recorded here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-24
+
 ### Added
 - **Sub-areas drawn inside a subcatchment's outline** (Draw Sub-Area in the dock, the
   right-click menu or the Area tab).
@@ -202,7 +204,8 @@ First tagged release.
 - Stor-Ind+Trans reach attenuation can differ from the reference application (~2 % vs ~4 % on
   one published example).
 
-[Unreleased]: https://github.com/Coletronix/wavestorm/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Coletronix/wavestorm/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Coletronix/wavestorm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Coletronix/wavestorm/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Coletronix/wavestorm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Coletronix/wavestorm/compare/v0.2.2...v0.3.0
