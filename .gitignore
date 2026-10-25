@@ -1,5 +1,8 @@
 /target
 /dist
 /reference_images
+/snapshot.png
+/THIRD-PARTY-LICENSES.html
+/.claude/worktrees
 *.swp
 .DS_Store

@@ -44,7 +44,8 @@ impl Rgb {
     }
 }
 
-/// Helvetica advance widths (1/1000 em) for ASCII 32..=126, from the standard font metrics.
+/// Helvetica advance widths (1/1000 em) for ASCII 32..=126, from Adobe's Core 14 AFM font metrics
+/// (freely redistributable).
 const HELVETICA: [u16; 95] = [
     278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584,
     584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667,

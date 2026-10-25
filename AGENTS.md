@@ -374,7 +374,9 @@ Keep this section updated at the end of every session.
 ## 6. README
 
 `README.md` is maintained with the code (user request, 2026-10-23): update its feature list,
-file-format table and installation steps whenever those change, and regenerate the
+file-format table and installation steps (release asset names must match `release.yml`)
+whenever those change. It is for users and human contributors: never put agent instructions
+in it or link this file from it (user request, 2026-10-25). Regenerate the
 screenshots in `docs/screenshots/` after visible UI changes, from the built-in sample project
 only (never the user's private files or rainfall library):
 
@@ -400,14 +402,31 @@ Versioning started at **v0.1.0** (2026-10-23), the first version the user signed
 Semantic versioning: the single source of truth is `version` in the workspace `Cargo.toml`
 (shown in the About dialog and on printed pages via `CARGO_PKG_VERSION`).
 
-- Record every user-visible change under `## [Unreleased]` in `CHANGELOG.md` as you commit it.
+- There is no changelog file (removed 2026-10-25, user request): the git history is the
+  changelog, so write commit subjects that read well as release-note lines (they are listed
+  verbatim). Commits titled "Release v…" are left out of the notes.
 - Release cadence (user, 2026-10-23): there are no real users yet, so cut a **minor** release
   at the end of each substantial batch of work (a feature set, a redesign, a rename) without
   waiting to be asked; patch releases for fix-only batches. Mention the new tag in the
   hand-off.
-- To release: move the Unreleased entries under a new `## [X.Y.Z] - date` heading, bump the
-  workspace version (patch = fixes, minor = features or file-format additions, major =
-  breaking project-file changes; while 0.x, breaking changes may go in a minor), run
-  `cargo test`, clippy and the wasm check, commit "Release vX.Y.Z", then `git tag -a vX.Y.Z`.
-  Pushing commits and tags is the user's call.
+- To release: bump the workspace version (patch = fixes, minor = features or file-format
+  additions, major = breaking project-file changes; while 0.x, breaking changes may go in a
+  minor), run `cargo test`, clippy and the wasm check, commit "Release vX.Y.Z", then
+  `git tag -a vX.Y.Z -m "WAVEStorm X.Y.Z" -m "<highlights paragraph>"`. Pushing commits and
+  tags is the user's call.
+- CI (`.github/workflows/ci.yml`): clippy (`-D warnings`), `cargo test` on Linux/Windows/macOS,
+  wasm checks of core and web, `cargo deny check licenses sources` (`deny.toml`: permissive
+  licences only; a new dependency with another licence fails CI). Pushing a `v*` tag runs
+  `release.yml`: it re-runs CI, checks the tag equals the Cargo.toml version, builds the Linux
+  binary/tar.gz/.deb (`[package.metadata.deb]` in `apps/wavestorm/Cargo.toml`)/AppImage on
+  Ubuntu 22.04 (glibc floor), a Windows zip and a universal macOS `.dmg`, then publishes a
+  GitHub release whose notes come from `.github/release-notes.sh` (tag message body, commits
+  since the previous tag, downloads) with `SHA256SUMS.txt`. Run it by hand
+  (workflow_dispatch) to build packages without publishing. Packages are unsigned. Every
+  package ships `THIRD-PARTY-LICENSES.html` (cargo-about: `about.toml` + `about.hbs`; the
+  egui font notices are pinned by checksum in `about.toml` and the workflow fails if they
+  drop out). Workspace crates are `publish = false` so they are not listed as third-party.
+- App icon: `crates/ui/assets/icon.png` (512 px, written by the `logo_png` example, used for
+  the window, the `.desktop` entry, AppImage and macOS bundle). Linux desktop entry:
+  `apps/wavestorm/wavestorm.desktop`.
 - Project files must stay readable by later versions: new fields get `#[serde(default)]`.

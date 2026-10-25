@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAVEStorm — third-party licences</title>
+<style>
+    body { font: 15px/1.5 system-ui, sans-serif; max-width: 60em; margin: 0 auto; padding: 1.5em; color: #222; background: #fff; }
+    h1 { font-size: 1.6em; }
+    h2 { font-size: 1.2em; margin-top: 2em; border-bottom: 1px solid #ccc; padding-bottom: .2em; }
+    ul.overview { columns: 2; list-style: none; padding: 0; }
+    ul.crates { padding-left: 1.2em; }
+    pre { white-space: pre-wrap; word-wrap: break-word; background: #f5f5f5; padding: 1em; border-radius: 4px; font-size: 12px; }
+    a { color: #0645ad; }
+    @media (prefers-color-scheme: dark) {
+        body { color: #ddd; background: #181818; }
+        pre { background: #242424; }
+        a { color: #8ab4f8; }
+        h2 { border-color: #444; }
+    }
+</style>
+</head>
+<body>
+<main>
+<h1>WAVEStorm — third-party licences</h1>
+<p>WAVEStorm includes the following third-party software. Each is used under the licence shown.</p>
+
+<h2>Overview of licences</h2>
+<ul class="overview">
+{{#each overview}}
+    <li><a href="#{{id}}">{{name}}</a> ({{count}})</li>
+{{/each}}
+</ul>
+
+{{#each licenses}}
+<section id="{{id}}">
+<h2>{{name}}</h2>
+<h3>Used by</h3>
+<ul class="crates">
+{{#each used_by}}
+{{#if crate.source}}
+    <li>{{#if crate.repository}}<a href="{{crate.repository}}">{{crate.name}} {{crate.version}}</a>{{else}}{{crate.name}} {{crate.version}}{{/if}}</li>
+{{/if}}
+{{/each}}
+</ul>
+<pre>{{text}}</pre>
+</section>
+{{/each}}
+</main>
+</body>
+</html>

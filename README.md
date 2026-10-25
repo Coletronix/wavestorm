@@ -1,5 +1,8 @@
 <h1><picture><source media="(prefers-color-scheme: dark)" srcset="crates/ui/assets/logo-dark.png"><img src="crates/ui/assets/logo.png" alt="WAVEStorm" width="480"></picture></h1>
 
+[![CI](https://github.com/Coletronix/wavestorm/actions/workflows/ci.yml/badge.svg)](https://github.com/Coletronix/wavestorm/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Coletronix/wavestorm)](https://github.com/Coletronix/wavestorm/releases/latest)
+
 **Open-source stormwater modelling for the desktop and the browser.** Draw a routing diagram of
 subcatchments, reaches, ponds and links. WAVEStorm then computes NRCS (SCS) TR-55 / TR-20
 runoff hydrographs and routes them through channels, pipes, detention ponds and outlet
@@ -16,11 +19,14 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 - [Features](#features)
 - [Screenshots](#screenshots)
 - [Installation](#installation)
+  - [Prebuilt binaries](#prebuilt-binaries)
+  - [Build from source](#build-from-source)
 - [Usage](#usage)
 - [File formats](#file-formats)
 - [Methods and validation](#methods-and-validation)
 - [Project layout](#project-layout)
 - [Development](#development)
+  - [Continuous integration and releases](#continuous-integration-and-releases)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -66,7 +72,8 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
   files. Storms a project uses are copied into it, so project files stay self-contained.
 
 **Working on the diagram**
-- Drag-and-drop nodes, multiple projects in tabs, undo history, notes and pop-up field tips.
+- Drag-and-drop nodes, multiple projects in tabs, undo history, notes and pop-up field tips
+  (switchable in Settings > General).
 - A background image or PDF underlay with two-point scale calibration. Move and resize it
   on the diagram; your drawings follow it and keep their measured sizes.
 - Trace subcatchment outlines on it, and the areas are measured automatically. Draw
@@ -77,10 +84,18 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 - Draw a subcatchment's time-of-concentration flow path on the diagram. Its points are lettered
   A, B, C… and the Tc segments ("A to B", "B to D", …) are measured from it (sheet flow is
   capped at 100 ft by default); you only enter slope and surface.
+- Print or export the diagram as shown on screen: background, translucent area fills, Tc
+  paths and CN labels.
+
+**Projects and data exchange**
+- A start page (New, Open, Open Sample Project, recent projects) when no project is open.
+  Recent projects are also listed under Project > Open….
 - The projects you had open come back the next time you start, including unsaved changes
   (kept in browser storage on the web) if the page or program closed before you saved or
-  exported. Recent projects are listed under Project > Open… and on the start page. The
-  desktop version can also autosave projects to their files on a timer.
+  exported. The desktop version can also autosave projects to their files on a timer
+  (Settings > General).
+- Open and save `.hcp` interchange projects, import legacy TR-20 input decks, and read
+  and write rainfall library files (see [File formats](#file-formats)).
 
 **Themes** (View > Theme)
 - **Classic**: the familiar engineering-software look, with bevelled grey dialogs.
@@ -104,9 +119,35 @@ The screenshots are rendered from the built-in sample project
 
 ## Installation
 
-There are no prebuilt binaries yet; build from source. It takes a few minutes.
+### Prebuilt binaries
 
-### 1. Install Rust
+Download the package for your system from the
+[latest release](https://github.com/Coletronix/wavestorm/releases/latest). In the file names,
+`VERSION` is the release number, for example `0.6.0`.
+
+| Platform | Download | How to use it |
+|---|---|---|
+| **Linux x86_64** | `WAVEStorm-VERSION-x86_64.AppImage` | `chmod +x` it and run it |
+| | `wavestorm_VERSION-1_amd64.deb` | `sudo apt install ./wavestorm_VERSION-1_amd64.deb`; adds a desktop menu entry |
+| | `wavestorm-VERSION-x86_64-linux.tar.gz` | The binary, licences and a `.desktop` file |
+| | `wavestorm-VERSION-x86_64-linux` | The bare binary |
+| **Windows x86_64** | `wavestorm-VERSION-x86_64-windows.zip` | Unzip and run `wavestorm.exe`. It is unsigned, so SmartScreen may warn: choose "More info > Run anyway". |
+| **macOS** (Apple Silicon and Intel) | `WAVEStorm-VERSION-macos-universal.dmg` | Drag `WAVEStorm.app` to Applications. It is not notarised: on first launch right-click the app and choose Open, or run `xattr -dr com.apple.quarantine /Applications/WAVEStorm.app`. |
+
+The Linux binaries need a Vulkan or OpenGL driver (usually present already) and a glibc from
+roughly Ubuntu 22.04 or newer.
+
+To verify a download, put it in the same folder as `SHA256SUMS.txt` from the release and run:
+
+```sh
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+### Build from source
+
+It takes a few minutes.
+
+#### 1. Install Rust
 
 Install Rust 1.95 or newer with [rustup](https://rustup.rs):
 
@@ -117,7 +158,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 On Windows, download and run `rustup-init.exe` from [rustup.rs](https://rustup.rs). It also
 offers to install the Visual Studio C++ build tools that Rust needs.
 
-### 2. Platform prerequisites
+#### 2. Platform prerequisites
 
 | Platform | What you need |
 |---|---|
@@ -127,10 +168,10 @@ offers to install the Visual Studio C++ build tools that Rust needs.
 | **macOS** | Xcode command-line tools: `xcode-select --install` |
 | **Windows** | Visual Studio Build Tools with the "Desktop development with C++" workload (rustup offers it) |
 
-### 3. Build and run the desktop app
+#### 3. Build and run the desktop app
 
 ```sh
-git clone <repository-url> wavestorm
+git clone https://github.com/Coletronix/wavestorm.git wavestorm
 cd wavestorm
 cargo run --release -p wavestorm
 ```
@@ -138,7 +179,7 @@ cargo run --release -p wavestorm
 The executable is written to `target/release/wavestorm` (`wavestorm.exe` on Windows). Copy it
 anywhere on your `PATH`; it needs no other files.
 
-### 4. (Optional) Build the web version
+#### 4. (Optional) Build the web version
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -154,7 +195,7 @@ downloads. Preferences and imported rainfall files are kept in local storage.
 ## Usage
 
 1. **Project > New** starts an empty project. **Project > Open Sample Project** loads a small
-   worked example.
+   worked example. With nothing open, the start page offers the same, plus recent projects.
 2. Drag **Subcat**, **Reach**, **Pond** and **Link** nodes from the palette onto the diagram.
    Select a node and drag its outflow arrow handle onto the node it drains to.
 3. Double-click a node to describe it: areas and curve numbers, Tc segments, channel sections,
@@ -178,7 +219,7 @@ The built-in help (**Help > Contents**) covers the dialogs and the calculation m
 | `*-Rain.txt` | ✓ | | County rainfall tables for Rainfall Event Lookup |
 | `.idf` | ✓ | ✓ | **Provisional**: our own layout, not yet verified against real `.idf` files |
 | NOAA Atlas 14 `.csv` | ✓ | | Precipitation frequency downloads for event lookup |
-| TR-20 input deck | ✓ | | Legacy card-format decks (Project > Import) |
+| TR-20 input deck | ✓ | | Legacy card-format decks (Project > Import). Volumes match TR-20 output; reach-routed peaks can differ. |
 | `.csv` | ✓ | ✓ | Sub-areas, hydrographs, rating and pump tables |
 | `.pdf` / `.emf` / `.txt` | | ✓ | Reports and vector graphics |
 
@@ -200,7 +241,20 @@ Every algorithm has unit tests. Golden tests reproduce published results:
 - A public TR-20 training deck.
 - The TR-55 manual's worked examples.
 
-The calibration choices are described in [AGENTS.md](AGENTS.md#3-methods-confirmed-against-published-reference-results).
+Key calibration choices, each covered by tests:
+- Runoff uses the NRCS curvilinear unit hydrograph with a unit duration of 0.133 Tc. Peaks
+  are delayed by about 0.09 Tc, which was fitted to published results. Against 18 published
+  subcatchments, volumes are exact and peaks agree within about 1.5 %.
+- Tc is the sum of segment times, each rounded to 0.1 min as printed in reports.
+- Hydrograph peaks are interpolated with a parabola through the three highest samples.
+- Culvert flow is the lesser of barrel flow (with entrance and friction losses) and inlet
+  control; compound outlets pass the lesser of their feeders and their own capacity.
+- Stor-Ind+Trans reaches are level-pool routed, then translated by length over the maximum
+  velocity.
+
+Known limitations: there is no rock-fill outlet yet, metric `.hcp` files are not read, the
+`.idf` layout is unverified, and Stor-Ind+Trans attenuation differed from the reference
+application by about 2 % against 4 % on one published example.
 
 WAVEStorm is engineering software provided without warranty. Check its results
 independently before relying on them for design.
@@ -229,23 +283,45 @@ against the sample project, such as `report:<node>`, `tab:<n>`, `edit:<node>`, `
 `project-report:<n>` (see `script()` in `crates/ui/src/lib.rs`). It is how the screenshots
 above were made.
 
-Project rules for contributors and AI agents are in [AGENTS.md](AGENTS.md). In short:
-- Never panic on user input.
-- The core never depends on the UI.
-- Every algorithm ships with tests.
-- No third-party proprietary assets or data in the repository.
+### Continuous integration and releases
+
+Every push and pull request runs CI: clippy, the tests on Linux, Windows and macOS, the wasm
+checks of the core and the web app, and a dependency licence check (`cargo deny`, configured
+in `deny.toml` to allow permissive licences only).
+
+Releases are cut by pushing an annotated tag `vX.Y.Z` whose version matches `version` in the
+workspace `Cargo.toml`. The release workflow builds all the packages and publishes a GitHub
+Release, with notes generated from the git history (`git log`) since the previous tag. There
+is no changelog file: see the [Releases](https://github.com/Coletronix/wavestorm/releases)
+page and the git history.
 
 ## Contributing
 
-Issues and pull requests are welcome. Before submitting:
+Issues and pull requests are welcome. The ground rules:
+- Never panic on user input or file data. Invalid input must produce a calculation message,
+  not a crash.
+- The core crate never depends on the UI and must compile for `wasm32-unknown-unknown`.
+- Every algorithm ships with tests; reproduce published results where they exist.
+- No third-party proprietary assets or data in the repository. Draw UI art in code, and
+  cite the public source of any engineering data.
+
+Before submitting:
 1. Run `cargo test` and the wasm check above.
-2. Add or update tests for any change to calculations. Cite the public source of any
-   engineering data.
+2. Add or update tests for any change to calculations.
 3. Keep commits focused, and describe the engineering reason for a change.
 
 To enable the repository's commit hooks, run `git config core.hooksPath .githooks`.
 
 ## License
 
-Licensed under either of the [MIT license](https://opensource.org/licenses/MIT) or the
-[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0), at your option.
+Licensed under either of the [MIT license](LICENSE-MIT) or the
+[Apache License, Version 2.0](LICENSE-APACHE), at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion
+in this work by you, as defined in the Apache-2.0 license, shall be dual licensed as above,
+without any additional terms or conditions.
+
+Third-party: the bundled fonts (egui's default fonts: Hack, Ubuntu Light, Noto Emoji and
+emoji-icon-font) and the Rust dependencies keep their own permissive licences. Every release
+package includes their notices in `THIRD-PARTY-LICENSES.html`, generated with
+[cargo-about](https://github.com/EmbarkStudios/cargo-about) from `about.toml`.

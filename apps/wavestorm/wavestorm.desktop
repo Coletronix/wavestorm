@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=WAVEStorm
+GenericName=Stormwater Modelling
+Comment=Stormwater hydrology and routing: TR-55/TR-20 runoff, reaches and ponds
+Exec=wavestorm %f
+Icon=wavestorm
+Terminal=false
+Categories=Science;Engineering;Education;
+Keywords=stormwater;hydrology;hydraulics;TR-55;TR-20;detention;pond;
+StartupWMClass=wavestorm
