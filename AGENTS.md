@@ -31,7 +31,7 @@ Read this file first. Keep it current: it is the hand-off between sessions.
    input produces a calculation message, never a crash.
 4. **The core never depends on the UI** and must compile for `wasm32-unknown-unknown`.
 5. **Tests are the gate.** Every algorithm ships with tests; reproduce published reference
-   results where they exist (see §4). Run `cargo test` before every commit.
+   results where they exist (see §4). Run `cargo fmt` and `cargo test` before every commit.
 6. Commit each major feature. Commit messages end with the co-author line the session asks for.
 7. **Edit files with the editor tools** (Edit/Write), never with Python or sed scripts, so every
    change is a reviewable diff. Scripts are fine for analysis in the gitignored research folder.
@@ -414,7 +414,8 @@ Semantic versioning: the single source of truth is `version` in the workspace `C
   minor), run `cargo test`, clippy and the wasm check, commit "Release vX.Y.Z", then
   `git tag -a vX.Y.Z -m "WAVEStorm X.Y.Z" -m "<highlights paragraph>"`. Pushing commits and
   tags is the user's call.
-- CI (`.github/workflows/ci.yml`): clippy (`-D warnings`), `cargo test` on Linux/Windows/macOS,
+- CI (`.github/workflows/ci.yml`): `cargo fmt --check` (the workspace was rustfmt-formatted
+  2026-10-25; run `cargo fmt` before committing), clippy (`-D warnings`), `cargo test` on Linux/Windows/macOS,
   wasm checks of core and web, `cargo deny check licenses sources` (`deny.toml`: permissive
   licences only; a new dependency with another licence fails CI). Pushing a `v*` tag runs
   `release.yml`: it re-runs CI, checks the tag equals the Cargo.toml version, builds the Linux

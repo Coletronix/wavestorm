@@ -285,7 +285,7 @@ above were made.
 
 ### Continuous integration and releases
 
-Every push and pull request runs CI: clippy, the tests on Linux, Windows and macOS, the wasm
+Every push and pull request runs CI: `cargo fmt --check`, clippy, the tests on Linux, Windows and macOS, the wasm
 checks of the core and the web app, and a dependency licence check (`cargo deny`, configured
 in `deny.toml` to allow permissive licences only).
 
@@ -306,7 +306,7 @@ Issues and pull requests are welcome. The ground rules:
   cite the public source of any engineering data.
 
 Before submitting:
-1. Run `cargo test` and the wasm check above.
+1. Run `cargo fmt`, `cargo test` and the wasm check above.
 2. Add or update tests for any change to calculations.
 3. Keep commits focused, and describe the engineering reason for a change.
 

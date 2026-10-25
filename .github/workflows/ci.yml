@@ -1,4 +1,4 @@
-# Checks every push to main and every pull request: clippy, the full test suite on
+# Checks every push to main and every pull request: formatting, clippy, the full test suite on
 # Linux, Windows and macOS, the wasm builds and dependency licences.
 name: CI
 
@@ -25,13 +25,14 @@ env:
 
 jobs:
   lint:
-    name: Clippy
+    name: Format and clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: rustfmt, clippy
+      - run: cargo fmt --all --check
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
