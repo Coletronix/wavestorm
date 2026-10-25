@@ -36,12 +36,31 @@ pub struct PrintBackground {
 
 impl Default for PrintOptions {
     fn default() -> Self {
-        PrintOptions { diagram: true, node_listing: true, area_listing: true, summaries: true, graphs: true, tables: false, date: String::new(), only: Vec::new(), background: None }
+        PrintOptions {
+            diagram: true,
+            node_listing: true,
+            area_listing: true,
+            summaries: true,
+            graphs: true,
+            tables: false,
+            date: String::new(),
+            only: Vec::new(),
+            background: None,
+        }
     }
 }
 
 /// Colours of the drawn sub-areas, in Area row order (as on the screen diagram).
-const SUBAREA_COLORS: [(u8, u8, u8); 8] = [(245, 158, 11), (59, 130, 246), (168, 85, 247), (236, 72, 153), (20, 184, 166), (132, 204, 22), (249, 115, 22), (14, 165, 233)];
+const SUBAREA_COLORS: [(u8, u8, u8); 8] = [
+    (245, 158, 11),
+    (59, 130, 246),
+    (168, 85, 247),
+    (236, 72, 153),
+    (20, 184, 166),
+    (132, 204, 22),
+    (249, 115, 22),
+    (14, 165, 233),
+];
 
 /// Fill opacities of subcatchment outlines and drawn sub-areas (as on the screen diagram).
 const OUTLINE_ALPHA: f32 = 34.0 / 255.0;
@@ -97,9 +116,25 @@ impl Ctx<'_> {
         let right = page.width - MARGIN;
         page.text(MARGIN, 44.0, 11.0, Font::SansBold, Align::Left, Rgb::BLACK, &p.title);
         if !p.prepared_by.is_empty() {
-            page.text(MARGIN, 57.0, 9.5, Font::Sans, Align::Left, Rgb::BLACK, &format!("Prepared by {}", p.prepared_by));
+            page.text(
+                MARGIN,
+                57.0,
+                9.5,
+                Font::Sans,
+                Align::Left,
+                Rgb::BLACK,
+                &format!("Prepared by {}", p.prepared_by),
+            );
         }
-        page.text(MARGIN, 69.0, 8.0, Font::Sans, Align::Left, Rgb::BLACK, &format!("WAVEStorm {}", env!("CARGO_PKG_VERSION")));
+        page.text(
+            MARGIN,
+            69.0,
+            8.0,
+            Font::Sans,
+            Align::Left,
+            Rgb::BLACK,
+            &format!("WAVEStorm {}", env!("CARGO_PKG_VERSION")),
+        );
         page.text(right, 44.0, 10.0, Font::SansItalic, Align::Right, Rgb::BLACK, &self.results.event_heading);
         page.text(right, 57.0, 9.5, Font::Sans, Align::Right, Rgb::BLACK, &format!("Page {number}"));
         page.text(right, 69.0, 8.0, Font::Sans, Align::Right, Rgb::BLACK, &self.opts.date);
@@ -151,10 +186,12 @@ fn node_color(t: NodeType) -> (Rgb, Rgb) {
 fn symbol(t: NodeType, cx: f32, cy: f32, d: f32) -> Vec<(f32, f32)> {
     let r = d / 2.0;
     match t {
-        NodeType::Subcat => (0..6).map(|i| {
-            let a = std::f32::consts::PI / 3.0 * i as f32;
-            (cx + r * a.cos(), cy + r * 0.87 * a.sin())
-        }).collect(),
+        NodeType::Subcat => (0..6)
+            .map(|i| {
+                let a = std::f32::consts::PI / 3.0 * i as f32;
+                (cx + r * a.cos(), cy + r * 0.87 * a.sin())
+            })
+            .collect(),
         NodeType::Reach => {
             let h = r * 0.72;
             vec![(cx - h, cy - h), (cx + h, cy - h), (cx + h, cy + h), (cx - h, cy + h)]
@@ -163,17 +200,21 @@ fn symbol(t: NodeType, cx: f32, cy: f32, d: f32) -> Vec<(f32, f32)> {
         NodeType::Link => {
             let (w, h) = (r * 0.62, r * 0.82);
             let n = 12;
-            let mut pts: Vec<(f32, f32)> = (0..=n).map(|i| {
-                let f = i as f32 / n as f32;
-                (cx - w + 2.0 * w * f, cy - h + (f * std::f32::consts::TAU).sin() * h * 0.12)
-            }).collect();
+            let mut pts: Vec<(f32, f32)> = (0..=n)
+                .map(|i| {
+                    let f = i as f32 / n as f32;
+                    (cx - w + 2.0 * w * f, cy - h + (f * std::f32::consts::TAU).sin() * h * 0.12)
+                })
+                .collect();
             pts.extend((0..=n).rev().map(|i| {
                 let f = i as f32 / n as f32;
                 (cx - w + 2.0 * w * f, cy + h + (f * std::f32::consts::TAU).sin() * h * 0.12)
             }));
             pts
         }
-        NodeType::Text => vec![(cx - r, cy - r * 0.4), (cx + r, cy - r * 0.4), (cx + r, cy + r * 0.4), (cx - r, cy + r * 0.4)],
+        NodeType::Text => {
+            vec![(cx - r, cy - r * 0.4), (cx + r, cy - r * 0.4), (cx + r, cy + r * 0.4), (cx - r, cy + r * 0.4)]
+        }
     }
 }
 
@@ -205,7 +246,11 @@ fn diagram_draw(c: &mut Ctx) -> Page {
         y0 = y0.min(p[1] as f32);
         y1 = y1.max(p[1] as f32);
     }
-    let background = c.opts.background.as_ref().filter(|b| b.rect.iter().all(|v| v.is_finite()) && b.rect[2] > b.rect[0] && b.rect[3] > b.rect[1]);
+    let background = c
+        .opts
+        .background
+        .as_ref()
+        .filter(|b| b.rect.iter().all(|v| v.is_finite()) && b.rect[2] > b.rect[0] && b.rect[3] > b.rect[1]);
     if let Some(b) = background {
         x0 = x0.min(b.rect[0] as f32);
         y0 = y0.min(b.rect[1] as f32);
@@ -249,7 +294,8 @@ fn diagram_draw(c: &mut Ctx) -> Page {
         page.polygon(&outline, None, Some((1.2, edge)));
         // Curve-number labels: each drawn sub-area, and the remainder (placed clear of them),
         // away from node symbols and Tc paths where they fit. Drawn after the Tc paths.
-        let drawn: Vec<&[[f64; 2]]> = sc.areas.iter().filter_map(|a| a.outline.as_deref()).filter(|o| o.len() >= 3).collect();
+        let drawn: Vec<&[[f64; 2]]> =
+            sc.areas.iter().filter_map(|a| a.outline.as_deref()).filter(|o| o.len() >= 3).collect();
         for area in &sc.areas {
             let (region, hard) = match &area.outline {
                 Some(so) => (so.as_slice(), &[][..]),
@@ -288,14 +334,31 @@ fn diagram_draw(c: &mut Ctx) -> Page {
             if len > 0.5 {
                 let (ux, uy, k) = (dx / len, dy / len, 6.0);
                 let c = leg_color(pts.len() - 2);
-                page.polygon(&[*b, (b.0 - ux * k - uy * k * 0.45, b.1 - uy * k + ux * k * 0.45), (b.0 - ux * k + uy * k * 0.45, b.1 - uy * k - ux * k * 0.45)], Some(Rgb::WHITE), Some((0.9, c)));
+                page.polygon(
+                    &[
+                        *b,
+                        (b.0 - ux * k - uy * k * 0.45, b.1 - uy * k + ux * k * 0.45),
+                        (b.0 - ux * k + uy * k * 0.45, b.1 - uy * k - ux * k * 0.45),
+                    ],
+                    Some(Rgb::WHITE),
+                    Some((0.9, c)),
+                );
             }
         }
         for (i, q) in pts.iter().enumerate() {
             match letters.get(i).cloned().flatten() {
                 Some(letter) => {
                     page.circle(q.0, q.1, 2.2, Some(Rgb::WHITE), Some((0.9, TC_HINT)));
-                    halo_text(&mut page, q.0 + 3.0, q.1 - 3.5, 8.0, Font::SansBold, Align::Left, Rgb::from_u8(40, 40, 48), &letter);
+                    halo_text(
+                        &mut page,
+                        q.0 + 3.0,
+                        q.1 - 3.5,
+                        8.0,
+                        Font::SansBold,
+                        Align::Left,
+                        Rgb::from_u8(40, 40, 48),
+                        &letter,
+                    );
                 }
                 None => page.circle(q.0, q.1, 1.1, Some(TC_HINT), None),
             }
@@ -324,7 +387,15 @@ fn diagram_draw(c: &mut Ctx) -> Page {
             page.line(sx, sy, ex, ey, 0.9, color);
             page.solid();
             let a = d * 0.18;
-            page.polygon(&[(ex, ey), (ex - ux * a - uy * a * 0.45, ey - uy * a + ux * a * 0.45), (ex - ux * a + uy * a * 0.45, ey - uy * a - ux * a * 0.45)], Some(Rgb::WHITE), Some((0.9, color)));
+            page.polygon(
+                &[
+                    (ex, ey),
+                    (ex - ux * a - uy * a * 0.45, ey - uy * a + ux * a * 0.45),
+                    (ex - ux * a + uy * a * 0.45, ey - uy * a - ux * a * 0.45),
+                ],
+                Some(Rgb::WHITE),
+                Some((0.9, color)),
+            );
         }
     }
     for n in &nodes {
@@ -335,14 +406,34 @@ fn diagram_draw(c: &mut Ctx) -> Page {
         }
         let (fill, stroke) = node_color(n.node_type());
         page.polygon(&symbol(n.node_type(), cx, cy, d), Some(fill), Some((1.0, stroke)));
-        page.text(cx, cy + d * 0.12 + if n.node_type() == NodeType::Pond { d * 0.12 } else { 0.0 }, (d * 0.3).clamp(5.0, 16.0), Font::Sans, Align::Center, Rgb::BLACK, &n.label());
+        page.text(
+            cx,
+            cy + d * 0.12 + if n.node_type() == NodeType::Pond { d * 0.12 } else { 0.0 },
+            (d * 0.3).clamp(5.0, 16.0),
+            Font::Sans,
+            Align::Center,
+            Rgb::BLACK,
+            &n.label(),
+        );
         if !n.name.is_empty() {
-            page.text(cx, cy + d * 0.5 + 10.0, (d * 0.2).clamp(5.0, 10.0), Font::Sans, Align::Center, Rgb::BLACK, &n.name);
+            page.text(
+                cx,
+                cy + d * 0.5 + 10.0,
+                (d * 0.2).clamp(5.0, 10.0),
+                Font::Sans,
+                Align::Center,
+                Rgb::BLACK,
+                &n.name,
+            );
         }
     }
     // Legend and title block.
     let ly = h - MARGIN - 34.0;
-    for (i, (t, label)) in [(NodeType::Subcat, "Subcat"), (NodeType::Reach, "Reach"), (NodeType::Pond, "Pond"), (NodeType::Link, "Link")].iter().enumerate() {
+    for (i, (t, label)) in
+        [(NodeType::Subcat, "Subcat"), (NodeType::Reach, "Reach"), (NodeType::Pond, "Pond"), (NodeType::Link, "Link")]
+            .iter()
+            .enumerate()
+    {
         let cx = MARGIN + 50.0 + i as f32 * 60.0;
         let (fill, stroke) = node_color(*t);
         page.polygon(&symbol(*t, cx, ly, 36.0), Some(fill), Some((0.8, stroke)));
@@ -350,13 +441,45 @@ fn diagram_draw(c: &mut Ctx) -> Page {
     }
     let bx = w - MARGIN - 300.0;
     page.rect(bx, h - MARGIN - 52.0, 300.0, 52.0, Some(Rgb::WHITE), Some((1.2, Rgb::BLACK)));
-    page.text(bx + 150.0, h - MARGIN - 36.0, 10.0, Font::SansBold, Align::Center, Rgb::BLACK, &format!("Routing Diagram for {}", c.project.title));
+    page.text(
+        bx + 150.0,
+        h - MARGIN - 36.0,
+        10.0,
+        Font::SansBold,
+        Align::Center,
+        Rgb::BLACK,
+        &format!("Routing Diagram for {}", c.project.title),
+    );
     if !c.project.prepared_by.is_empty() {
-        page.text(bx + 150.0, h - MARGIN - 23.0, 9.0, Font::Sans, Align::Center, Rgb::BLACK, &format!("Prepared by {}, Printed {}", c.project.prepared_by, c.opts.date));
+        page.text(
+            bx + 150.0,
+            h - MARGIN - 23.0,
+            9.0,
+            Font::Sans,
+            Align::Center,
+            Rgb::BLACK,
+            &format!("Prepared by {}, Printed {}", c.project.prepared_by, c.opts.date),
+        );
     } else {
-        page.text(bx + 150.0, h - MARGIN - 23.0, 9.0, Font::Sans, Align::Center, Rgb::BLACK, &format!("Printed {}", c.opts.date));
+        page.text(
+            bx + 150.0,
+            h - MARGIN - 23.0,
+            9.0,
+            Font::Sans,
+            Align::Center,
+            Rgb::BLACK,
+            &format!("Printed {}", c.opts.date),
+        );
     }
-    page.text(bx + 150.0, h - MARGIN - 11.0, 8.0, Font::Sans, Align::Center, Rgb::BLACK, &format!("WAVEStorm {}", env!("CARGO_PKG_VERSION")));
+    page.text(
+        bx + 150.0,
+        h - MARGIN - 11.0,
+        8.0,
+        Font::Sans,
+        Align::Center,
+        Rgb::BLACK,
+        &format!("WAVEStorm {}", env!("CARGO_PKG_VERSION")),
+    );
     page
 }
 
@@ -392,7 +515,18 @@ pub fn node_summary_emf(project: &Project, results: &Results, node_id: crate::pr
 }
 
 /// A 2-D hydrograph chart in a box (x, y, w, h).
-fn hydro_chart(page: &mut Page, x: f32, y: f32, w: f32, h: f32, title: &str, series: &[(&str, &Hydrograph, Rgb)], summary: &[String], flow_label: &str, to_flow: &dyn Fn(f64) -> f64) {
+fn hydro_chart(
+    page: &mut Page,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    title: &str,
+    series: &[(&str, &Hydrograph, Rgb)],
+    summary: &[String],
+    flow_label: &str,
+    to_flow: &dyn Fn(f64) -> f64,
+) {
     page.text(x + w / 2.0, y + 12.0, 11.0, Font::SansBold, Align::Center, Rgb::BLACK, title);
     page.text(x + w / 2.0, y + 25.0, 9.0, Font::SansBold, Align::Center, Rgb::from_u8(0, 0, 200), "Hydrograph");
     let plot = (x + 44.0, y + 34.0, x + w - 90.0, y + h - 30.0);
@@ -438,7 +572,14 @@ fn hydro_chart(page: &mut Page, x: f32, y: f32, w: f32, h: f32, title: &str, ser
         q += step;
     }
     page.text((plot.0 + plot.2) / 2.0, plot.3 + 22.0, 8.5, Font::SansBold, Align::Center, Rgb::BLACK, "Time (hours)");
-    page.text_vertical(plot.0 - 28.0, (plot.1 + plot.3) / 2.0, 8.5, Font::SansBold, Rgb::BLACK, &format!("Flow ({flow_label})"));
+    page.text_vertical(
+        plot.0 - 28.0,
+        (plot.1 + plot.3) / 2.0,
+        8.5,
+        Font::SansBold,
+        Rgb::BLACK,
+        &format!("Flow ({flow_label})"),
+    );
     for (_, hg, color) in series {
         let pts: Vec<(f32, f32)> = (0..hg.len()).map(|i| (sx(hg.time(i)), sy(to_flow(hg.q[i])))).collect();
         page.polyline(&pts, 1.3, *color);
@@ -461,8 +602,11 @@ fn hydro_chart(page: &mut Page, x: f32, y: f32, w: f32, h: f32, title: &str, ser
         let label = format!("{:.2} {flow_label}", to_flow(p.value));
         let (lw, lh) = (crate::pdf::text_width(&label, Font::Sans, 7.0) + 6.0, 10.0);
         let (px, py) = (sx(p.time), sy(to_flow(p.value)));
-        let fit = |x: f32, y: f32| (x.clamp(plot.0, (plot.2 - lw).max(plot.0)), y.clamp(plot.1, (plot.3 - lh).max(plot.1)));
-        let overlaps = |r: (f32, f32)| taken.iter().any(|t| r.0 < t.0 + t.2 && t.0 < r.0 + lw && r.1 < t.1 + t.3 && t.1 < r.1 + lh);
+        let fit =
+            |x: f32, y: f32| (x.clamp(plot.0, (plot.2 - lw).max(plot.0)), y.clamp(plot.1, (plot.3 - lh).max(plot.1)));
+        let overlaps = |r: (f32, f32)| {
+            taken.iter().any(|t| r.0 < t.0 + t.2 && t.0 < r.0 + lw && r.1 < t.1 + t.3 && t.1 < r.1 + lh)
+        };
         // Above-right of the peak, else above-left, then stepping further down the plot.
         let candidates = (0..12).flat_map(|k| {
             let y = py - 12.0 + k as f32 * (lh + 1.0);
@@ -493,7 +637,15 @@ fn nice(raw: f64) -> f64 {
     }
     let mag = 10f64.powf(raw.log10().floor());
     let n = raw / mag;
-    (if n < 1.5 { 1.0 } else if n < 3.5 { 2.0 } else if n < 7.5 { 5.0 } else { 10.0 }) * mag
+    (if n < 1.5 {
+        1.0
+    } else if n < 3.5 {
+        2.0
+    } else if n < 7.5 {
+        5.0
+    } else {
+        10.0
+    }) * mag
 }
 
 fn trim(v: f64, step: f64) -> String {
@@ -512,7 +664,12 @@ fn node_chart(page: &mut Page, project: &Project, results: &Results, node: &Node
             series.push(("Inflow", &r.inflow, Rgb::from_u8(40, 170, 60)));
             series.push(("Outflow", &r.outflow, Rgb::from_u8(120, 120, 120)));
             let names = ["Primary", "Secondary", "Tertiary", "Discarded"];
-            let colors = [Rgb::from_u8(30, 110, 250), Rgb::from_u8(230, 50, 50), Rgb::from_u8(230, 150, 30), Rgb::from_u8(150, 60, 190)];
+            let colors = [
+                Rgb::from_u8(30, 110, 250),
+                Rgb::from_u8(230, 50, 50),
+                Rgb::from_u8(230, 150, 30),
+                Rgb::from_u8(150, 60, 190),
+            ];
             if r.routes.iter().filter(|h| h.has_flow()).count() > 1 {
                 for k in 0..4 {
                     if r.routes[k].has_flow() {
@@ -560,7 +717,8 @@ fn node_pages(c: &mut Ctx, node: &Node) {
     c.doc.add(page);
     if c.opts.tables {
         let (heads, cols) = report::hydrograph_table(c.project, c.results, node, true, false);
-        let mut lines = vec![heads.iter().map(|h| format!("{:>14}", h.split(" (").next().unwrap_or(h))).collect::<String>()];
+        let mut lines =
+            vec![heads.iter().map(|h| format!("{:>14}", h.split(" (").next().unwrap_or(h))).collect::<String>()];
         let rows = cols.first().map(|c| c.len()).unwrap_or(0);
         for i in 0..rows {
             lines.push(cols.iter().map(|c| format!("{:>14.3}", c.get(i).copied().unwrap_or(0.0))).collect());
@@ -593,13 +751,22 @@ pub fn report_pdf(project: &Project, results: &Results, opts: &PrintOptions) -> 
         c.doc.add(page);
     }
     if opts.summaries {
-        let mut nodes: Vec<&Node> = project.nodes.iter().filter(|n| n.node_type() != NodeType::Text && (opts.only.is_empty() || opts.only.contains(&n.id))).collect();
-        nodes.sort_by_key(|n| (match n.node_type() {
-            NodeType::Subcat => 0,
-            NodeType::Reach => 1,
-            NodeType::Pond => 2,
-            _ => 3,
-        }, n.number.parse::<u64>().unwrap_or(u64::MAX)));
+        let mut nodes: Vec<&Node> = project
+            .nodes
+            .iter()
+            .filter(|n| n.node_type() != NodeType::Text && (opts.only.is_empty() || opts.only.contains(&n.id)))
+            .collect();
+        nodes.sort_by_key(|n| {
+            (
+                match n.node_type() {
+                    NodeType::Subcat => 0,
+                    NodeType::Reach => 1,
+                    NodeType::Pond => 2,
+                    _ => 3,
+                },
+                n.number.parse::<u64>().unwrap_or(u64::MAX),
+            )
+        });
         for n in nodes {
             node_pages(&mut c, n);
         }
@@ -666,12 +833,27 @@ mod tests {
             }
         }
         let results = crate::calc::calculate(&p);
-        let bg = PrintBackground { rect: [-20.0, -20.0, 120.0, 120.0], width: 2, height: 2, rgb: std::sync::Arc::new(vec![200; 12]) };
-        let with = PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, background: Some(bg.clone()), ..Default::default() };
+        let bg = PrintBackground {
+            rect: [-20.0, -20.0, 120.0, 120.0],
+            width: 2,
+            height: 2,
+            rgb: std::sync::Arc::new(vec![200; 12]),
+        };
+        let with = PrintOptions {
+            diagram: true,
+            node_listing: false,
+            area_listing: false,
+            summaries: false,
+            background: Some(bg.clone()),
+            ..Default::default()
+        };
         let pdf = report_pdf(&p, &results, &with);
         let text = String::from_utf8_lossy(&pdf);
         assert!(text.contains("/Subtype /Image") && text.contains("/XObject") && text.contains("Do Q"));
-        assert!(text.contains("CN 80") && text.contains("CN 61") && text.contains("CN 55"), "sub-area, remainder and tiny sub-area labels");
+        assert!(
+            text.contains("CN 80") && text.contains("CN 61") && text.contains("CN 55"),
+            "sub-area, remainder and tiny sub-area labels"
+        );
         assert!(text.contains("/ExtGState") && text.contains("/ca 0.31"), "translucent fills");
         assert!(text.contains("(A) Tj") && text.contains("(C) Tj"), "Tc path letters");
         let without = report_pdf(&p, &results, &PrintOptions { background: None, ..with.clone() });

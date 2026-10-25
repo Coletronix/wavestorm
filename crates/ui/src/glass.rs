@@ -135,11 +135,17 @@ pub fn surface(p: &Painter, rect: Rect, radius: f32, kind: Surface, t: &Tokens) 
     // A pressed key sits lower, so its face moves down into the (now thinner) edge.
     let face = if kind == Surface::Selected { rect.translate(vec2(0.0, 1.0)) } else { rect };
     let blur = (6.0 + depth * 4.0) as u8;
-    let drop = egui::epaint::Shadow { offset: [0, (depth * 2.0) as i8], blur, spread: 0, color: Color32::from_black_alpha((shadow * 255.0) as u8) };
+    let drop = egui::epaint::Shadow {
+        offset: [0, (depth * 2.0) as i8],
+        blur,
+        spread: 0,
+        color: Color32::from_black_alpha((shadow * 255.0) as u8),
+    };
     p.add(drop.as_shape(face, r));
     // Thickness: the slab's side, seen below the face.
     let side = rounded(face.translate(vec2(0.0, depth)), r);
-    let side_color = if kind == Surface::Selected { Color32::from_rgb(52, 36, 120) } else { Color32::from_rgb(6, 8, 18) };
+    let side_color =
+        if kind == Surface::Selected { Color32::from_rgb(52, 36, 120) } else { Color32::from_rgb(6, 8, 18) };
     gradient_fill(p, &side, alpha(side_color, 0.9), alpha(Color32::BLACK, 0.9));
     let lower: Vec<Pos2> = side.iter().copied().filter(|q| q.y > face.center().y + depth).collect();
     p.add(Shape::Path(PathShape::line(lower, iris_stroke(1.0, rim * 0.8))));
@@ -165,7 +171,10 @@ pub fn bevel(p: &Painter, rect: Rect, radius: f32, light: f32, dark: f32) {
     let lower: Vec<Pos2> = pts.iter().copied().filter(|q| q.y >= inner.center().y).collect();
     let upper = reorder_open(upper);
     let lower = reorder_open(lower);
-    p.add(Shape::Path(PathShape::line(upper, PathStroke::new_uv(1.0, move |_, q| white(light * (1.0 - ((q.y - y0) / (h * 0.5)).clamp(0.0, 1.0)))))));
+    p.add(Shape::Path(PathShape::line(
+        upper,
+        PathStroke::new_uv(1.0, move |_, q| white(light * (1.0 - ((q.y - y0) / (h * 0.5)).clamp(0.0, 1.0)))),
+    )));
     p.add(Shape::Path(PathShape::line(
         lower,
         PathStroke::new_uv(1.0, move |_, q| alpha(Color32::BLACK, dark * ((q.y - y0) / h - 0.5).clamp(0.0, 0.5) * 2.0)),
@@ -254,7 +263,11 @@ pub fn recess(p: &Painter, rect: Rect, radius: f32) {
         PathStroke::new_uv(1.0, move |_, q| {
             let f = ((q.y - y0) / h).clamp(0.0, 1.0);
             // Dark along the top (shadowed), light along the bottom (lit lip).
-            if f < 0.5 { alpha(Color32::BLACK, 0.55 * (1.0 - f * 2.0) + 0.1) } else { white(0.16 * (f - 0.5) * 2.0 + 0.03) }
+            if f < 0.5 {
+                alpha(Color32::BLACK, 0.55 * (1.0 - f * 2.0) + 0.1)
+            } else {
+                white(0.16 * (f - 0.5) * 2.0 + 0.03)
+            }
         }),
     )));
 }
@@ -264,13 +277,21 @@ pub fn recess(p: &Painter, rect: Rect, radius: f32) {
 pub fn bead(p: &Painter, c: Pos2, r: f32, color: Color32) {
     glow(p, c + vec2(0.0, r * 0.5), r * 1.6, alpha(Color32::BLACK, 0.45));
     let pts = arc_points(c, r, 28);
-    gradient_fill(p, &pts, crate::widgets::lerp_color(color, Color32::WHITE, 0.25), crate::widgets::lerp_color(color, Color32::BLACK, 0.45));
+    gradient_fill(
+        p,
+        &pts,
+        crate::widgets::lerp_color(color, Color32::WHITE, 0.25),
+        crate::widgets::lerp_color(color, Color32::BLACK, 0.45),
+    );
     glow_ellipse(p, c + vec2(-r * 0.25, -r * 0.4), vec2(r * 0.55, r * 0.35), white(0.75));
     p.circle_stroke(c, r, egui::Stroke::new(1.0, lerp_rgba(color, white(1.0), 0.3)));
 }
 
 fn arc_points(c: Pos2, r: f32, n: usize) -> Vec<Pos2> {
-    (0..n).map(|k| std::f32::consts::TAU * k as f32 / n as f32).map(|a| pos2(c.x + r * a.cos(), c.y + r * a.sin())).collect()
+    (0..n)
+        .map(|k| std::f32::consts::TAU * k as f32 / n as f32)
+        .map(|a| pos2(c.x + r * a.cos(), c.y + r * a.sin()))
+        .collect()
 }
 
 /// A round sunken socket (unchecked radio buttons).
@@ -282,7 +303,11 @@ pub fn socket(p: &Painter, c: Pos2, r: f32, floor: Color32) {
         top,
         PathStroke::new_uv(1.2, move |_, q| {
             let f = ((q.y - y0) / h).clamp(0.0, 1.0);
-            if f < 0.5 { alpha(Color32::BLACK, 0.6 * (1.0 - f * 2.0) + 0.1) } else { white(0.22 * (f - 0.5) * 2.0 + 0.04) }
+            if f < 0.5 {
+                alpha(Color32::BLACK, 0.6 * (1.0 - f * 2.0) + 0.1)
+            } else {
+                white(0.22 * (f - 0.5) * 2.0 + 0.04)
+            }
         }),
     )));
 }
@@ -310,7 +335,10 @@ fn glow_ellipse(p: &Painter, center: Pos2, radii: egui::Vec2, c: Color32) {
     // A mid ring keeps the falloff soft instead of linear.
     for k in 0..n {
         let a = std::f32::consts::TAU * k as f32 / n as f32;
-        mesh.colored_vertex(center + vec2(a.cos() * radii.x, a.sin() * radii.y) * 0.5, lerp_rgba(c, Color32::TRANSPARENT, 0.6));
+        mesh.colored_vertex(
+            center + vec2(a.cos() * radii.x, a.sin() * radii.y) * 0.5,
+            lerp_rgba(c, Color32::TRANSPARENT, 0.6),
+        );
     }
     for k in 0..n {
         let a = std::f32::consts::TAU * k as f32 / n as f32;

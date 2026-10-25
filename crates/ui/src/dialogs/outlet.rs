@@ -56,24 +56,111 @@ pub fn templates() -> Vec<(&'static str, DeviceKind)> {
                 grate: None,
             },
         ),
-        ("Sharp-Crested Weir", DeviceKind::SharpCrestedWeir { length: 4.0, end_contractions: 2, crest_height: 0.0, rise: None }),
+        (
+            "Sharp-Crested Weir",
+            DeviceKind::SharpCrestedWeir { length: 4.0, end_contractions: 2, crest_height: 0.0, rise: None },
+        ),
         ("Broad-Crested Weir", DeviceKind::BroadCrestedWeir { length: 10.0, breadth: 2.0, side_z: 0.0, rise: None }),
-        ("Vee/Trapezoidal Weir", DeviceKind::VeeTrapWeir { notch_angle: 90.0, crest_length: 0.0, cv: 2.50, rise: None }),
+        (
+            "Vee/Trapezoidal Weir",
+            DeviceKind::VeeTrapWeir { notch_angle: 90.0, crest_length: 0.0, cv: 2.50, rise: None },
+        ),
         // A crest profile of any shape, symmetrical or not (offset, elevation above the invert).
-        ("Asymmetrical / Custom Weir", DeviceKind::CustomWeir { points: vec![(0.0, 1.5), (3.0, 0.0), (6.0, 0.0), (8.0, 0.5), (12.0, 1.0)], coefficient: 3.0 }),
-        ("Exfiltration", DeviceKind::Exfiltration { mode: ExfilMode::SurfaceVelocity { velocity: 1.0 / 12.0 / 3600.0 }, phase_in: 0.01, max_elevation: None }),
-        ("Special (Rating Table)", DeviceKind::Special { table: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 3.0)], head_based: true, extrapolate: false }),
+        (
+            "Asymmetrical / Custom Weir",
+            DeviceKind::CustomWeir {
+                points: vec![(0.0, 1.5), (3.0, 0.0), (6.0, 0.0), (8.0, 0.5), (12.0, 1.0)],
+                coefficient: 3.0,
+            },
+        ),
+        (
+            "Exfiltration",
+            DeviceKind::Exfiltration {
+                mode: ExfilMode::SurfaceVelocity { velocity: 1.0 / 12.0 / 3600.0 },
+                phase_in: 0.01,
+                max_elevation: None,
+            },
+        ),
+        (
+            "Special (Rating Table)",
+            DeviceKind::Special {
+                table: vec![(0.0, 0.0), (1.0, 1.0), (2.0, 3.0)],
+                head_based: true,
+                extrapolate: false,
+            },
+        ),
         ("Constant Flow/Skimmer", DeviceKind::ConstantFlow { flow: 0.5, phase_in: 0.3 }),
-        ("Pump", DeviceKind::Pump { rating: vec![(0.0, 2.0), (10.0, 1.5), (20.0, 0.0)], on_elevation: 102.0, off_elevation: 100.5, discharge_elevation: 110.0, max_elevation: None, priority_group: 0, discharge_length: 0.0, discharge_diameter: 0.0, hazen_c: 120.0 }),
-        ("Tube/Siphon", DeviceKind::Siphon { diameter: 1.0, length: 40.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 }),
-        ("Dam Breach", DeviceKind::DamBreach { start_time: None, start_elevation: Some(105.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 }),
-        ("Delayed Gate", DeviceKind::DelayedGate { trigger_elevation: 102.0, delay: 2.0, opening: 1.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0, vertical_range: 0.0, rotary: false }),
-        ("Channel Outlet", DeviceKind::Channel { section: Section::Trapezoidal { bottom: 4.0, z_left: 2.0, z_right: 2.0, depth: 3.0 }, n: 0.03, slope: 0.01 }),
+        (
+            "Pump",
+            DeviceKind::Pump {
+                rating: vec![(0.0, 2.0), (10.0, 1.5), (20.0, 0.0)],
+                on_elevation: 102.0,
+                off_elevation: 100.5,
+                discharge_elevation: 110.0,
+                max_elevation: None,
+                priority_group: 0,
+                discharge_length: 0.0,
+                discharge_diameter: 0.0,
+                hazen_c: 120.0,
+            },
+        ),
+        (
+            "Tube/Siphon",
+            DeviceKind::Siphon {
+                diameter: 1.0,
+                length: 40.0,
+                n: 0.013,
+                ke: 0.5,
+                outlet_elevation: 95.0,
+                prime_elevation: 104.0,
+                break_elevation: 100.5,
+            },
+        ),
+        (
+            "Dam Breach",
+            DeviceKind::DamBreach {
+                start_time: None,
+                start_elevation: Some(105.0),
+                formation: 1.0,
+                final_bottom: 100.0,
+                final_width: 20.0,
+                side_z: 1.0,
+            },
+        ),
+        (
+            "Delayed Gate",
+            DeviceKind::DelayedGate {
+                trigger_elevation: 102.0,
+                delay: 2.0,
+                opening: 1.0,
+                width: 2.0,
+                height: 2.0,
+                cd: 0.6,
+                step: 0.0,
+                vertical_range: 0.0,
+                rotary: false,
+            },
+        ),
+        (
+            "Channel Outlet",
+            DeviceKind::Channel {
+                section: Section::Trapezoidal { bottom: 4.0, z_left: 2.0, z_right: 2.0, depth: 3.0 },
+                n: 0.03,
+                slope: 0.01,
+            },
+        ),
     ]
 }
 
 /// Returns Some(true) on OK, Some(false) on Cancel.
-pub fn show(ctx: &egui::Context, ed: &mut DeviceEditor, u: &Units, pond: &Pond, pond_number: &str, actions: &mut Vec<WindowAction>) -> Option<bool> {
+pub fn show(
+    ctx: &egui::Context,
+    ed: &mut DeviceEditor,
+    u: &Units,
+    pond: &Pond,
+    pond_number: &str,
+    actions: &mut Vec<WindowAction>,
+) -> Option<bool> {
     let mut result = Buttons::None;
     let t = Tokens::get(ctx);
     let title = format!("Pond {pond_number}P {} Outlet", ed.device.kind.label());
@@ -508,7 +595,10 @@ pub fn parse_rating(text: &str) -> Result<Vec<(f64, f64)>, String> {
     let rows: Vec<(f64, f64)> = text
         .lines()
         .filter_map(|line| {
-            let mut nums = line.split(|c: char| c == ',' || c == ';' || c == '\t' || c.is_whitespace()).filter(|s| !s.is_empty()).map(|s| s.parse::<f64>());
+            let mut nums = line
+                .split(|c: char| c == ',' || c == ';' || c == '\t' || c.is_whitespace())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.parse::<f64>());
             match (nums.next(), nums.next()) {
                 (Some(Ok(a)), Some(Ok(b))) if a.is_finite() && b.is_finite() => Some((a, b)),
                 _ => None,
@@ -531,10 +621,18 @@ pub fn set_rating(kind: &mut DeviceKind, rows: Vec<(f64, f64)>) -> bool {
 /// Area (sf) and perimeter (ft) of one opening, for the text under the shape preview.
 fn opening_props(kind: &DeviceKind) -> Option<(f64, f64)> {
     let sec = match kind {
-        DeviceKind::Culvert { shape, width, height, fill, .. } => Section::Pipe { shape: *shape, width: *width, height: *height, fill: *fill },
-        DeviceKind::Orifice { shape: OpeningShape::Circular { diameter }, .. } => Section::Pipe { shape: PipeShape::Round, width: *diameter, height: *diameter, fill: 0.0 },
-        DeviceKind::Orifice { shape: OpeningShape::Rectangular { width, height }, .. } => Section::Pipe { shape: PipeShape::Box, width: *width, height: *height, fill: 0.0 },
-        DeviceKind::DelayedGate { width, height, .. } => Section::Pipe { shape: PipeShape::Box, width: *width, height: *height, fill: 0.0 },
+        DeviceKind::Culvert { shape, width, height, fill, .. } => {
+            Section::Pipe { shape: *shape, width: *width, height: *height, fill: *fill }
+        }
+        DeviceKind::Orifice { shape: OpeningShape::Circular { diameter }, .. } => {
+            Section::Pipe { shape: PipeShape::Round, width: *diameter, height: *diameter, fill: 0.0 }
+        }
+        DeviceKind::Orifice { shape: OpeningShape::Rectangular { width, height }, .. } => {
+            Section::Pipe { shape: PipeShape::Box, width: *width, height: *height, fill: 0.0 }
+        }
+        DeviceKind::DelayedGate { width, height, .. } => {
+            Section::Pipe { shape: PipeShape::Box, width: *width, height: *height, fill: 0.0 }
+        }
         _ => return None,
     };
     let p = sec.props(sec.full_depth());
@@ -574,7 +672,14 @@ fn sketch(ui: &mut Ui, kind: &DeviceKind) {
             p.add(egui::Shape::convex_polygon(pts, water, ink));
             if *fill > 0.0 {
                 let y = c.y + (*height as f32 / 2.0 - *fill as f32) * s;
-                p.rect_filled(Rect::from_min_max(pos2(c.x - *width as f32 / 2.0 * s, y), pos2(c.x + *width as f32 / 2.0 * s, c.y + *height as f32 / 2.0 * s)), 0.0, Color32::from_rgb(130, 130, 130));
+                p.rect_filled(
+                    Rect::from_min_max(
+                        pos2(c.x - *width as f32 / 2.0 * s, y),
+                        pos2(c.x + *width as f32 / 2.0 * s, c.y + *height as f32 / 2.0 * s),
+                    ),
+                    0.0,
+                    Color32::from_rgb(130, 130, 130),
+                );
             }
         }
         DeviceKind::Orifice { shape, columns, rows, grate, .. } => {
@@ -590,7 +695,11 @@ fn sketch(ui: &mut Ui, kind: &DeviceKind) {
                         }
                         OpeningShape::Rectangular { width, height } => {
                             let asp = (*width / height.max(1e-6)).clamp(0.2, 5.0) as f32;
-                            let size = if asp >= 1.0 { vec2(cell.x * 0.7, cell.x * 0.7 / asp) } else { vec2(cell.y * 0.7 * asp, cell.y * 0.7) };
+                            let size = if asp >= 1.0 {
+                                vec2(cell.x * 0.7, cell.x * 0.7 / asp)
+                            } else {
+                                vec2(cell.y * 0.7 * asp, cell.y * 0.7)
+                            };
                             p.rect_filled(Rect::from_center_size(cc, size.min(cell * 0.8)), 0.0, water);
                         }
                     }
@@ -600,22 +709,41 @@ fn sketch(ui: &mut Ui, kind: &DeviceKind) {
                 p.rect_stroke(rect.shrink(4.0), 0.0, Stroke::new(2.0, t.dark), egui::StrokeKind::Inside);
             }
         }
-        DeviceKind::BroadCrestedWeir { .. } | DeviceKind::SharpCrestedWeir { .. } | DeviceKind::VeeTrapWeir { .. } | DeviceKind::CustomWeir { .. } => {
+        DeviceKind::BroadCrestedWeir { .. }
+        | DeviceKind::SharpCrestedWeir { .. }
+        | DeviceKind::VeeTrapWeir { .. }
+        | DeviceKind::CustomWeir { .. } => {
             let base = rect.max.y - 20.0;
             let pts: Vec<egui::Pos2> = match kind {
                 DeviceKind::VeeTrapWeir { notch_angle, crest_length, .. } => {
                     let half = (notch_angle.to_radians() / 2.0).tan() as f32;
                     let cl = (*crest_length as f32).min(4.0) * 10.0;
                     let h = 70.0;
-                    vec![pos2(rect.center().x - cl / 2.0 - h * half, base - h), pos2(rect.center().x - cl / 2.0, base), pos2(rect.center().x + cl / 2.0, base), pos2(rect.center().x + cl / 2.0 + h * half, base - h)]
+                    vec![
+                        pos2(rect.center().x - cl / 2.0 - h * half, base - h),
+                        pos2(rect.center().x - cl / 2.0, base),
+                        pos2(rect.center().x + cl / 2.0, base),
+                        pos2(rect.center().x + cl / 2.0 + h * half, base - h),
+                    ]
                 }
-                _ => vec![pos2(rect.min.x + 25.0, base - 70.0), pos2(rect.min.x + 25.0, base), pos2(rect.max.x - 25.0, base), pos2(rect.max.x - 25.0, base - 70.0)],
+                _ => vec![
+                    pos2(rect.min.x + 25.0, base - 70.0),
+                    pos2(rect.min.x + 25.0, base),
+                    pos2(rect.max.x - 25.0, base),
+                    pos2(rect.max.x - 25.0, base - 70.0),
+                ],
             };
             p.add(egui::Shape::convex_polygon(pts.clone(), water, Stroke::NONE));
             p.add(egui::Shape::line(pts, ink));
         }
         _ => {
-            p.text(rect.center(), egui::Align2::CENTER_CENTER, kind.label(), egui::FontId::proportional(13.0), t.text_dim);
+            p.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                kind.label(),
+                egui::FontId::proportional(13.0),
+                t.text_dim,
+            );
         }
     }
 }

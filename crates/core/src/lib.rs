@@ -4,13 +4,21 @@
 //! customary: feet, square feet, cubic feet, cfs, hours, and inches of rainfall; conversion to
 //! display units happens at the edges.
 
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unimplemented,
+    clippy::todo,
+    clippy::unreachable
+)]
 
 pub mod base64;
 pub mod calc;
 pub mod chamber;
 pub mod cn;
 pub mod drawing;
+pub mod emf;
 pub mod exchange;
 pub mod geometry;
 pub mod hcp;
@@ -20,16 +28,15 @@ pub mod link;
 pub mod listings;
 pub mod noaa;
 pub mod outlets;
-pub mod emf;
 pub mod pdf;
 pub mod printing;
 pub mod profile;
 pub mod project;
-pub mod report;
-pub mod resize;
 pub mod rainfall;
 mod rainfall_data;
 pub mod rainlib;
+pub mod report;
+pub mod resize;
 pub mod routing;
 pub mod runoff;
 pub mod storage;

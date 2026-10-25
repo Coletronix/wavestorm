@@ -47,16 +47,18 @@ impl Rgb {
 /// Helvetica advance widths (1/1000 em) for ASCII 32..=126, from Adobe's Core 14 AFM font metrics
 /// (freely redistributable).
 const HELVETICA: [u16; 95] = [
-    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584,
-    584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667,
-    611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500,
-    722, 500, 500, 500, 334, 260, 334, 584,
+    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556,
+    556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833,
+    722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556,
+    556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334,
+    260, 334, 584,
 ];
 const HELVETICA_BOLD: [u16; 95] = [
-    278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584,
-    584, 584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667,
-    611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556,
-    778, 556, 556, 500, 389, 280, 389, 584,
+    278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556,
+    556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833,
+    722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611,
+    556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389,
+    280, 389, 584,
 ];
 
 /// Width of `text` in points at `size`.
@@ -83,20 +85,71 @@ pub type Stroke = Option<(f32, Rgb)>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     /// Text with its baseline at `y`, aligned relative to `x`.
-    Text { x: f32, y: f32, size: f32, font: Font, align: Align, color: Rgb, text: String },
+    Text {
+        x: f32,
+        y: f32,
+        size: f32,
+        font: Font,
+        align: Align,
+        color: Rgb,
+        text: String,
+    },
     /// Text rotated 90 degrees counter-clockwise, centred on `y`, baseline at `x`.
-    TextVertical { x: f32, y: f32, size: f32, font: Font, color: Rgb, text: String },
-    Line { x1: f32, y1: f32, x2: f32, y2: f32, width: f32, color: Rgb },
+    TextVertical {
+        x: f32,
+        y: f32,
+        size: f32,
+        font: Font,
+        color: Rgb,
+        text: String,
+    },
+    Line {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        color: Rgb,
+    },
     /// Sets the dash pattern for later strokes (`None` = solid).
     Dash(Option<(f32, f32)>),
     /// Sets the opacity (0..1) of later fills.
     FillAlpha(f32),
-    Polyline { pts: Vec<(f32, f32)>, width: f32, color: Rgb },
-    Polygon { pts: Vec<(f32, f32)>, fill: Option<Rgb>, stroke: Stroke },
-    Rect { x: f32, y: f32, w: f32, h: f32, fill: Option<Rgb>, stroke: Stroke },
-    Circle { cx: f32, cy: f32, r: f32, fill: Option<Rgb>, stroke: Stroke },
+    Polyline {
+        pts: Vec<(f32, f32)>,
+        width: f32,
+        color: Rgb,
+    },
+    Polygon {
+        pts: Vec<(f32, f32)>,
+        fill: Option<Rgb>,
+        stroke: Stroke,
+    },
+    Rect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        fill: Option<Rgb>,
+        stroke: Stroke,
+    },
+    Circle {
+        cx: f32,
+        cy: f32,
+        r: f32,
+        fill: Option<Rgb>,
+        stroke: Stroke,
+    },
     /// A raster (8-bit RGB, rows top to bottom, `px_w` x `px_h` pixels) stretched over a box.
-    Image { x: f32, y: f32, w: f32, h: f32, px_w: u32, px_h: u32, rgb: std::sync::Arc<Vec<u8>> },
+    Image {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        px_w: u32,
+        px_h: u32,
+        rgb: std::sync::Arc<Vec<u8>>,
+    },
 }
 
 /// One page being drawn.
@@ -198,7 +251,11 @@ impl Page {
 
     /// The fill opacities used on the page, in percent.
     fn alphas(&self) -> Vec<u32> {
-        let mut v: Vec<u32> = self.ops.iter().filter_map(|op| if let Op::FillAlpha(a) = op { Some(alpha_pct(*a)) } else { None }).collect();
+        let mut v: Vec<u32> = self
+            .ops
+            .iter()
+            .filter_map(|op| if let Op::FillAlpha(a) = op { Some(alpha_pct(*a)) } else { None })
+            .collect();
         v.sort_unstable();
         v.dedup();
         v
@@ -228,7 +285,14 @@ impl Page {
         for op in &self.ops {
             match op {
                 Op::Image { x, y: iy, w, h, .. } => {
-                    let _ = writeln!(o, "q {} 0 0 {} {} {} cm /Im{image_no} Do Q", num(*w), num(*h), num(*x), num(y(*iy + *h)));
+                    let _ = writeln!(
+                        o,
+                        "q {} 0 0 {} {} {} cm /Im{image_no} Do Q",
+                        num(*w),
+                        num(*h),
+                        num(*x),
+                        num(y(*iy + *h))
+                    );
                     image_no += 1;
                 }
                 Op::Text { x, y: ty, size, font, align, color, text } => {
@@ -238,14 +302,47 @@ impl Page {
                         Align::Center => x - w / 2.0,
                         Align::Right => x - w,
                     };
-                    let _ = writeln!(o, "BT {} {} {} rg /{} {} Tf {} {} Td ({}) Tj ET", num(color.0), num(color.1), num(color.2), font.resource(), num(*size), num(x), num(y(*ty)), escape(text));
+                    let _ = writeln!(
+                        o,
+                        "BT {} {} {} rg /{} {} Tf {} {} Td ({}) Tj ET",
+                        num(color.0),
+                        num(color.1),
+                        num(color.2),
+                        font.resource(),
+                        num(*size),
+                        num(x),
+                        num(y(*ty)),
+                        escape(text)
+                    );
                 }
                 Op::TextVertical { x, y: ty, size, font, color, text } => {
                     let w = text_width(text, *font, *size);
-                    let _ = writeln!(o, "BT {} {} {} rg /{} {} Tf 0 1 -1 0 {} {} Tm ({}) Tj ET", num(color.0), num(color.1), num(color.2), font.resource(), num(*size), num(*x), num(y(*ty) - w / 2.0), escape(text));
+                    let _ = writeln!(
+                        o,
+                        "BT {} {} {} rg /{} {} Tf 0 1 -1 0 {} {} Tm ({}) Tj ET",
+                        num(color.0),
+                        num(color.1),
+                        num(color.2),
+                        font.resource(),
+                        num(*size),
+                        num(*x),
+                        num(y(*ty) - w / 2.0),
+                        escape(text)
+                    );
                 }
                 Op::Line { x1, y1, x2, y2, width, color } => {
-                    let _ = writeln!(o, "{} {} {} RG {} w {} {} m {} {} l S", num(color.0), num(color.1), num(color.2), num(*width), num(*x1), num(y(*y1)), num(*x2), num(y(*y2)));
+                    let _ = writeln!(
+                        o,
+                        "{} {} {} RG {} w {} {} m {} {} l S",
+                        num(color.0),
+                        num(color.1),
+                        num(color.2),
+                        num(*width),
+                        num(*x1),
+                        num(y(*y1)),
+                        num(*x2),
+                        num(y(*y2))
+                    );
                 }
                 Op::Dash(Some((on, off))) => {
                     let _ = writeln!(o, "[{} {}] 0 d", num(*on), num(*off));
@@ -256,7 +353,16 @@ impl Page {
                 }
                 Op::Polyline { pts, width, color } => {
                     let Some(first) = pts.first() else { continue };
-                    let _ = write!(o, "{} {} {} RG {} w 1 j {} {} m", num(color.0), num(color.1), num(color.2), num(*width), num(first.0), num(y(first.1)));
+                    let _ = write!(
+                        o,
+                        "{} {} {} RG {} w 1 j {} {} m",
+                        num(color.0),
+                        num(color.1),
+                        num(color.2),
+                        num(*width),
+                        num(first.0),
+                        num(y(first.1))
+                    );
                     for p in &pts[1..] {
                         let _ = write!(o, " {} {} l", num(p.0), num(y(p.1)));
                     }
@@ -342,17 +448,23 @@ impl Document {
         let kids: Vec<String> = (0..n).map(|i| format!("{} 0 R", page_obj(i))).collect();
         objects.push(format!("<< /Type /Pages /Kids [{}] /Count {} >>", kids.join(" "), n).into_bytes());
         for base in ["Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Courier"] {
-            objects.push(format!("<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>").into_bytes());
+            objects.push(
+                format!("<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>").into_bytes(),
+            );
         }
         objects.push(format!("<< /Title ({}) /Producer (WAVEStorm) >>", escape(&self.title)).into_bytes());
         // Image objects follow the pages, in page order.
         let mut next_image = 8 + 2 * n;
         for (i, p) in self.pages.iter().enumerate() {
-            let xobjects: Vec<String> = p.images().enumerate().map(|(k, _)| format!("/Im{k} {} 0 R", next_image + k)).collect();
+            let xobjects: Vec<String> =
+                p.images().enumerate().map(|(k, _)| format!("/Im{k} {} 0 R", next_image + k)).collect();
             next_image += xobjects.len();
-            let xobject = if xobjects.is_empty() { String::new() } else { format!(" /XObject << {} >>", xobjects.join(" ")) };
-            let states: Vec<String> = p.alphas().iter().map(|a| format!("/GA{a} << /ca {} >>", num(*a as f32 / 100.0))).collect();
-            let gstate = if states.is_empty() { String::new() } else { format!(" /ExtGState << {} >>", states.join(" ")) };
+            let xobject =
+                if xobjects.is_empty() { String::new() } else { format!(" /XObject << {} >>", xobjects.join(" ")) };
+            let states: Vec<String> =
+                p.alphas().iter().map(|a| format!("/GA{a} << /ca {} >>", num(*a as f32 / 100.0))).collect();
+            let gstate =
+                if states.is_empty() { String::new() } else { format!(" /ExtGState << {} >>", states.join(" ")) };
             objects.push(
                 format!(
                     "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >>{xobject}{gstate} >> /Contents {} 0 R >>",
@@ -387,7 +499,10 @@ impl Document {
         for off in offsets {
             out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
         }
-        out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R /Info 7 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes());
+        out.extend_from_slice(
+            format!("trailer\n<< /Size {} /Root 1 0 R /Info 7 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1)
+                .as_bytes(),
+        );
         out
     }
 }

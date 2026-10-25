@@ -45,7 +45,9 @@ fn windows_do_not_creep_wider() {
     ];
     let mut failures = Vec::new();
     for script in scripts {
-        let mut h = egui_kittest::Harness::builder().with_size(vec2(1400.0, 900.0)).build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(vec2(1400.0, 900.0))
+            .build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless());
         h.run_steps(2);
         for cmd in script.split(';') {
             wavestorm_ui::script(h.state_mut(), cmd);

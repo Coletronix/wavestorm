@@ -191,7 +191,14 @@ impl TcKind {
                 };
                 let minutes = hours * 60.0;
                 let v = if minutes > 0.0 { length / (minutes * 60.0) } else { 0.0 };
-                TcResult { minutes, length: *length, slope: *slope, velocity: v, capacity: None, effective_length: *length }
+                TcResult {
+                    minutes,
+                    length: *length,
+                    slope: *slope,
+                    velocity: v,
+                    capacity: None,
+                    effective_length: *length,
+                }
             }
             TcKind::Kirpich { length, slope, factor } => {
                 let minutes = if ok(*slope) && *length > 0.0 {
@@ -200,7 +207,14 @@ impl TcKind {
                     0.0
                 };
                 let v = if minutes > 0.0 { length / (minutes * 60.0) } else { 0.0 };
-                TcResult { minutes, length: *length, slope: *slope, velocity: v, capacity: None, effective_length: *length }
+                TcResult {
+                    minutes,
+                    length: *length,
+                    slope: *slope,
+                    velocity: v,
+                    capacity: None,
+                    effective_length: *length,
+                }
             }
             TcKind::Kerby { length, slope, retardance } => {
                 let minutes = if ok(*slope) && *length > 0.0 && *retardance > 0.0 {
@@ -209,7 +223,14 @@ impl TcKind {
                     0.0
                 };
                 let v = if minutes > 0.0 { length / (minutes * 60.0) } else { 0.0 };
-                TcResult { minutes, length: *length, slope: *slope, velocity: v, capacity: None, effective_length: *length }
+                TcResult {
+                    minutes,
+                    length: *length,
+                    slope: *slope,
+                    velocity: v,
+                    capacity: None,
+                    effective_length: *length,
+                }
             }
             TcKind::Lake { length, mean_depth } => from_velocity(*length, 0.0, (G * mean_depth.max(0.0)).sqrt()),
         }
@@ -302,7 +323,8 @@ pub enum PathFlow {
 }
 
 impl PathFlow {
-    pub const ALL: [PathFlow; 5] = [PathFlow::Sheet, PathFlow::Shallow, PathFlow::Channel, PathFlow::Pipe, PathFlow::Lake];
+    pub const ALL: [PathFlow; 5] =
+        [PathFlow::Sheet, PathFlow::Shallow, PathFlow::Channel, PathFlow::Pipe, PathFlow::Lake];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -329,9 +351,16 @@ impl PathFlow {
     /// A new segment of this type with typical starting values (to be checked by the user).
     pub fn default_kind(self) -> TcKind {
         match self {
-            PathFlow::Sheet => TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.15, p2: 3.0, surface: "Grass: Short".into() },
+            PathFlow::Sheet => {
+                TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.15, p2: 3.0, surface: "Grass: Short".into() }
+            }
             PathFlow::Shallow => TcKind::Shallow { length: 300.0, slope: 0.02, kv: 16.1345, surface: "Unpaved".into() },
-            PathFlow::Channel => TcKind::Channel { length: 500.0, slope: 0.01, n: 0.030, section: Section::Trapezoidal { bottom: 2.0, z_left: 2.0, z_right: 2.0, depth: 1.0 } },
+            PathFlow::Channel => TcKind::Channel {
+                length: 500.0,
+                slope: 0.01,
+                n: 0.030,
+                section: Section::Trapezoidal { bottom: 2.0, z_left: 2.0, z_right: 2.0, depth: 1.0 },
+            },
             PathFlow::Pipe => TcKind::Channel { length: 200.0, slope: 0.01, n: 0.013, section: Section::circular(1.5) },
             PathFlow::Lake => TcKind::Lake { length: 500.0, mean_depth: 5.0 },
         }
@@ -454,13 +483,21 @@ pub fn segments_from_path(legs: &[PathLeg], template: &[TcSegment]) -> Vec<TcSeg
     let letter = |p: usize| point_label(breaks.iter().position(|b| *b == p).unwrap_or(0));
     runs.iter()
         .map(|r| {
-            let base = template.iter().find(|s| r.flow.matches(&s.kind)).map(|s| s.kind.clone()).unwrap_or_else(|| r.flow.default_kind());
+            let base = template
+                .iter()
+                .find(|s| r.flow.matches(&s.kind))
+                .map(|s| s.kind.clone())
+                .unwrap_or_else(|| r.flow.default_kind());
             let kind = base.with_length(r.length);
             let kind = match r.slope {
                 Some(s) => kind.with_slope(s),
                 None => kind,
             };
-            TcSegment { kind, description: format!("{} to {}", letter(r.from), letter(r.to)), path: Some([r.from, r.to]) }
+            TcSegment {
+                kind,
+                description: format!("{} to {}", letter(r.from), letter(r.to)),
+                path: Some([r.from, r.to]),
+            }
         })
         .collect()
 }
@@ -489,13 +526,21 @@ mod tests {
         // point 1). Segments: sheet 0-1; shallow 1-3 (150 + 300 ft, same slope); channel 3-5
         // at 0.01 then... the last leg's slope changes, so it is its own segment.
         let mut points = vec![[0.0, 0.0], [250.0, 0.0], [250.0, 300.0], [650.0, 300.0], [650.0, 500.0]];
-        let mut lg = legs(&[(250.0, Sheet, Some(0.03)), (300.0, Shallow, Some(0.02)), (400.0, Channel, Some(0.01)), (200.0, Channel, Some(0.005))]);
+        let mut lg = legs(&[
+            (250.0, Sheet, Some(0.03)),
+            (300.0, Shallow, Some(0.02)),
+            (400.0, Channel, Some(0.01)),
+            (200.0, Channel, Some(0.005)),
+        ]);
         limit_sheet_flow(&mut points, &mut lg, SHEET_LIMIT_FT);
         assert_eq!(points.len(), 6);
         assert_eq!(points[1], [100.0, 0.0]);
         let segs = segments_from_path(&lg, &[]);
         type Row<'a> = (&'a str, f64, Option<f64>, &'a str, Option<[usize; 2]>);
-        let got: Vec<Row> = segs.iter().map(|s| (s.kind.label(), s.kind.length(), s.kind.slope(), s.description.as_str(), s.path)).collect();
+        let got: Vec<Row> = segs
+            .iter()
+            .map(|s| (s.kind.label(), s.kind.length(), s.kind.slope(), s.description.as_str(), s.path))
+            .collect();
         assert_eq!(
             got,
             vec![
@@ -508,12 +553,21 @@ mod tests {
             ]
         );
         // Legs of one type with no new slope merge, and only segment ends are lettered.
-        let lg2 = legs(&[(40.0, Sheet, Some(0.02)), (60.0, Sheet, None), (100.0, Shallow, None), (100.0, Shallow, None), (50.0, Shallow, Some(0.04))]);
+        let lg2 = legs(&[
+            (40.0, Sheet, Some(0.02)),
+            (60.0, Sheet, None),
+            (100.0, Shallow, None),
+            (100.0, Shallow, None),
+            (50.0, Shallow, Some(0.04)),
+        ]);
         let runs = path_runs(&lg2);
         assert_eq!(runs.iter().map(|r| (r.from, r.to)).collect::<Vec<_>>(), [(0, 2), (2, 4), (4, 5)]);
         let breaks = path_breaks(&runs);
         assert_eq!(breaks, [0, 2, 4, 5]);
-        assert_eq!(path_labels(6, &breaks), [Some("A".into()), None, Some("B".into()), None, Some("C".into()), Some("D".into())]);
+        assert_eq!(
+            path_labels(6, &breaks),
+            [Some("A".into()), None, Some("B".into()), None, Some("C".into()), Some("D".into())]
+        );
         let segs = segments_from_path(&lg2, &[]);
         assert_eq!(segs.iter().map(|s| s.description.as_str()).collect::<Vec<_>>(), ["A to B", "B to C", "C to D"]);
         // Re-applying the limit to the divided path changes nothing; later sheet legs turn shallow.
@@ -526,26 +580,43 @@ mod tests {
         assert_eq!(l3, legs(&[(50.0, Sheet, None), (50.0, Sheet, None), (100.0, Shallow, None)]));
         // Without leg slopes, slope and cover come from an existing segment of the same type.
         let existing = [seg(TcKind::Shallow { length: 10.0, slope: 0.035, kv: 20.3282, surface: "Paved".into() })];
-        let segs = segments_from_path(&legs(&[(80.0, Shallow, None), (0.0, Sheet, None), (f64::NAN, Pipe, None)]), &existing);
+        let segs =
+            segments_from_path(&legs(&[(80.0, Shallow, None), (0.0, Sheet, None), (f64::NAN, Pipe, None)]), &existing);
         assert_eq!(segs.len(), 1, "empty and invalid legs are skipped");
         match &segs[0].kind {
-            TcKind::Shallow { length, slope, surface, .. } => assert_eq!((*length, *slope, surface.as_str()), (80.0, 0.035, "Paved")),
+            TcKind::Shallow { length, slope, surface, .. } => {
+                assert_eq!((*length, *slope, surface.as_str()), (80.0, 0.035, "Paved"))
+            }
             k => panic!("unexpected {k:?}"),
         }
         // Pipes and channels are told apart by section.
         let pipe = segments_from_path(&legs(&[(50.0, Pipe, None)]), &[]);
         assert!(matches!(&pipe[0].kind, TcKind::Channel { section: Section::Pipe { .. }, .. }));
         assert_eq!(path_flow_of(&pipe[0].kind), Some(Pipe));
-        assert_eq!((point_label(0), point_label(25), point_label(26), point_label(27)), ("A".into(), "Z".into(), "AA".into(), "AB".into()));
+        assert_eq!(
+            (point_label(0), point_label(25), point_label(26), point_label(27)),
+            ("A".into(), "Z".into(), "AA".into(), "AB".into())
+        );
     }
 
     #[test]
     fn reference_four_segment_tc() {
         // 19.1 + 3.0 + 1.0 + 0.1 = 23.2 min, 831 ft.
         let segs = vec![
-            seg(TcKind::Sheet { length: 100.0, slope: 0.025, n: 0.40, p2: 3.40, surface: "Woods: Light underbrush".into() }),
+            seg(TcKind::Sheet {
+                length: 100.0,
+                slope: 0.025,
+                n: 0.40,
+                p2: 3.40,
+                surface: "Woods: Light underbrush".into(),
+            }),
             seg(TcKind::Shallow { length: 350.0, slope: 0.015, kv: 16.1345, surface: "Unpaved".into() }),
-            seg(TcKind::Channel { length: 321.0, slope: 0.0125, n: 0.025, section: Section::Parabolic { width: 4.0, depth: 1.5 } }),
+            seg(TcKind::Channel {
+                length: 321.0,
+                slope: 0.0125,
+                n: 0.025,
+                section: Section::Parabolic { width: 4.0, depth: 1.5 },
+            }),
             seg(TcKind::Channel { length: 60.0, slope: 0.01, n: 0.013, section: Section::circular(2.0) }),
         ];
         let mins: Vec<f64> = segs.iter().map(|s| s.kind.evaluate(60.0).minutes).collect();
@@ -575,7 +646,10 @@ mod tests {
 
     #[test]
     fn degenerate_segments_are_zero() {
-        assert_eq!(TcKind::Sheet { length: 100.0, slope: 0.0, n: 0.1, p2: 3.0, surface: String::new() }.evaluate(70.0).minutes, 0.0);
+        assert_eq!(
+            TcKind::Sheet { length: 100.0, slope: 0.0, n: 0.1, p2: 3.0, surface: String::new() }.evaluate(70.0).minutes,
+            0.0
+        );
         assert_eq!(TcKind::Lag { length: 100.0, slope: 0.01 }.evaluate(0.0).minutes, 0.0);
         assert_eq!(TcKind::Kirpich { length: 100.0, slope: -1.0, factor: 1.0 }.evaluate(70.0).minutes, 0.0);
     }
@@ -583,7 +657,8 @@ mod tests {
     #[test]
     fn mccuen_spiess_limits_length() {
         let full = TcKind::Sheet { length: 300.0, slope: 0.01, n: 0.4, p2: 3.0, surface: String::new() }.evaluate(70.0);
-        let ms = TcKind::SheetMcCuenSpiess { length: 300.0, slope: 0.01, n: 0.4, p2: 3.0, surface: String::new() }.evaluate(70.0);
+        let ms = TcKind::SheetMcCuenSpiess { length: 300.0, slope: 0.01, n: 0.4, p2: 3.0, surface: String::new() }
+            .evaluate(70.0);
         assert!(ms.minutes < full.minutes);
     }
 }

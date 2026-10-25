@@ -18,7 +18,12 @@ fn project_reports_replace_unless_multiple_allowed() {
     script(&mut app, "project-report");
     script(&mut app, "project-report");
     assert_eq!(project_reports(&mut app), 3);
-    let serials: Vec<u64> = app.doc().windows.iter().filter_map(|w| if let Window::ProjectReport(s) = w { Some(s.serial) } else { None }).collect();
+    let serials: Vec<u64> = app
+        .doc()
+        .windows
+        .iter()
+        .filter_map(|w| if let Window::ProjectReport(s) = w { Some(s.serial) } else { None })
+        .collect();
     assert_eq!(serials, vec![0, 1, 2]);
 }
 

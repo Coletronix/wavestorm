@@ -6,7 +6,9 @@ use wavestorm_ui::platform::{Incoming, Purpose};
 use wavestorm_ui::{WaveStormApp, script};
 
 fn harness() -> egui_kittest::Harness<'static, WaveStormApp> {
-    egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless())
+    egui_kittest::Harness::builder()
+        .with_size(vec2(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless())
 }
 
 #[test]
@@ -25,7 +27,12 @@ fn nothing_open_shows_the_start_page() {
         assert!(h.state_mut().docs.is_empty(), "{theme}: still nothing open");
         // Opening a project from the start page.
         let json = wavestorm_ui::samples::sample_project().to_json().unwrap().into_bytes();
-        h.state_mut().platform.push(Incoming { purpose: Purpose::OpenProject, name: "site.waves".into(), path: None, bytes: json });
+        h.state_mut().platform.push(Incoming {
+            purpose: Purpose::OpenProject,
+            name: "site.waves".into(),
+            path: None,
+            bytes: json,
+        });
         h.run_steps(3);
         assert_eq!(h.state_mut().docs.len(), 1, "{theme}: opened");
         script(h.state_mut(), "close");

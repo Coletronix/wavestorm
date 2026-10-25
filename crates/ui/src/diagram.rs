@@ -72,7 +72,10 @@ impl ShapeRef {
 pub enum PlaceMode {
     Move,
     /// Uniform resize about the opposite corner (world position).
-    Resize { anchor: Pos2, start_dist: f32 },
+    Resize {
+        anchor: Pos2,
+        start_dist: f32,
+    },
 }
 
 /// Transient interaction state (not saved).
@@ -86,15 +89,33 @@ pub struct Interaction {
 
 pub enum Drag {
     /// Moving the selection; `before` restores for undo.
-    Nodes { before: Project, last: Pos2, cloned: bool },
+    Nodes {
+        before: Project,
+        last: Pos2,
+        cloned: bool,
+    },
     /// Dragging the head of node `from`'s outflow `k`.
-    Reroute { from: NodeId, k: usize, at: Pos2 },
+    Reroute {
+        from: NodeId,
+        k: usize,
+        at: Pos2,
+    },
     Pan,
     /// Moving or resizing the background: the transform so far is `k` (scale about the anchor)
     /// or the last pointer position (move).
-    Underlay { mode: PlaceMode, last: Pos2, k: f32, before: Project },
+    Underlay {
+        mode: PlaceMode,
+        last: Pos2,
+        k: f32,
+        before: Project,
+    },
     /// Dragging point `index` of a drawn shape of subcatchment `node`.
-    Vertex { node: NodeId, shape: ShapeRef, index: usize, before: Project },
+    Vertex {
+        node: NodeId,
+        shape: ShapeRef,
+        index: usize,
+        before: Project,
+    },
 }
 
 /// Requests from the canvas to the app.
@@ -198,7 +219,13 @@ pub fn polyline_length(pts: &[Pos2]) -> f32 {
 }
 
 /// Draws and handles the diagram. `palette_drop` is a node type being dragged from the palette.
-pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, palette_drop: &mut Option<NodeType>) -> Vec<CanvasAction> {
+pub fn show(
+    ui: &mut Ui,
+    doc: &mut Doc,
+    tool: &mut Tool,
+    it: &mut Interaction,
+    palette_drop: &mut Option<NodeType>,
+) -> Vec<CanvasAction> {
     let t = Tokens::get(ui.ctx());
     let mut actions = Vec::new();
     let (canvas, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
@@ -245,7 +272,10 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
             && let Some(ps) = &e.tc_path
         {
             let (points, legs) = ps.resolved();
-            let labels = wavestorm_core::tc::path_labels(points.len(), &wavestorm_core::tc::path_breaks(&wavestorm_core::tc::path_runs(&legs)));
+            let labels = wavestorm_core::tc::path_labels(
+                points.len(),
+                &wavestorm_core::tc::path_breaks(&wavestorm_core::tc::path_runs(&legs)),
+            );
             let flows: Vec<_> = legs.iter().map(|l| Some(l.flow)).collect();
             let pts: Vec<Pos2> = points.iter().map(|q| wp(*q)).collect();
             draw_tc_path(&painter, doc, canvas, &pts, None, &labels, &flows, &t);
@@ -296,10 +326,17 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
                 {
                     points.push(w);
                 }
-                let finish = (calibrate && points.len() >= need) || (!calibrate && (resp.double_clicked() || ui.input(|i| i.key_pressed(Key::Enter))) && points.len() >= 2);
+                let finish = (calibrate && points.len() >= need)
+                    || (!calibrate
+                        && (resp.double_clicked() || ui.input(|i| i.key_pressed(Key::Enter)))
+                        && points.len() >= 2);
                 draw_polyline(&painter, doc, canvas, points, world_ptr, false, Color32::from_rgb(220, 30, 30));
                 if finish {
-                    finished = Some(if calibrate { CanvasAction::Calibrated(points[0], points[1]) } else { CanvasAction::Measured(points.clone()) });
+                    finished = Some(if calibrate {
+                        CanvasAction::Calibrated(points[0], points[1])
+                    } else {
+                        CanvasAction::Measured(points.clone())
+                    });
                 }
             }
             if let Some(a) = finished {
@@ -312,7 +349,10 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
                 && let Some(w) = world_ptr
             {
                 // The second click of a double-click lands on the last point; don't repeat it.
-                if points.last().is_none_or(|l| (to_screen(&doc.view, canvas, *l) - to_screen(&doc.view, canvas, w)).length() > 3.0) {
+                if points
+                    .last()
+                    .is_none_or(|l| (to_screen(&doc.view, canvas, *l) - to_screen(&doc.view, canvas, w)).length() > 3.0)
+                {
                     points.push(w);
                 }
             }
@@ -321,7 +361,8 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
             }
             let finish = (resp.double_clicked() || ui.input(|i| i.key_pressed(Key::Enter))) && points.len() >= 2;
             // While drawing, every clicked point is lettered.
-            let labels: Vec<Option<String>> = (0..points.len()).map(|i| Some(wavestorm_core::tc::point_label(i))).collect();
+            let labels: Vec<Option<String>> =
+                (0..points.len()).map(|i| Some(wavestorm_core::tc::point_label(i))).collect();
             draw_tc_path(&painter, doc, canvas, points, if finish { None } else { world_ptr }, &labels, &[], &t);
             if finish {
                 actions.push(CanvasAction::TcPath(*node, points.clone()));
@@ -346,14 +387,17 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
                 *tool = Tool::Select;
             } else {
                 // Points stay inside the outline and snap to nearby corners and edges.
-                let cursor = world_ptr.map(|w| wp(drawing::clamp_inside(pt(snap_to_drawings(doc, canvas, w, Some(id), None)), &outline)));
+                let cursor = world_ptr
+                    .map(|w| wp(drawing::clamp_inside(pt(snap_to_drawings(doc, canvas, w, Some(id), None)), &outline)));
                 let mut close = closing(ui, doc, canvas, &resp, points, cursor);
                 if close {
                     let shape: Vec<Pt> = points.iter().map(|q| pt(*q)).collect();
                     let others = subarea_outlines(doc, id, None);
                     let others: Vec<&[Pt]> = others.iter().map(Vec::as_slice).collect();
                     if let Some(problem) = drawing::subarea_problem(&shape, &outline, &others) {
-                        actions.push(CanvasAction::Message(format!("{problem} Adjust the points (Backspace removes the last) or press Esc.")));
+                        actions.push(CanvasAction::Message(format!(
+                            "{problem} Adjust the points (Backspace removes the last) or press Esc."
+                        )));
                         close = false;
                     }
                 }
@@ -361,7 +405,15 @@ pub fn show(ui: &mut Ui, doc: &mut Doc, tool: &mut Tool, it: &mut Interaction, p
                     Some(NodeData::Subcat(sc)) => sc.areas.len(),
                     _ => 0,
                 };
-                draw_polyline(&painter, doc, canvas, points, if close { None } else { cursor }, true, subarea_color(next, &t));
+                draw_polyline(
+                    &painter,
+                    doc,
+                    canvas,
+                    points,
+                    if close { None } else { cursor },
+                    true,
+                    subarea_color(next, &t),
+                );
                 if close {
                     actions.push(CanvasAction::SubArea(id, points.clone()));
                     *tool = Tool::Select;
@@ -389,13 +441,17 @@ fn pt(p: Pos2) -> Pt {
 fn closing(ui: &Ui, doc: &Doc, canvas: Rect, resp: &Response, points: &mut Vec<Pos2>, cursor: Option<Pos2>) -> bool {
     let mut close = false;
     if let Some(w) = cursor {
-        let near_first = points.len() >= 3 && (to_screen(&doc.view, canvas, points[0]) - to_screen(&doc.view, canvas, w)).length() < 8.0;
+        let near_first = points.len() >= 3
+            && (to_screen(&doc.view, canvas, points[0]) - to_screen(&doc.view, canvas, w)).length() < 8.0;
         if resp.double_clicked() && points.len() >= 3 {
             close = true;
         } else if resp.clicked() {
             if near_first {
                 close = true;
-            } else if points.last().is_none_or(|l| (to_screen(&doc.view, canvas, *l) - to_screen(&doc.view, canvas, w)).length() > 3.0) {
+            } else if points
+                .last()
+                .is_none_or(|l| (to_screen(&doc.view, canvas, *l) - to_screen(&doc.view, canvas, w)).length() > 3.0)
+            {
                 points.push(w);
             }
         }
@@ -427,7 +483,13 @@ pub fn subarea_color(i: usize, t: &Tokens) -> Color32 {
 /// The drawn sub-area outlines of subcatchment `id`, except row `skip`.
 fn subarea_outlines(doc: &Doc, id: NodeId, skip: Option<usize>) -> Vec<Vec<Pt>> {
     match doc.project.node(id).map(|n| &n.data) {
-        Some(NodeData::Subcat(sc)) => sc.areas.iter().enumerate().filter(|(i, _)| Some(*i) != skip).filter_map(|(_, a)| a.outline.clone()).collect(),
+        Some(NodeData::Subcat(sc)) => sc
+            .areas
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| Some(*i) != skip)
+            .filter_map(|(_, a)| a.outline.clone())
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -473,7 +535,13 @@ fn shapes_of(n: &wavestorm_core::project::Node) -> Vec<ShapeRef> {
 /// Snaps `w` to a corner of a drawn outline or sub-area within 8 px (any subcatchment's, so
 /// neighbours can share corners), else to an edge of `node`'s own drawings within 6 px. `skip`
 /// leaves out the point being dragged.
-fn snap_to_drawings(doc: &Doc, canvas: Rect, w: Pos2, node: Option<NodeId>, skip: Option<(NodeId, ShapeRef, usize)>) -> Pos2 {
+fn snap_to_drawings(
+    doc: &Doc,
+    canvas: Rect,
+    w: Pos2,
+    node: Option<NodeId>,
+    skip: Option<(NodeId, ShapeRef, usize)>,
+) -> Pos2 {
     let s = to_screen(&doc.view, canvas, w);
     let near = |q: Pos2| (to_screen(&doc.view, canvas, q) - s).length();
     let mut best: Option<(f32, Pos2)> = None;
@@ -520,7 +588,16 @@ fn underlay_rect(doc: &Doc) -> Option<Rect> {
 /// resize (keeping its proportions, about the opposite corner). Every drawing moves and scales
 /// with it so it stays registered, and the calibration is kept (real sizes do not change).
 #[allow(clippy::too_many_arguments)]
-fn place_underlay(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &mut Interaction, painter: &egui::Painter, t: &Tokens, actions: &mut Vec<CanvasAction>) {
+fn place_underlay(
+    ui: &mut Ui,
+    doc: &mut Doc,
+    canvas: Rect,
+    resp: &Response,
+    it: &mut Interaction,
+    painter: &egui::Painter,
+    t: &Tokens,
+    actions: &mut Vec<CanvasAction>,
+) {
     let Some(rect) = underlay_rect(doc) else { return };
     if doc.project.diagram.underlay.as_ref().is_some_and(|u| u.locked) {
         actions.push(CanvasAction::Message("The background is locked (Background Settings).".into()));
@@ -559,7 +636,12 @@ fn place_underlay(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it:
             None => None,
         };
         if let Some(mode) = mode {
-            it.drag = Some(Drag::Underlay { mode, last: to_world(&doc.view, canvas, p0), k: 1.0, before: doc.project.clone() });
+            it.drag = Some(Drag::Underlay {
+                mode,
+                last: to_world(&doc.view, canvas, p0),
+                k: 1.0,
+                before: doc.project.clone(),
+            });
         }
     }
     if let (Some(Drag::Underlay { mode, last, k, .. }), Some(p)) = (&mut it.drag, pointer) {
@@ -715,7 +797,8 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
                     None => continue,
                 };
                 // Skip the search for shapes too small (or too far off screen) to label.
-                let r = Rect::from_points(&region.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect::<Vec<_>>());
+                let r =
+                    Rect::from_points(&region.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect::<Vec<_>>());
                 if r.width().min(r.height()) < 16.0 || !canvas.intersects(r) {
                     continue;
                 }
@@ -732,8 +815,20 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
                     continue;
                 }
                 let at = to_screen(&doc.view, canvas, wp(at));
-                p.text(at + vec2(0.8, 0.8), Align2::CENTER_CENTER, &label, font.clone(), if t.is_dark() { Color32::BLACK } else { Color32::WHITE });
-                p.text(at, Align2::CENTER_CENTER, label, font, if t.is_dark() { Color32::WHITE } else { icons::ink(t, Color32::from_rgb(20, 20, 20)) });
+                p.text(
+                    at + vec2(0.8, 0.8),
+                    Align2::CENTER_CENTER,
+                    &label,
+                    font.clone(),
+                    if t.is_dark() { Color32::BLACK } else { Color32::WHITE },
+                );
+                p.text(
+                    at,
+                    Align2::CENTER_CENTER,
+                    label,
+                    font,
+                    if t.is_dark() { Color32::WHITE } else { icons::ink(t, Color32::from_rgb(20, 20, 20)) },
+                );
             }
         }
         p.add(Shape::closed_line(pts, Stroke::new(if sel { 2.5 } else { 1.5 }, t.subcat.1)));
@@ -752,9 +847,19 @@ fn arrow_head(p: &egui::Painter, tip: Pos2, dir: Vec2, size: f32, stroke: Stroke
         return;
     }
     let drop = vec2(1.0, 2.5);
-    p.add(Shape::convex_polygon(vec![tip + drop, l + drop, r + drop], crate::glass::alpha(Color32::BLACK, 0.5), Stroke::NONE));
+    p.add(Shape::convex_polygon(
+        vec![tip + drop, l + drop, r + drop],
+        crate::glass::alpha(Color32::BLACK, 0.5),
+        Stroke::NONE,
+    ));
     let light = vec2(-0.6, -0.8);
-    let lit = |s: Vec2| if s.dot(light) > 0.0 { crate::widgets::lerp_color(stroke.color, Color32::WHITE, 0.45) } else { crate::widgets::lerp_color(stroke.color, Color32::BLACK, 0.35) };
+    let lit = |s: Vec2| {
+        if s.dot(light) > 0.0 {
+            crate::widgets::lerp_color(stroke.color, Color32::WHITE, 0.45)
+        } else {
+            crate::widgets::lerp_color(stroke.color, Color32::BLACK, 0.35)
+        }
+    };
     // The ridge runs from the tip back along the axis, slightly raised toward the light.
     let ridge = back + dir * size * 0.2;
     let mut mesh = egui::Mesh::default();
@@ -774,7 +879,10 @@ fn arrow_head(p: &egui::Painter, tip: Pos2, dir: Vec2, size: f32, stroke: Stroke
     mesh.colored_vertex(ridge, crate::widgets::lerp_color(stroke.color, Color32::BLACK, 0.2));
     mesh.add_triangle(i, i + 1, i + 2);
     p.add(Shape::mesh(mesh));
-    p.add(Shape::closed_line(vec![tip, l, r], Stroke::new(0.8, crate::widgets::lerp_color(stroke.color, Color32::WHITE, 0.3))));
+    p.add(Shape::closed_line(
+        vec![tip, l, r],
+        Stroke::new(0.8, crate::widgets::lerp_color(stroke.color, Color32::WHITE, 0.3)),
+    ));
 }
 
 /// A routing line: plain, or in the glass theme a lit glass tube — a soft glow, a cast
@@ -797,7 +905,13 @@ fn route_line(p: &egui::Painter, a: Pos2, b: Pos2, s: Stroke, dashed: bool, t: &
     line(p, a, b, Stroke::new(w + 1.6, crate::widgets::lerp_color(s.color, Color32::BLACK, 0.55)), dashed);
     line(p, a, b, s, dashed);
     let hl = up * w * 0.28;
-    line(p, a + hl, b + hl, Stroke::new((w * 0.38).max(0.7), crate::widgets::lerp_color(s.color, Color32::WHITE, 0.75)), dashed);
+    line(
+        p,
+        a + hl,
+        b + hl,
+        Stroke::new((w * 0.38).max(0.7), crate::widgets::lerp_color(s.color, Color32::WHITE, 0.75)),
+        dashed,
+    );
 }
 
 /// Where a routing line stops so the glass tube ends inside its arrowhead.
@@ -936,16 +1050,32 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
         match &n.data {
             NodeData::Text(tx) => {
                 let size = tx.size * doc.view.zoom;
-                let galley = p.layout(tx.text.clone(), FontId::proportional(size.max(4.0)), t.label_text, f32::INFINITY);
+                let galley =
+                    p.layout(tx.text.clone(), FontId::proportional(size.max(4.0)), t.label_text, f32::INFINITY);
                 let r = Rect::from_center_size(c, galley.size() + vec2(8.0, 6.0));
                 if t.glass {
                     // A glass plaque (when bordered) and lettering with a cast shadow.
                     if tx.border || sel {
-                        crate::glass::surface(p, r, 6.0, if sel { crate::glass::Surface::Selected } else { crate::glass::Surface::Key }, t);
+                        crate::glass::surface(
+                            p,
+                            r,
+                            6.0,
+                            if sel { crate::glass::Surface::Selected } else { crate::glass::Surface::Key },
+                            t,
+                        );
                     }
-                    p.galley_with_override_text_color(r.min + vec2(4.8, 4.4), galley.clone(), crate::glass::alpha(Color32::BLACK, 0.75));
+                    p.galley_with_override_text_color(
+                        r.min + vec2(4.8, 4.4),
+                        galley.clone(),
+                        crate::glass::alpha(Color32::BLACK, 0.75),
+                    );
                 } else if tx.border || sel {
-                    p.rect_stroke(r, 0.0, Stroke::new(if sel { 2.0 } else { 1.0 }, if sel { t.select } else { t.shadow }), egui::StrokeKind::Inside);
+                    p.rect_stroke(
+                        r,
+                        0.0,
+                        Stroke::new(if sel { 2.0 } else { 1.0 }, if sel { t.select } else { t.shadow }),
+                        egui::StrokeKind::Inside,
+                    );
                 }
                 p.galley(r.min + vec2(4.0, 3.0), galley, t.label_text);
             }
@@ -953,14 +1083,26 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
                 let external = matches!(data, NodeData::Link(l) if !matches!(l.source, wavestorm_core::link::LinkSource::Inflows)
                     || !matches!(l.elevation, wavestorm_core::link::LinkElevation::None));
                 let problem = doc.results.nodes.get(&n.id).is_some_and(|r| r.undefined.is_some())
-                    || doc.results.messages.iter().any(|m| m.node == Some(n.id) && m.severity >= wavestorm_core::calc::Severity::Error);
+                    || doc
+                        .results
+                        .messages
+                        .iter()
+                        .any(|m| m.node == Some(n.id) && m.severity >= wavestorm_core::calc::Severity::Error);
                 icons::draw_node_ex(p, n.node_type(), c, d, &n.label(), sel, external, problem, t);
                 if !n.name.is_empty() {
                     let galley = p.layout(n.name.clone(), FontId::proportional(font * 0.85), t.label_text, d * 3.2);
-                    let top = c.y + d * 0.5 + 3.0 + if external { d * 0.24 } else { 0.0 } + if t.glass { d * 0.09 } else { 0.0 };
+                    let top = c.y
+                        + d * 0.5
+                        + 3.0
+                        + if external { d * 0.24 } else { 0.0 }
+                        + if t.glass { d * 0.09 } else { 0.0 };
                     let at = pos2(c.x - galley.size().x / 2.0, top);
                     if t.glass {
-                        p.galley_with_override_text_color(at + vec2(0.7, 1.2), galley.clone(), crate::glass::alpha(Color32::BLACK, 0.8));
+                        p.galley_with_override_text_color(
+                            at + vec2(0.7, 1.2),
+                            galley.clone(),
+                            crate::glass::alpha(Color32::BLACK, 0.8),
+                        );
                     }
                     p.galley(at, galley, t.label_text);
                 }
@@ -1000,7 +1142,16 @@ pub fn flow_color(f: wavestorm_core::tc::PathFlow, t: &Tokens) -> Color32 {
 /// `labels[i]` is point `i`'s letter (None: a point inside a segment, drawn smaller and
 /// unlettered); `flows[i]` colours leg `i` by its flow type (None: the neutral hint colour).
 #[allow(clippy::too_many_arguments)]
-fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor: Option<Pos2>, labels: &[Option<String>], flows: &[Option<wavestorm_core::tc::PathFlow>], t: &Tokens) {
+fn draw_tc_path(
+    p: &egui::Painter,
+    doc: &Doc,
+    canvas: Rect,
+    pts: &[Pos2],
+    cursor: Option<Pos2>,
+    labels: &[Option<String>],
+    flows: &[Option<wavestorm_core::tc::PathFlow>],
+    t: &Tokens,
+) {
     let mut s: Vec<Pos2> = pts.iter().map(|q| to_screen(&doc.view, canvas, *q)).collect();
     if let Some(c) = cursor {
         s.push(to_screen(&doc.view, canvas, c));
@@ -1010,7 +1161,12 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
     let stroke = Stroke::new(2.0, color);
     for (i, w) in s.windows(2).enumerate() {
         if t.glass {
-            p.extend(Shape::dashed_line(&[w[0] + vec2(0.8, 2.0), w[1] + vec2(0.8, 2.0)], Stroke::new(2.5, crate::glass::alpha(Color32::BLACK, 0.5)), 8.0, 5.0));
+            p.extend(Shape::dashed_line(
+                &[w[0] + vec2(0.8, 2.0), w[1] + vec2(0.8, 2.0)],
+                Stroke::new(2.5, crate::glass::alpha(Color32::BLACK, 0.5)),
+                8.0,
+                5.0,
+            ));
         }
         let typed = flows.get(i).copied().flatten().is_some();
         p.extend(Shape::dashed_line(&[w[0], w[1]], Stroke::new(if typed { 2.6 } else { 2.0 }, leg_color(i)), 8.0, 5.0));
@@ -1025,7 +1181,13 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
         p.circle_stroke(*q, 3.5, stroke);
         let at = *q + vec2(6.0, -6.0);
         let font = FontId::proportional(12.5);
-        p.text(at + vec2(1.0, 1.0), Align2::LEFT_BOTTOM, label, font.clone(), if t.is_dark() { Color32::BLACK } else { Color32::WHITE });
+        p.text(
+            at + vec2(1.0, 1.0),
+            Align2::LEFT_BOTTOM,
+            label,
+            font.clone(),
+            if t.is_dark() { Color32::BLACK } else { Color32::WHITE },
+        );
         p.text(at, Align2::LEFT_BOTTOM, label, font, color);
     }
     if let [.., a, b] = s.as_slice()
@@ -1035,7 +1197,15 @@ fn draw_tc_path(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor
     }
 }
 
-fn draw_polyline(p: &egui::Painter, doc: &Doc, canvas: Rect, pts: &[Pos2], cursor: Option<Pos2>, closed_preview: bool, color: Color32) {
+fn draw_polyline(
+    p: &egui::Painter,
+    doc: &Doc,
+    canvas: Rect,
+    pts: &[Pos2],
+    cursor: Option<Pos2>,
+    closed_preview: bool,
+    color: Color32,
+) {
     let mut s: Vec<Pos2> = pts.iter().map(|q| to_screen(&doc.view, canvas, *q)).collect();
     if let Some(c) = cursor {
         s.push(to_screen(&doc.view, canvas, c));
@@ -1097,7 +1267,9 @@ fn shape_handle_at(doc: &Doc, canvas: Rect, p: Pos2) -> Option<Handle> {
         }
     }
     for s in &shapes {
-        if let Some(i) = shape_points(n, *s).and_then(|pts| midpoints(pts, s.closed()).iter().position(|q| near(*q, 6.0))) {
+        if let Some(i) =
+            shape_points(n, *s).and_then(|pts| midpoints(pts, s.closed()).iter().position(|q| near(*q, 6.0)))
+        {
             return Some(Handle::Mid(n.id, *s, i));
         }
     }
@@ -1153,7 +1325,11 @@ fn finish_shape_edit(doc: &mut Doc, node: NodeId, shape: ShapeRef, before: Proje
         return;
     }
     let fpu = drawing::feet_per_unit(&doc.project);
-    let old = before.node(node).and_then(|b| b.outline.as_deref()).map(|o| drawing::polygon_area(o) * fpu * fpu).unwrap_or(0.0);
+    let old = before
+        .node(node)
+        .and_then(|b| b.outline.as_deref())
+        .map(|o| drawing::polygon_area(o) * fpu * fpu)
+        .unwrap_or(0.0);
     if let Some(n) = doc.project.node_mut(node) {
         let outline = n.outline.clone();
         if let (ShapeRef::Outline, Some(o), NodeData::Subcat(sc)) = (shape, &outline, &mut n.data) {
@@ -1165,13 +1341,22 @@ fn finish_shape_edit(doc: &mut Doc, node: NodeId, shape: ShapeRef, before: Proje
     actions.push(CanvasAction::ShapeEdited(node));
 }
 
-fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &mut Interaction, actions: &mut Vec<CanvasAction>) {
+fn select_tool(
+    ui: &mut Ui,
+    doc: &mut Doc,
+    canvas: Rect,
+    resp: &Response,
+    it: &mut Interaction,
+    actions: &mut Vec<CanvasAction>,
+) {
     let d = doc.project.diagram.symbol_size as f32;
     let (pointer, mods) = ui.input(|i| (i.pointer.interact_pos(), i.modifiers));
     let world = pointer.map(|p| to_world(&doc.view, canvas, p));
 
     // Drag start.
-    if resp.drag_started_by(egui::PointerButton::Middle) || (resp.drag_started_by(egui::PointerButton::Primary) && ui.input(|i| i.key_down(Key::Space))) {
+    if resp.drag_started_by(egui::PointerButton::Middle)
+        || (resp.drag_started_by(egui::PointerButton::Primary) && ui.input(|i| i.key_down(Key::Space)))
+    {
         it.drag = Some(Drag::Pan);
     } else if resp.drag_started_by(egui::PointerButton::Primary)
         && let (Some(p), Some(_w)) = (resp.interact_pointer_pos(), world)
@@ -1295,7 +1480,13 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
         let r = Rect::from_two_pos(a, b2);
         let t = Tokens::get(ui.ctx());
         let edge = if t.is_dark() { t.hint } else { Color32::from_rgb(10, 36, 106) };
-        ui.painter().rect(r, if t.glass { 4.0 } else { 0.0 }, Color32::from_rgba_unmultiplied(edge.r(), edge.g(), edge.b(), 24), Stroke::new(1.0, edge), egui::StrokeKind::Inside);
+        ui.painter().rect(
+            r,
+            if t.glass { 4.0 } else { 0.0 },
+            Color32::from_rgba_unmultiplied(edge.r(), edge.g(), edge.b(), 24),
+            Stroke::new(1.0, edge),
+            egui::StrokeKind::Inside,
+        );
     }
 
     // Drag end.
@@ -1418,7 +1609,11 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
         }
         actions.push(CanvasAction::ContextNode(id));
     }
-    if resp.hovered() && ui.input(|i| i.key_pressed(Key::Delete)) && !doc.selection.is_empty() && !ui.ctx().egui_wants_keyboard_input() {
+    if resp.hovered()
+        && ui.input(|i| i.key_pressed(Key::Delete))
+        && !doc.selection.is_empty()
+        && !ui.ctx().egui_wants_keyboard_input()
+    {
         actions.push(CanvasAction::Delete);
     }
     if let Some(id) = it.hover_node
@@ -1432,7 +1627,8 @@ fn select_tool(ui: &mut Ui, doc: &mut Doc, canvas: Rect, resp: &Response, it: &m
 pub fn scrollbars(ui: &mut Ui, doc: &mut Doc, canvas: Rect, vbar: Rect, hbar: Rect) {
     let t = Tokens::get(ui.ctx());
     let d = doc.project.diagram.symbol_size as f32;
-    let view_world = Rect::from_min_max(to_world(&doc.view, canvas, canvas.min), to_world(&doc.view, canvas, canvas.max));
+    let view_world =
+        Rect::from_min_max(to_world(&doc.view, canvas, canvas.min), to_world(&doc.view, canvas, canvas.max));
     let mut content = view_world;
     for n in &doc.project.nodes {
         content = content.union(Rect::from_center_size(wp(n.pos), vec2(d * 6.0, d * 6.0)));
@@ -1482,7 +1678,11 @@ pub fn scrollbars(ui: &mut Ui, doc: &mut Doc, canvas: Rect, vbar: Rect, hbar: Re
             crate::widgets::bevel(p, r, !resp.is_pointer_button_down_on(), &t);
             let c = r.center();
             let tri = if vertical {
-                if dir < 0.0 { vec![c + vec2(-4.0, 2.0), c + vec2(4.0, 2.0), c + vec2(0.0, -2.0)] } else { vec![c + vec2(-4.0, -2.0), c + vec2(4.0, -2.0), c + vec2(0.0, 2.0)] }
+                if dir < 0.0 {
+                    vec![c + vec2(-4.0, 2.0), c + vec2(4.0, 2.0), c + vec2(0.0, -2.0)]
+                } else {
+                    vec![c + vec2(-4.0, -2.0), c + vec2(4.0, -2.0), c + vec2(0.0, 2.0)]
+                }
             } else if dir < 0.0 {
                 vec![c + vec2(2.0, -4.0), c + vec2(2.0, 4.0), c + vec2(-2.0, 0.0)]
             } else {
@@ -1540,7 +1740,13 @@ fn overlay_scrollbars(ui: &mut Ui, doc: &mut Doc, vbar: Rect, hbar: Rect, conten
         let resp = ui.interact(thumb.expand(3.0), ui.id().with(("glass-thumb", vertical)), Sense::drag());
         let hot = resp.hovered() || resp.dragged();
         let t = Tokens::get(ui.ctx());
-        crate::glass::surface(ui.painter(), thumb, 4.0, if hot { crate::glass::Surface::Hover } else { crate::glass::Surface::Key }, &t);
+        crate::glass::surface(
+            ui.painter(),
+            thumb,
+            4.0,
+            if hot { crate::glass::Surface::Hover } else { crate::glass::Surface::Key },
+            &t,
+        );
         if resp.dragged() {
             let delta = if vertical { resp.drag_delta().y } else { resp.drag_delta().x };
             let screen = delta / len * span * doc.view.zoom;

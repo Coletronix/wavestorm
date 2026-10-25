@@ -70,7 +70,11 @@ impl OpeningShape {
                 }
             }
             OpeningShape::Rectangular { width, height } => {
-                if z <= 0.0 || z >= *height { 0.0 } else { *width }
+                if z <= 0.0 || z >= *height {
+                    0.0
+                } else {
+                    *width
+                }
             }
         }
     }
@@ -129,16 +133,45 @@ pub enum DeviceKind {
         /// Overall grate dimensions (width, length) for perimeter control of horizontal grates.
         grate: Option<(f64, f64)>,
     },
-    SharpCrestedWeir { length: f64, end_contractions: u8, crest_height: f64, rise: Option<f64> },
-    BroadCrestedWeir { length: f64, breadth: f64, side_z: f64, rise: Option<f64> },
-    VeeTrapWeir { notch_angle: f64, crest_length: f64, cv: f64, rise: Option<f64> },
+    SharpCrestedWeir {
+        length: f64,
+        end_contractions: u8,
+        crest_height: f64,
+        rise: Option<f64>,
+    },
+    BroadCrestedWeir {
+        length: f64,
+        breadth: f64,
+        side_z: f64,
+        rise: Option<f64>,
+    },
+    VeeTrapWeir {
+        notch_angle: f64,
+        crest_length: f64,
+        cv: f64,
+        rise: Option<f64>,
+    },
     /// Arbitrary crest profile: (offset, elevation) points; weir flow over the profile.
-    CustomWeir { points: Vec<(f64, f64)>, coefficient: f64 },
-    Exfiltration { mode: ExfilMode, phase_in: f64, max_elevation: Option<f64> },
+    CustomWeir {
+        points: Vec<(f64, f64)>,
+        coefficient: f64,
+    },
+    Exfiltration {
+        mode: ExfilMode,
+        phase_in: f64,
+        max_elevation: Option<f64>,
+    },
     /// User rating table; `head_based` means the first column is head above the invert.
-    Special { table: Vec<(f64, f64)>, head_based: bool, extrapolate: bool },
+    Special {
+        table: Vec<(f64, f64)>,
+        head_based: bool,
+        extrapolate: bool,
+    },
     /// A float-controlled skimmer or flow regulator: constant flow once fully submerged.
-    ConstantFlow { flow: f64, phase_in: f64 },
+    ConstantFlow {
+        flow: f64,
+        phase_in: f64,
+    },
     /// Pump with a rating curve of flow (cfs) against total head (ft) and on/off elevations.
     /// It also stops above `max_elevation`. Pumps sharing a non-zero `priority_group` run one
     /// at a time: the one with the highest satisfied "on" elevation.
@@ -163,10 +196,25 @@ pub enum DeviceKind {
     },
     /// Tube, siphon or float valve: full-pipe flow once primed at `prime_elevation`, until the
     /// water falls to `break_elevation`. The device invert is the intake.
-    Siphon { diameter: f64, length: f64, n: f64, ke: f64, outlet_elevation: f64, prime_elevation: f64, break_elevation: f64 },
+    Siphon {
+        diameter: f64,
+        length: f64,
+        n: f64,
+        ke: f64,
+        outlet_elevation: f64,
+        prime_elevation: f64,
+        break_elevation: f64,
+    },
     /// Progressive dam breach: starts at a time or water level, then the breach bottom drops from
     /// the crest (device invert) to `final_bottom` and widens to `final_width` over `formation`.
-    DamBreach { start_time: Option<f64>, start_elevation: Option<f64>, formation: f64, final_bottom: f64, final_width: f64, side_z: f64 },
+    DamBreach {
+        start_time: Option<f64>,
+        start_elevation: Option<f64>,
+        formation: f64,
+        final_bottom: f64,
+        final_width: f64,
+        side_z: f64,
+    },
     /// Automated gate (rectangular vertical opening at the invert) that starts opening `delay`
     /// hours after the water first reaches `trigger_elevation` and is fully open after `opening`.
     /// With `step` > 0 (hours) it opens in increments, once per step, instead of continuously.
@@ -188,7 +236,11 @@ pub enum DeviceKind {
         rotary: bool,
     },
     /// The pond discharges straight into a channel: normal-depth flow at depth HW − invert.
-    Channel { section: crate::geometry::Section, n: f64, slope: f64 },
+    Channel {
+        section: crate::geometry::Section,
+        n: f64,
+        slope: f64,
+    },
 }
 
 impl DeviceKind {
@@ -215,7 +267,13 @@ impl DeviceKind {
 
     /// Whether the device's output depends on its history (pumps cycle on and off).
     pub fn has_state(&self) -> bool {
-        matches!(self, DeviceKind::Pump { .. } | DeviceKind::Siphon { .. } | DeviceKind::DamBreach { .. } | DeviceKind::DelayedGate { .. })
+        matches!(
+            self,
+            DeviceKind::Pump { .. }
+                | DeviceKind::Siphon { .. }
+                | DeviceKind::DamBreach { .. }
+                | DeviceKind::DelayedGate { .. }
+        )
     }
 }
 
@@ -329,7 +387,9 @@ pub fn update_states(devices: &[OutletDevice], hw: f64, t: f64, states: &mut [De
     // Priority groups: of the running pumps in a group, keep only the one with the highest
     // "on" elevation.
     let pump = |d: &OutletDevice| match &d.kind {
-        DeviceKind::Pump { on_elevation, priority_group, .. } if *priority_group > 0 => Some((*priority_group, *on_elevation)),
+        DeviceKind::Pump { on_elevation, priority_group, .. } if *priority_group > 0 => {
+            Some((*priority_group, *on_elevation))
+        }
         _ => None,
     };
     let mut leader: Vec<(u32, usize, f64)> = Vec::new();
@@ -659,11 +719,33 @@ impl OutletDevice {
         let head = c.hw - self.invert;
         let tail_head = c.tw.map(|t| t - self.invert).unwrap_or(0.0);
         match &self.kind {
-            DeviceKind::Culvert { shape, width, height, length, outlet_invert, n, ke, cc, fill, .. } => {
-                culvert_flow(*shape, *width, *height, *fill, *length, self.invert, *outlet_invert, *n, *ke, *cc, c.hw, c.tw)
-            }
+            DeviceKind::Culvert { shape, width, height, length, outlet_invert, n, ke, cc, fill, .. } => culvert_flow(
+                *shape,
+                *width,
+                *height,
+                *fill,
+                *length,
+                self.invert,
+                *outlet_invert,
+                *n,
+                *ke,
+                *cc,
+                c.hw,
+                c.tw,
+            ),
             DeviceKind::Orifice { shape, plane, cd, columns, rows, row_spacing, weir_at_low_head, grate } => {
-                orifice_flow(shape, *plane, *cd, *columns, *rows, *row_spacing, *weir_at_low_head, *grate, head, tail_head)
+                orifice_flow(
+                    shape,
+                    *plane,
+                    *cd,
+                    *columns,
+                    *rows,
+                    *row_spacing,
+                    *weir_at_low_head,
+                    *grate,
+                    head,
+                    tail_head,
+                )
             }
             DeviceKind::SharpCrestedWeir { length, end_contractions, crest_height, rise } => {
                 if head <= 0.0 {
@@ -696,7 +778,9 @@ impl OutletDevice {
                 let q = custom_weir(points, *coefficient, c.hw) * submergence(head.max(0.0), tail_head, 1.5);
                 DeviceFlow { flow: q, control: if q > 0.0 { Control::Weir } else { Control::None }, velocity: 0.0 }
             }
-            DeviceKind::Exfiltration { mode, phase_in, max_elevation } => exfiltration(*mode, *phase_in, *max_elevation, self.invert, c),
+            DeviceKind::Exfiltration { mode, phase_in, max_elevation } => {
+                exfiltration(*mode, *phase_in, *max_elevation, self.invert, c)
+            }
             DeviceKind::Special { table, head_based, extrapolate } => {
                 let x = if *head_based { head } else { c.hw };
                 let q = if head <= 0.0 && *head_based { 0.0 } else { table_lookup(table, x, *extrapolate) };
@@ -734,7 +818,8 @@ impl OutletDevice {
                     return DeviceFlow::ZERO;
                 }
                 // Broad-crested trapezoidal breach (USBR): Q = 3.1 b H^1.5 + 2.45 z H^2.5.
-                let q = (3.1 * width * h.powf(1.5) + 2.45 * side_z.max(0.0) * h.powf(2.5) * f) * submergence(h, c.tw.map(|t| t - bottom).unwrap_or(0.0), 1.5);
+                let q = (3.1 * width * h.powf(1.5) + 2.45 * side_z.max(0.0) * h.powf(2.5) * f)
+                    * submergence(h, c.tw.map(|t| t - bottom).unwrap_or(0.0), 1.5);
                 weir_result(q, h, width + side_z * h)
             }
             DeviceKind::DelayedGate { delay, opening, width, height, cd, step, vertical_range, rotary, .. } => {
@@ -745,7 +830,11 @@ impl OutletDevice {
                         let elapsed = c.time - start - delay;
                         if *opening > 0.0 {
                             // Stepped opening: the gate moves at the start of each step.
-                            let e = if *step > 0.0 && elapsed >= 0.0 { ((elapsed / step).floor() + 1.0) * step } else { elapsed };
+                            let e = if *step > 0.0 && elapsed >= 0.0 {
+                                ((elapsed / step).floor() + 1.0) * step
+                            } else {
+                                elapsed
+                            };
                             (e / opening).clamp(0.0, 1.0)
                         } else if elapsed >= 0.0 {
                             1.0
@@ -761,7 +850,18 @@ impl OutletDevice {
                     let lip = self.invert + vertical_range.max(0.0) * (1.0 - f);
                     let plane = if *rotary { Plane::Angle(90.0 * f) } else { Plane::Vertical };
                     let tail = c.tw.map_or(0.0, |t| t - lip);
-                    return orifice_flow(&OpeningShape::Rectangular { width: *width, height: *height }, plane, *cd, 1, 1, 0.0, true, None, c.hw - lip, tail);
+                    return orifice_flow(
+                        &OpeningShape::Rectangular { width: *width, height: *height },
+                        plane,
+                        *cd,
+                        1,
+                        1,
+                        0.0,
+                        true,
+                        None,
+                        c.hw - lip,
+                        tail,
+                    );
                 }
                 if f <= 0.0 || head <= 0.0 {
                     return DeviceFlow::ZERO;
@@ -769,7 +869,11 @@ impl OutletDevice {
                 let shape = OpeningShape::Rectangular { width: *width, height: height * f };
                 let eff = if tail_head > 0.0 { (head - tail_head).max(0.0) + (height * f) / 2.0 } else { head };
                 let q = vertical_opening(&shape, *cd, eff.min(head));
-                DeviceFlow { flow: q, control: if head >= height * f { Control::Orifice } else { Control::Weir }, velocity: q / (width * height * f).max(1e-9) }
+                DeviceFlow {
+                    flow: q,
+                    control: if head >= height * f { Control::Orifice } else { Control::Weir },
+                    velocity: q / (width * height * f).max(1e-9),
+                }
             }
             DeviceKind::Channel { section, n, slope } => {
                 if head <= 0.0 {
@@ -984,7 +1088,14 @@ pub fn final_routing(devices: &[OutletDevice], mut i: usize) -> Option<Routing> 
 }
 
 /// Evaluates all devices. `tw_for` gives the tailwater for each final outflow.
-pub fn evaluate(devices: &[OutletDevice], hw: f64, tw_for: &dyn Fn(Routing) -> Option<f64>, storage: &PondStorage, states: &[DeviceState], time: f64) -> OutletFlows {
+pub fn evaluate(
+    devices: &[OutletDevice],
+    hw: f64,
+    tw_for: &dyn Fn(Routing) -> Option<f64>,
+    storage: &PondStorage,
+    states: &[DeviceState],
+    time: f64,
+) -> OutletFlows {
     let n = devices.len();
     let mut out = OutletFlows {
         devices: vec![0.0; n],
@@ -993,18 +1104,26 @@ pub fn evaluate(devices: &[OutletDevice], hw: f64, tw_for: &dyn Fn(Routing) -> O
         velocities: vec![0.0; n],
         ..Default::default()
     };
-    let feeds = |k: usize| devices.iter().enumerate().filter(move |(_, d)| d.routing == Routing::Device(k)).map(|(j, _)| j);
+    let feeds =
+        |k: usize| devices.iter().enumerate().filter(move |(_, d)| d.routing == Routing::Device(k)).map(|(j, _)| j);
     // Potentials.
     for (i, d) in devices.iter().enumerate() {
         let route = final_routing(devices, i).unwrap_or(Routing::Discarded);
-        let cond = Conditions { hw, tw: tw_for(route), storage, state: states.get(i).copied().unwrap_or_default(), time };
+        let cond =
+            Conditions { hw, tw: tw_for(route), storage, state: states.get(i).copied().unwrap_or_default(), time };
         let f = d.potential(&cond);
         out.potential[i] = f.flow;
         out.controls[i] = Some(f.control);
         out.velocities[i] = f.velocity;
     }
     // Resolve compound outlets bottom-up: a device fed by others passes at most its potential.
-    fn resolve(k: usize, devices: &[OutletDevice], out: &mut OutletFlows, depth: usize, feeds: &dyn Fn(usize) -> Vec<usize>) -> f64 {
+    fn resolve(
+        k: usize,
+        devices: &[OutletDevice],
+        out: &mut OutletFlows,
+        depth: usize,
+        feeds: &dyn Fn(usize) -> Vec<usize>,
+    ) -> f64 {
         if depth > devices.len() {
             return 0.0;
         }
@@ -1060,7 +1179,17 @@ mod tests {
     use crate::storage::PondStorage;
 
     fn pump(on: f64, off: f64, max: Option<f64>, group: u32) -> OutletDevice {
-        let kind = DeviceKind::Pump { rating: vec![(0.0, 1.0), (20.0, 0.5)], on_elevation: on, off_elevation: off, discharge_elevation: 110.0, max_elevation: max, priority_group: group, discharge_length: 0.0, discharge_diameter: 0.0, hazen_c: 120.0 };
+        let kind = DeviceKind::Pump {
+            rating: vec![(0.0, 1.0), (20.0, 0.5)],
+            on_elevation: on,
+            off_elevation: off,
+            discharge_elevation: 110.0,
+            max_elevation: max,
+            priority_group: group,
+            discharge_length: 0.0,
+            discharge_diameter: 0.0,
+            hazen_c: 120.0,
+        };
         OutletDevice::new("Pump", 99.0, Routing::Primary, kind)
     }
 
@@ -1077,8 +1206,13 @@ mod tests {
 
     #[test]
     fn old_pump_json_gets_default_discharge_pipe() {
-        let k: DeviceKind = serde_json::from_str(r#"{"Pump":{"rating":[[0.0,1.0]],"on_elevation":1.0,"off_elevation":0.5,"discharge_elevation":5.0}}"#).unwrap_or_else(|e| panic!("{e}"));
-        assert!(matches!(k, DeviceKind::Pump { hazen_c, discharge_length, .. } if hazen_c == 120.0 && discharge_length == 0.0));
+        let k: DeviceKind = serde_json::from_str(
+            r#"{"Pump":{"rating":[[0.0,1.0]],"on_elevation":1.0,"off_elevation":0.5,"discharge_elevation":5.0}}"#,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            matches!(k, DeviceKind::Pump { hazen_c, discharge_length, .. } if hazen_c == 120.0 && discharge_length == 0.0)
+        );
     }
 
     #[test]
@@ -1200,18 +1334,31 @@ mod tests {
     fn exfiltration_and_constant_devices() {
         use crate::storage::{StorageVolume, VolumeShape};
         let storage = PondStorage {
-            volumes: vec![StorageVolume::new("pond", 100.0, VolumeShape::Prismatoid { width: 10.0, length: 10.0, height: 5.0, z: 0.0 })],
+            volumes: vec![StorageVolume::new(
+                "pond",
+                100.0,
+                VolumeShape::Prismatoid { width: 10.0, length: 10.0, height: 5.0, z: 0.0 },
+            )],
         };
         let d = OutletDevice::new(
             "Exfiltration",
             100.0,
             Routing::Discarded,
-            DeviceKind::Exfiltration { mode: ExfilMode::SurfaceVelocity { velocity: 1.0 / 12.0 / 3600.0 }, phase_in: 0.0, max_elevation: None },
+            DeviceKind::Exfiltration {
+                mode: ExfilMode::SurfaceVelocity { velocity: 1.0 / 12.0 / 3600.0 },
+                phase_in: 0.0,
+                max_elevation: None,
+            },
         );
         let c = Conditions { hw: 101.0, tw: None, storage: &storage, state: DeviceState::default(), time: 0.0 };
         // 100 sf at 1 in/hr = 100/12/3600 cfs.
         assert!((d.potential(&c).flow - 100.0 / 12.0 / 3600.0).abs() < 1e-12);
-        let k = OutletDevice::new("Skimmer", 100.0, Routing::Primary, DeviceKind::ConstantFlow { flow: 4.2, phase_in: 0.3 });
+        let k = OutletDevice::new(
+            "Skimmer",
+            100.0,
+            Routing::Primary,
+            DeviceKind::ConstantFlow { flow: 4.2, phase_in: 0.3 },
+        );
         assert!((k.potential(&Conditions { hw: 100.15, ..c }).flow - 2.1).abs() < 1e-9);
     }
 
@@ -1227,9 +1374,49 @@ mod tests {
     #[test]
     fn stateful_devices() {
         let storage = PondStorage::default();
-        let siphon = OutletDevice::new("Siphon", 100.0, Routing::Primary, DeviceKind::Siphon { diameter: 1.0, length: 50.0, n: 0.013, ke: 0.5, outlet_elevation: 95.0, prime_elevation: 104.0, break_elevation: 100.5 });
-        let breach = OutletDevice::new("Breach", 110.0, Routing::Secondary, DeviceKind::DamBreach { start_time: None, start_elevation: Some(109.0), formation: 1.0, final_bottom: 100.0, final_width: 20.0, side_z: 1.0 });
-        let gate = OutletDevice::new("Gate", 100.0, Routing::Primary, DeviceKind::DelayedGate { trigger_elevation: 103.0, delay: 1.0, opening: 2.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0, vertical_range: 0.0, rotary: false });
+        let siphon = OutletDevice::new(
+            "Siphon",
+            100.0,
+            Routing::Primary,
+            DeviceKind::Siphon {
+                diameter: 1.0,
+                length: 50.0,
+                n: 0.013,
+                ke: 0.5,
+                outlet_elevation: 95.0,
+                prime_elevation: 104.0,
+                break_elevation: 100.5,
+            },
+        );
+        let breach = OutletDevice::new(
+            "Breach",
+            110.0,
+            Routing::Secondary,
+            DeviceKind::DamBreach {
+                start_time: None,
+                start_elevation: Some(109.0),
+                formation: 1.0,
+                final_bottom: 100.0,
+                final_width: 20.0,
+                side_z: 1.0,
+            },
+        );
+        let gate = OutletDevice::new(
+            "Gate",
+            100.0,
+            Routing::Primary,
+            DeviceKind::DelayedGate {
+                trigger_elevation: 103.0,
+                delay: 1.0,
+                opening: 2.0,
+                width: 2.0,
+                height: 2.0,
+                cd: 0.6,
+                step: 0.0,
+                vertical_range: 0.0,
+                rotary: false,
+            },
+        );
         let devs = vec![siphon, breach, gate];
         let mut st = vec![DeviceState::default(); 3];
         // Below priming: nothing flows.
@@ -1264,8 +1451,21 @@ mod tests {
     #[test]
     fn moving_gate_and_rotary_weir() {
         let storage = PondStorage::default();
-        let kind = |range: f64, rotary: bool| DeviceKind::DelayedGate { trigger_elevation: 101.0, delay: 0.0, opening: 2.0, width: 2.0, height: 2.0, cd: 0.6, step: 0.0, vertical_range: range, rotary };
-        let devs = vec![OutletDevice::new("Gate", 100.0, Routing::Primary, kind(2.0, false)), OutletDevice::new("Bucket", 100.0, Routing::Primary, kind(2.0, true))];
+        let kind = |range: f64, rotary: bool| DeviceKind::DelayedGate {
+            trigger_elevation: 101.0,
+            delay: 0.0,
+            opening: 2.0,
+            width: 2.0,
+            height: 2.0,
+            cd: 0.6,
+            step: 0.0,
+            vertical_range: range,
+            rotary,
+        };
+        let devs = vec![
+            OutletDevice::new("Gate", 100.0, Routing::Primary, kind(2.0, false)),
+            OutletDevice::new("Bucket", 100.0, Routing::Primary, kind(2.0, true)),
+        ];
         let mut st = vec![DeviceState::default(); 2];
         let q = |st: &[DeviceState], hw: f64, t: f64| evaluate(&devs, hw, &|_| None, &storage, st, t).devices;
         // Before the trigger the lip stands at 102: nothing below it, spill-in above it.
@@ -1284,8 +1484,19 @@ mod tests {
     #[test]
     fn channel_outlet_is_normal_depth() {
         let sec = Section::Rectangular { width: 4.0, depth: 3.0 };
-        let d = OutletDevice::new("Channel", 50.0, Routing::Primary, DeviceKind::Channel { section: sec.clone(), n: 0.03, slope: 0.01 });
-        let c = Conditions { hw: 51.0, tw: None, storage: &PondStorage::default(), state: DeviceState::default(), time: 0.0 };
+        let d = OutletDevice::new(
+            "Channel",
+            50.0,
+            Routing::Primary,
+            DeviceKind::Channel { section: sec.clone(), n: 0.03, slope: 0.01 },
+        );
+        let c = Conditions {
+            hw: 51.0,
+            tw: None,
+            storage: &PondStorage::default(),
+            state: DeviceState::default(),
+            time: 0.0,
+        };
         assert!((d.potential(&c).flow - sec.manning_q(1.0, 0.03, 0.01)).abs() < 1e-9);
     }
 }

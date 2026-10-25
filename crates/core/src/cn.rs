@@ -169,7 +169,8 @@ pub enum CnWeighting {
 }
 
 impl CnWeighting {
-    pub const ALL: [CnWeighting; 3] = [CnWeighting::WeightedCn, CnWeighting::PerviousImpervious, CnWeighting::WeightedQ];
+    pub const ALL: [CnWeighting; 3] =
+        [CnWeighting::WeightedCn, CnWeighting::PerviousImpervious, CnWeighting::WeightedQ];
     pub fn label(self) -> &'static str {
         match self {
             CnWeighting::WeightedCn => "Weighted CN",
@@ -207,7 +208,16 @@ pub struct SubArea {
 
 impl SubArea {
     pub fn new(area: f64, cn: f64, description: &str) -> Self {
-        SubArea { area, cn, c: None, description: description.into(), hsg: soil_from_description(description), land_use: None, outline: None, remainder: false }
+        SubArea {
+            area,
+            cn,
+            c: None,
+            description: description.into(),
+            hsg: soil_from_description(description),
+            land_use: None,
+            outline: None,
+            remainder: false,
+        }
     }
 
     /// Fraction of this sub-area that is impervious: 100% for CN ≥ 98, the "x% imp" value in the
@@ -274,7 +284,11 @@ pub fn composite(areas: &[SubArea], round: bool, decimals: u32) -> Composite {
         let fi = a.impervious_fraction();
         let ai = area * fi;
         let ap = area - ai;
-        let (cn_i, cn_p) = if fi > 0.0 && fi < 1.0 { (98.0, ((a.cn - 98.0 * fi) / (1.0 - fi)).clamp(0.0, 100.0)) } else { (a.cn, a.cn) };
+        let (cn_i, cn_p) = if fi > 0.0 && fi < 1.0 {
+            (98.0, ((a.cn - 98.0 * fi) / (1.0 - fi)).clamp(0.0, 100.0))
+        } else {
+            (a.cn, a.cn)
+        };
         c.impervious_area += ai;
         c.pervious_area += ap;
         sum_i += ai * cn_i;
@@ -337,7 +351,8 @@ mod tests {
         let c = composite(&areas, true, 0);
         assert_eq!(c.cn, 66.0);
         // All connected: figure 2-3 gives 68.
-        let connected = vec![SubArea::new(0.8 * AC, 61.0, "Open Space, Good, HSG B"), SubArea::new(0.2 * AC, 98.0, "Roofs, HSG B")];
+        let connected =
+            vec![SubArea::new(0.8 * AC, 61.0, "Open Space, Good, HSG B"), SubArea::new(0.2 * AC, 98.0, "Roofs, HSG B")];
         assert_eq!(composite(&connected, true, 0).cn, 68.0);
     }
 

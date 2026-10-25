@@ -48,10 +48,22 @@ pub fn ok_cancel_apply(ui: &mut Ui, apply: bool, help: &'static str) -> Buttons 
 
 /// Numeric field shown in display units; `to`/`from` convert between internal and display.
 #[allow(clippy::too_many_arguments)]
-pub fn conv_field(ui: &mut Ui, id: &str, label: &str, unit: &str, value: &mut f64, to: impl Fn(f64) -> f64, from: impl Fn(f64) -> f64, decimals: usize, width: f32) -> bool {
+pub fn conv_field(
+    ui: &mut Ui,
+    id: &str,
+    label: &str,
+    unit: &str,
+    value: &mut f64,
+    to: impl Fn(f64) -> f64,
+    from: impl Fn(f64) -> f64,
+    decimals: usize,
+    width: f32,
+) -> bool {
     let mut shown = if value.is_finite() { to(*value) } else { f64::NAN };
     let changed = match field_tip(label).filter(|_| !widgets::in_tip(ui.ctx())) {
-        Some(tip) => widgets::with_tip(ui, tip, |ui| widgets::num_field(ui, id, label, unit, &mut shown, decimals, width)),
+        Some(tip) => {
+            widgets::with_tip(ui, tip, |ui| widgets::num_field(ui, id, label, unit, &mut shown, decimals, width))
+        }
         None => widgets::num_field(ui, id, label, unit, &mut shown, decimals, width),
     };
     if changed {
@@ -64,16 +76,22 @@ pub fn conv_field(ui: &mut Ui, id: &str, label: &str, unit: &str, value: &mut f6
 fn field_tip(label: &str) -> Option<&'static str> {
     let key = label.trim_end_matches(':').trim();
     Some(match key {
-        "Invert" | "Inlet Invert" | "Invert Elevation" | "Gate Invert" => "Elevation of the bottom of the opening or conduit at its inlet.",
+        "Invert" | "Inlet Invert" | "Invert Elevation" | "Gate Invert" => {
+            "Elevation of the bottom of the opening or conduit at its inlet."
+        }
         "Outlet Invert" => "Elevation of the conduit bottom at its downstream end; with the length it sets the slope.",
         "Length" => "Length along the flow path.",
         "Diameter" => "Inside diameter of a round opening or pipe.",
         "Width" | "Span" => "Inside width of the opening (span for arches and ellipses).",
         "Height" | "Rise" => "Inside height of the opening (rise for arches and ellipses).",
         "Manning's n" | "Manning's Number" | "n" => "Manning's roughness coefficient of the surface or conduit.",
-        "Entrance Loss Ke" | "Ke" => "Culvert entrance loss coefficient (FHWA HDS-5 tables): about 0.2 for a beveled edge, 0.5 for a square edge, 0.9 for a projecting thin wall.",
+        "Entrance Loss Ke" | "Ke" => {
+            "Culvert entrance loss coefficient (FHWA HDS-5 tables): about 0.2 for a beveled edge, 0.5 for a square edge, 0.9 for a projecting thin wall."
+        }
         "Contraction Coefficient" | "Cc" => "Contraction of the flow entering the culvert under inlet control.",
-        "Coefficient" | "Discharge Coefficient" | "Orifice Coefficient" | "Cd" => "Discharge coefficient: about 0.6 for a sharp-edged orifice.",
+        "Coefficient" | "Discharge Coefficient" | "Orifice Coefficient" | "Cd" => {
+            "Discharge coefficient: about 0.6 for a sharp-edged orifice."
+        }
         "Discharge Multiplier" => "Multiplies the device's flow, e.g. the number of identical devices.",
         "Crest Length" | "Weir Length" => "Length of the weir crest perpendicular to the flow.",
         "Breadth" | "Crest Breadth" => "Breadth of a broad-crested weir in the direction of flow.",
@@ -94,7 +112,17 @@ fn field_tip(label: &str) -> Option<&'static str> {
 
 /// Optional numeric field: blank means `None`.
 #[allow(clippy::too_many_arguments)]
-pub fn opt_field(ui: &mut Ui, id: &str, label: &str, unit: &str, value: &mut Option<f64>, to: impl Fn(f64) -> f64, from: impl Fn(f64) -> f64, decimals: usize, width: f32) -> bool {
+pub fn opt_field(
+    ui: &mut Ui,
+    id: &str,
+    label: &str,
+    unit: &str,
+    value: &mut Option<f64>,
+    to: impl Fn(f64) -> f64,
+    from: impl Fn(f64) -> f64,
+    decimals: usize,
+    width: f32,
+) -> bool {
     let mut v = value.unwrap_or(f64::NAN);
     let changed = conv_field(ui, id, label, unit, &mut v, to, from, decimals, width);
     if changed {

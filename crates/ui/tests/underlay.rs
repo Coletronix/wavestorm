@@ -8,18 +8,32 @@ use wavestorm_ui::{WaveStormApp, script};
 fn click(h: &mut egui_kittest::Harness<'static, WaveStormApp>, pos: Pos2) {
     h.input_mut().events.push(Event::PointerMoved(pos));
     h.step();
-    h.input_mut().events.push(Event::PointerButton { pos, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.input_mut().events.push(Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
     h.step();
-    h.input_mut().events.push(Event::PointerButton { pos, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.input_mut().events.push(Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
     h.step();
     // Let the double-click window expire so separate clicks stay separate.
     h.run_steps(30);
 }
 
 fn png(w: u32, h: u32) -> Vec<u8> {
-    let img = image::RgbaImage::from_fn(w, h, |x, y| if (x / 20 + y / 20) % 2 == 0 { image::Rgba([220, 230, 210, 255]) } else { image::Rgba([250, 250, 240, 255]) });
+    let img = image::RgbaImage::from_fn(w, h, |x, y| {
+        if (x / 20 + y / 20) % 2 == 0 { image::Rgba([220, 230, 210, 255]) } else { image::Rgba([250, 250, 240, 255]) }
+    });
     let mut out = Vec::new();
-    image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).unwrap();
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .unwrap();
     out
 }
 
@@ -48,7 +62,9 @@ fn pdf() -> Vec<u8> {
 }
 
 fn harness() -> egui_kittest::Harness<'static, WaveStormApp> {
-    egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless())
+    egui_kittest::Harness::builder()
+        .with_size(vec2(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless())
 }
 
 #[test]
@@ -76,7 +92,8 @@ fn calibrate_and_trace_subcatchment() {
         h.state_mut().doc().windows.clear();
         script(h.state_mut(), "calibrate");
         h.step();
-        let (a, b) = (h.state_mut().world_to_screen(pos2(100.0, 100.0)), h.state_mut().world_to_screen(pos2(200.0, 100.0)));
+        let (a, b) =
+            (h.state_mut().world_to_screen(pos2(100.0, 100.0)), h.state_mut().world_to_screen(pos2(200.0, 100.0)));
         click(&mut h, a);
         click(&mut h, b);
         h.run_steps(2);
@@ -103,7 +120,12 @@ fn calibrate_and_trace_subcatchment() {
         click(&mut h, first);
         h.run_steps(2);
         let doc = h.state_mut().doc();
-        let sub = doc.project.nodes.iter().find(|n| n.node_type() == NodeType::Subcat && n.outline.is_some()).expect("traced subcatchment");
+        let sub = doc
+            .project
+            .nodes
+            .iter()
+            .find(|n| n.node_type() == NodeType::Subcat && n.outline.is_some())
+            .expect("traced subcatchment");
         let NodeData::Subcat(sc) = &sub.data else { panic!() };
         let area: f64 = sc.areas.iter().map(|a| a.area).sum();
         // Clicks land on whole pixels, so allow a little slack.
@@ -135,7 +157,11 @@ fn calibrate_and_trace_subcatchment() {
         assert_eq!(st.tab, 2, "on the Tc tab");
         let ps = st.tc_path.as_ref().expect("flow path dialog");
         assert_eq!(ps.legs.len(), 2);
-        assert!((ps.legs[0].length - 100.0).abs() < 3.0 && (ps.legs[1].length - 200.0).abs() < 4.0, "legs {:?}", ps.legs);
+        assert!(
+            (ps.legs[0].length - 100.0).abs() < 3.0 && (ps.legs[1].length - 200.0).abs() < 4.0,
+            "legs {:?}",
+            ps.legs
+        );
         // First leg sheet flow (within the 100 ft limit), then shallow concentrated flow.
         let segs = ps.segments(&[]);
         let kinds: Vec<(&str, &str)> = segs.iter().map(|s| (s.kind.label(), s.description.as_str())).collect();
@@ -171,13 +197,23 @@ fn calibrate_and_trace_subcatchment() {
 
 fn drag(h: &mut egui_kittest::Harness<'static, WaveStormApp>, a: Pos2, b: Pos2) {
     h.input_mut().events.push(Event::PointerMoved(a));
-    h.input_mut().events.push(Event::PointerButton { pos: a, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.input_mut().events.push(Event::PointerButton {
+        pos: a,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
     h.step();
     for k in 1..=8 {
         h.input_mut().events.push(Event::PointerMoved(a + (b - a) * (k as f32 / 8.0)));
         h.step();
     }
-    h.input_mut().events.push(Event::PointerButton { pos: b, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.input_mut().events.push(Event::PointerButton {
+        pos: b,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
     h.step();
     h.run_steps(30);
 }
@@ -197,7 +233,12 @@ fn draw_subareas_edit_and_place_background() {
     h.run_steps(3);
     script(h.state_mut(), "new");
     h.run_steps(2);
-    h.state_mut().platform.push(Incoming { purpose: Purpose::Underlay, name: "site".into(), path: None, bytes: png(600, 400) });
+    h.state_mut().platform.push(Incoming {
+        purpose: Purpose::Underlay,
+        name: "site".into(),
+        path: None,
+        bytes: png(600, 400),
+    });
     h.run_steps(4);
     assert_eq!(h.state_mut().tool.name(), "Place Background", "placement starts after loading");
     h.key_press(egui::Key::Enter);
@@ -257,13 +298,15 @@ fn draw_subareas_edit_and_place_background() {
     // Dragging a sub-area corner re-measures it and the remainder.
     h.state_mut().doc().selection = vec![id];
     h.run_steps(2);
-    let (from, to) = (h.state_mut().world_to_screen(pos2(150.0, 140.0)), h.state_mut().world_to_screen(pos2(160.0, 150.0)));
+    let (from, to) =
+        (h.state_mut().world_to_screen(pos2(150.0, 140.0)), h.state_mut().world_to_screen(pos2(160.0, 150.0)));
     drag(&mut h, from, to);
     let a = areas(h.state_mut(), id);
     assert!(a[1].0 > 4_900.0, "the sub-area grew: {a:?}");
     assert!((sum(&a) - total).abs() / total < 0.01, "{a:?}");
     // A corner dragged outside the outline stays on it.
-    let (from, to) = (h.state_mut().world_to_screen(pos2(110.0, 110.0)), h.state_mut().world_to_screen(pos2(60.0, 60.0)));
+    let (from, to) =
+        (h.state_mut().world_to_screen(pos2(110.0, 110.0)), h.state_mut().world_to_screen(pos2(60.0, 60.0)));
     drag(&mut h, from, to);
     let corner = match &h.state_mut().doc().project.node(id).unwrap().data {
         NodeData::Subcat(sc) => sc.areas[1].outline.as_ref().unwrap()[0],

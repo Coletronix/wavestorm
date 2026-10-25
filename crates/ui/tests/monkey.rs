@@ -17,7 +17,9 @@ impl Rng {
 }
 
 fn harness() -> egui_kittest::Harness<'static, WaveStormApp> {
-    egui_kittest::Harness::builder().with_size(vec2(1280.0, 800.0)).build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless())
+    egui_kittest::Harness::builder()
+        .with_size(vec2(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless())
 }
 
 fn press(h: &mut egui_kittest::Harness<'static, WaveStormApp>, pos: Pos2, button: PointerButton, modifiers: Modifiers) {
@@ -30,14 +32,24 @@ fn press(h: &mut egui_kittest::Harness<'static, WaveStormApp>, pos: Pos2, button
 
 fn drag(h: &mut egui_kittest::Harness<'static, WaveStormApp>, a: Pos2, b: Pos2, modifiers: Modifiers) {
     h.input_mut().events.push(Event::PointerMoved(a));
-    h.input_mut().events.push(Event::PointerButton { pos: a, button: PointerButton::Primary, pressed: true, modifiers });
+    h.input_mut().events.push(Event::PointerButton {
+        pos: a,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers,
+    });
     h.step();
     for k in 1..=6 {
         let p = a + (b - a) * (k as f32 / 6.0);
         h.input_mut().events.push(Event::PointerMoved(p));
         h.step();
     }
-    h.input_mut().events.push(Event::PointerButton { pos: b, button: PointerButton::Primary, pressed: false, modifiers });
+    h.input_mut().events.push(Event::PointerButton {
+        pos: b,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers,
+    });
     h.step();
 }
 
@@ -53,7 +65,25 @@ fn random_input_never_panics_in_glass() {
 }
 
 fn random_input_in_theme(theme: &str) {
-    let windows = ["", "report:1P", "report:1S", "report:1R", "report:1L", "edit:1S", "edit:1P", "edit:1R", "edit:1L", "settings", "units", "messages", "project-report", "storms", "uhs", "compare", "general"];
+    let windows = [
+        "",
+        "report:1P",
+        "report:1S",
+        "report:1R",
+        "report:1L",
+        "edit:1S",
+        "edit:1P",
+        "edit:1R",
+        "edit:1L",
+        "settings",
+        "units",
+        "messages",
+        "project-report",
+        "storms",
+        "uhs",
+        "compare",
+        "general",
+    ];
     for (round, w) in windows.iter().enumerate() {
         let mut h = harness();
         script(h.state_mut(), theme);
@@ -74,16 +104,34 @@ fn random_input_in_theme(theme: &str) {
                 }
                 6 => {
                     h.input_mut().events.push(Event::PointerMoved(p));
-                    h.input_mut().events.push(Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: vec2(0.0, if rng.next().is_multiple_of(2) { 2.0 } else { -2.0 }), modifiers: Modifiers::NONE, phase: egui::TouchPhase::Move });
+                    h.input_mut().events.push(Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Line,
+                        delta: vec2(0.0, if rng.next().is_multiple_of(2) { 2.0 } else { -2.0 }),
+                        modifiers: Modifiers::NONE,
+                        phase: egui::TouchPhase::Move,
+                    });
                     h.step();
                 }
                 7 => {
-                    let keys = [Key::Delete, Key::Escape, Key::Enter, Key::Z, Key::Y, Key::C, Key::V, Key::A, Key::Backspace];
+                    let keys =
+                        [Key::Delete, Key::Escape, Key::Enter, Key::Z, Key::Y, Key::C, Key::V, Key::A, Key::Backspace];
                     let key = keys[(rng.next() % keys.len() as u64) as usize];
                     let modifiers = if rng.next().is_multiple_of(2) { Modifiers::COMMAND } else { Modifiers::NONE };
-                    h.input_mut().events.push(Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+                    h.input_mut().events.push(Event::Key {
+                        key,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                    });
                     h.step();
-                    h.input_mut().events.push(Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers });
+                    h.input_mut().events.push(Event::Key {
+                        key,
+                        physical_key: None,
+                        pressed: false,
+                        repeat: false,
+                        modifiers,
+                    });
                     h.step();
                 }
                 _ => {

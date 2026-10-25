@@ -66,7 +66,17 @@ pub fn draw_node(p: &Painter, t: NodeType, c: Pos2, d: f32, label: &str, selecte
 /// Like `draw_node`, plus a red outline when `problem` is set (undefined results or errors).
 /// A selected node gets a bold, dark outline. `external` adds the small circle marker under
 /// the symbol (manual hydrograph or tailwater elevation).
-pub fn draw_node_ex(p: &Painter, t: NodeType, c: Pos2, d: f32, label: &str, selected: bool, external: bool, problem: bool, tok: &Tokens) {
+pub fn draw_node_ex(
+    p: &Painter,
+    t: NodeType,
+    c: Pos2,
+    d: f32,
+    label: &str,
+    selected: bool,
+    external: bool,
+    problem: bool,
+    tok: &Tokens,
+) {
     if tok.glass && t != NodeType::Text {
         draw_glass_node(p, t, c, d, selected, problem, tok);
     } else {
@@ -84,7 +94,13 @@ pub fn draw_node_ex(p: &Painter, t: NodeType, c: Pos2, d: f32, label: &str, sele
         let dy = if t == NodeType::Pond { d * 0.14 } else { 0.0 };
         if tok.glass {
             // Lettering embossed on the glass: a dark shadow under it.
-            p.text(c + vec2(0.6, dy + 1.2), Align2::CENTER_CENTER, label, FontId::proportional(size), glass::alpha(Color32::BLACK, 0.7));
+            p.text(
+                c + vec2(0.6, dy + 1.2),
+                Align2::CENTER_CENTER,
+                label,
+                FontId::proportional(size),
+                glass::alpha(Color32::BLACK, 0.7),
+            );
         }
         p.text(c + vec2(0.0, dy), Align2::CENTER_CENTER, label, FontId::proportional(size), tok.node_text);
     }
@@ -114,7 +130,9 @@ fn draw_flat_node(p: &Painter, t: NodeType, c: Pos2, d: f32, selected: bool, pro
 fn link_fill(p: &Painter, pts: &[Pos2], fill: Color32) {
     let n = pts.len() / 2;
     for i in 0..n.saturating_sub(1) {
-        if let (Some(a), Some(b), Some(c), Some(e)) = (pts.get(i), pts.get(i + 1), pts.get(pts.len() - 2 - i), pts.get(pts.len() - 1 - i)) {
+        if let (Some(a), Some(b), Some(c), Some(e)) =
+            (pts.get(i), pts.get(i + 1), pts.get(pts.len() - 2 - i), pts.get(pts.len() - 1 - i))
+        {
             p.add(Shape::convex_polygon(vec![*a, *b, *c, *e], fill, Stroke::NONE));
         }
     }
@@ -122,7 +140,11 @@ fn link_fill(p: &Painter, pts: &[Pos2], fill: Color32) {
 
 /// Lightens (`f` > 0, toward white) or darkens (`f` < 0, toward black) a hue.
 fn shade(hue: Color32, f: f32) -> Color32 {
-    if f >= 0.0 { crate::widgets::lerp_color(hue, Color32::WHITE, f.min(1.0)) } else { crate::widgets::lerp_color(hue, Color32::BLACK, (-f).min(1.0)) }
+    if f >= 0.0 {
+        crate::widgets::lerp_color(hue, Color32::WHITE, f.min(1.0))
+    } else {
+        crate::widgets::lerp_color(hue, Color32::BLACK, (-f).min(1.0))
+    }
 }
 
 /// Adds a quad with per-corner colours to a mesh.
@@ -198,7 +220,13 @@ fn draw_glass_node(p: &Painter, t: NodeType, c: Pos2, d: f32, selected: bool, pr
     }
     // Top face: a fan with a vertical gradient.
     let (y0, y1) = inset.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), q| (a.min(q.y), b.max(q.y)));
-    let face = |y: f32| crate::widgets::lerp_color(shade(hue, -0.25), shade(hue, -0.58), ((y - y0) / (y1 - y0).max(1.0)).clamp(0.0, 1.0));
+    let face = |y: f32| {
+        crate::widgets::lerp_color(
+            shade(hue, -0.25),
+            shade(hue, -0.58),
+            ((y - y0) / (y1 - y0).max(1.0)).clamp(0.0, 1.0),
+        )
+    };
     let first = mesh.vertices.len() as u32;
     mesh.colored_vertex(centre, face(centre.y));
     for q in &inset {
@@ -300,7 +328,10 @@ pub fn ink(t: &Tokens, c: Color32) -> Color32 {
     if luminance(c) < 0.03 {
         return t.text;
     }
-    (1..=20).map(|k| crate::widgets::lerp_color(c, Color32::WHITE, k as f32 * 0.05)).find(|m| luminance(*m) >= 0.3).unwrap_or(Color32::WHITE)
+    (1..=20)
+        .map(|k| crate::widgets::lerp_color(c, Color32::WHITE, k as f32 * 0.05))
+        .find(|m| luminance(*m) >= 0.3)
+        .unwrap_or(Color32::WHITE)
 }
 
 pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
@@ -360,7 +391,10 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             p.rect_stroke(page, 0.0, thin, egui::StrokeKind::Inside);
             for j in 0..4 {
                 let y = page.min.y + s * (0.2 + 0.17 * j as f32);
-                p.line_segment([pos2(page.min.x + 3.0, y), pos2(page.max.x - 3.0, y)], Stroke::new(1.0, if t.is_dark() { Color32::from_rgb(150, 150, 150) } else { t.shadow }));
+                p.line_segment(
+                    [pos2(page.min.x + 3.0, y), pos2(page.max.x - 3.0, y)],
+                    Stroke::new(1.0, if t.is_dark() { Color32::from_rgb(150, 150, 150) } else { t.shadow }),
+                );
             }
             if g == Glyph::Edit {
                 let a = c + vec2(s * 0.42, -s * 0.38);
@@ -396,8 +430,15 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             p.rect_stroke(r, 0.0, thin, egui::StrokeKind::Inside);
             for j in 0..4 {
                 let y = r.min.y + 3.0 + j as f32 * (r.height() - 6.0) / 3.0;
-                p.line_segment([pos2(r.min.x + 3.0, y), pos2(r.max.x - 3.0, y)], Stroke::new(1.0, if t.is_dark() { Color32::from_rgb(150, 150, 150) } else { t.shadow }));
-                p.rect_filled(Rect::from_min_size(pos2(r.min.x + 3.0, y - 1.0), vec2(3.0, 2.0)), 0.0, Color32::from_rgb(40, 140, 40));
+                p.line_segment(
+                    [pos2(r.min.x + 3.0, y), pos2(r.max.x - 3.0, y)],
+                    Stroke::new(1.0, if t.is_dark() { Color32::from_rgb(150, 150, 150) } else { t.shadow }),
+                );
+                p.rect_filled(
+                    Rect::from_min_size(pos2(r.min.x + 3.0, y - 1.0), vec2(3.0, 2.0)),
+                    0.0,
+                    Color32::from_rgb(40, 140, 40),
+                );
             }
         }
         Glyph::Print | Glyph::PrintDiagram => {
@@ -414,33 +455,64 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
         Glyph::Calculator => {
             let body = r.shrink2(vec2(s * 0.15, 0.0));
             p.rect_filled(body, 1.0, k(Color32::from_rgb(90, 90, 100)));
-            p.rect_filled(Rect::from_min_size(body.min + vec2(2.0, 2.0), vec2(body.width() - 4.0, s * 0.22)), 0.0, Color32::from_rgb(190, 230, 190));
+            p.rect_filled(
+                Rect::from_min_size(body.min + vec2(2.0, 2.0), vec2(body.width() - 4.0, s * 0.22)),
+                0.0,
+                Color32::from_rgb(190, 230, 190),
+            );
             for row in 0..3 {
                 for col in 0..3 {
-                    let kc = pos2(body.min.x + 3.5 + col as f32 * (body.width() - 7.0) / 2.0, body.min.y + s * 0.42 + row as f32 * s * 0.2);
-                    p.rect_filled(Rect::from_center_size(kc, vec2(2.5, 2.5)), 0.0, if t.is_dark() { Color32::from_rgb(40, 40, 46) } else { Color32::WHITE });
+                    let kc = pos2(
+                        body.min.x + 3.5 + col as f32 * (body.width() - 7.0) / 2.0,
+                        body.min.y + s * 0.42 + row as f32 * s * 0.2,
+                    );
+                    p.rect_filled(
+                        Rect::from_center_size(kc, vec2(2.5, 2.5)),
+                        0.0,
+                        if t.is_dark() { Color32::from_rgb(40, 40, 46) } else { Color32::WHITE },
+                    );
                 }
             }
         }
         Glyph::LandUse => {
             let top = pos2(c.x, r.min.y);
-            p.add(Shape::convex_polygon(vec![top, pos2(r.max.x, c.y + s * 0.1), pos2(r.min.x, c.y + s * 0.1)], k(Color32::from_rgb(40, 140, 50)), Stroke::new(1.0, ink)));
+            p.add(Shape::convex_polygon(
+                vec![top, pos2(r.max.x, c.y + s * 0.1), pos2(r.min.x, c.y + s * 0.1)],
+                k(Color32::from_rgb(40, 140, 50)),
+                Stroke::new(1.0, ink),
+            ));
             p.line_segment([pos2(c.x, c.y + s * 0.1), pos2(c.x, r.max.y - 2.0)], Stroke::new(2.0, ink));
-            p.line_segment([pos2(r.min.x, r.max.y - 1.0), pos2(r.max.x, r.max.y - 1.0)], Stroke::new(2.0, Color32::from_rgb(40, 220, 60)));
+            p.line_segment(
+                [pos2(r.min.x, r.max.y - 1.0), pos2(r.max.x, r.max.y - 1.0)],
+                Stroke::new(2.0, Color32::from_rgb(40, 220, 60)),
+            );
         }
         Glyph::DiagramSettings => {
             p.rect_filled(r.shrink2(vec2(s * 0.1, 0.0)), 0.0, Color32::WHITE);
             p.rect_stroke(r.shrink2(vec2(s * 0.1, 0.0)), 0.0, thin, egui::StrokeKind::Inside);
-            p.text(c, Align2::CENTER_CENTER, "A", FontId::proportional(s * 0.8), if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink });
+            p.text(
+                c,
+                Align2::CENTER_CENTER,
+                "A",
+                FontId::proportional(s * 0.8),
+                if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink },
+            );
         }
         Glyph::General => {
             let grey = k(Color32::from_rgb(110, 110, 120));
             p.line_segment([pos2(r.min.x + s * 0.25, r.max.y), pos2(r.min.x + s * 0.25, c.y)], Stroke::new(3.0, grey));
             p.circle_stroke(pos2(r.min.x + s * 0.25, c.y - s * 0.15), s * 0.2, Stroke::new(2.0, grey));
-            p.line_segment([pos2(r.max.x - s * 0.2, r.max.y), pos2(r.max.x - s * 0.2, r.min.y + 1.0)], Stroke::new(3.0, ink));
+            p.line_segment(
+                [pos2(r.max.x - s * 0.2, r.max.y), pos2(r.max.x - s * 0.2, r.min.y + 1.0)],
+                Stroke::new(3.0, ink),
+            );
         }
         Glyph::Idf => {
-            for (j, col) in [Color32::from_rgb(200, 40, 40), Color32::from_rgb(30, 60, 200), Color32::from_rgb(30, 160, 200)].into_iter().enumerate() {
+            for (j, col) in
+                [Color32::from_rgb(200, 40, 40), Color32::from_rgb(30, 60, 200), Color32::from_rgb(30, 160, 200)]
+                    .into_iter()
+                    .enumerate()
+            {
                 let x = r.min.x + 1.0 + j as f32 * s * 0.3;
                 let b = Rect::from_min_max(pos2(x, r.min.y + s * (0.1 + 0.15 * j as f32)), pos2(x + s * 0.26, r.max.y));
                 p.rect_filled(b, 0.0, k(col));
@@ -463,7 +535,12 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
         Glyph::Underlay => {
             p.rect_filled(r, 0.0, Color32::from_rgb(220, 235, 210));
             p.rect_stroke(r, 0.0, thin, egui::StrokeKind::Inside);
-            let pts = vec![pos2(r.min.x + 2.0, r.max.y - 3.0), pos2(c.x - 2.0, c.y), pos2(c.x + 2.0, c.y + 3.0), pos2(r.max.x - 2.0, r.min.y + 4.0)];
+            let pts = vec![
+                pos2(r.min.x + 2.0, r.max.y - 3.0),
+                pos2(c.x - 2.0, c.y),
+                pos2(c.x + 2.0, c.y + 3.0),
+                pos2(r.max.x - 2.0, r.min.y + 4.0),
+            ];
             p.add(Shape::line(pts, Stroke::new(1.2, Color32::from_rgb(120, 90, 40))));
         }
         Glyph::Calibrate => {
@@ -477,7 +554,12 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             }
         }
         Glyph::Trace => {
-            let pts = vec![pos2(r.min.x + 1.0, r.max.y - 4.0), pos2(r.min.x + 4.0, r.min.y + 3.0), pos2(r.max.x - 2.0, r.min.y + 6.0), pos2(r.max.x - 4.0, r.max.y - 1.0)];
+            let pts = vec![
+                pos2(r.min.x + 1.0, r.max.y - 4.0),
+                pos2(r.min.x + 4.0, r.min.y + 3.0),
+                pos2(r.max.x - 2.0, r.min.y + 6.0),
+                pos2(r.max.x - 4.0, r.max.y - 1.0),
+            ];
             p.add(Shape::convex_polygon(pts.clone(), t.subcat.0, Stroke::new(1.5, t.subcat.1)));
             for q in pts {
                 p.rect_filled(Rect::from_center_size(q, vec2(3.0, 3.0)), 0.0, ink);
@@ -490,7 +572,10 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             for j in 0..6 {
                 let x = bar.min.x + 2.0 + j as f32 * (bar.width() - 4.0) / 5.0;
                 let h = if j % 2 == 0 { s * 0.2 } else { s * 0.12 };
-                p.line_segment([pos2(x, bar.min.y), pos2(x, bar.min.y + h)], Stroke::new(1.0, if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink }));
+                p.line_segment(
+                    [pos2(x, bar.min.y), pos2(x, bar.min.y + h)],
+                    Stroke::new(1.0, if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink }),
+                );
             }
         }
         Glyph::TcPath => {
@@ -506,7 +591,11 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             // A small clock: Tc is a time.
             let cc = at(0.72, 0.3);
             p.circle_filled(cc, s * 0.26, Color32::WHITE);
-            p.circle_stroke(cc, s * 0.26, Stroke::new(1.2, if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink }));
+            p.circle_stroke(
+                cc,
+                s * 0.26,
+                Stroke::new(1.2, if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink }),
+            );
             p.line_segment([cc, cc + vec2(0.0, -s * 0.17)], Stroke::new(1.2, Color32::from_rgb(20, 20, 20)));
             p.line_segment([cc, cc + vec2(s * 0.12, 0.0)], Stroke::new(1.2, Color32::from_rgb(20, 20, 20)));
         }
@@ -515,21 +604,37 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             let outer = vec![at(0.05, 0.2), at(0.6, 0.02), at(0.98, 0.45), at(0.75, 0.98), at(0.1, 0.85)];
             p.add(Shape::convex_polygon(outer, t.subcat.0, Stroke::new(1.3, t.subcat.1)));
             let inner = vec![at(0.42, 0.3), at(0.78, 0.42), at(0.62, 0.78), at(0.3, 0.62)];
-            p.add(Shape::convex_polygon(inner, Color32::from_rgb(250, 190, 70), Stroke::new(1.3, Color32::from_rgb(200, 120, 0))));
+            p.add(Shape::convex_polygon(
+                inner,
+                Color32::from_rgb(250, 190, 70),
+                Stroke::new(1.3, Color32::from_rgb(200, 120, 0)),
+            ));
         }
         Glyph::PlaceUnderlay => {
             let at = |fx: f32, fy: f32| pos2(r.min.x + s * fx, r.min.y + s * fy);
             let pic = Rect::from_min_max(at(0.0, 0.08), at(0.72, 0.7));
             p.rect_filled(pic, 0.0, Color32::from_rgb(220, 235, 210));
             p.rect_stroke(pic, 0.0, thin, egui::StrokeKind::Inside);
-            p.add(Shape::line(vec![at(0.05, 0.62), at(0.3, 0.36), at(0.45, 0.5), at(0.68, 0.24)], Stroke::new(1.2, Color32::from_rgb(120, 90, 40))));
+            p.add(Shape::line(
+                vec![at(0.05, 0.62), at(0.3, 0.36), at(0.45, 0.5), at(0.68, 0.24)],
+                Stroke::new(1.2, Color32::from_rgb(120, 90, 40)),
+            ));
             let arrow = k(Color32::from_rgb(30, 90, 200));
             p.line_segment([at(0.55, 0.53), at(0.97, 0.95)], Stroke::new(1.8, arrow));
             p.add(Shape::convex_polygon(vec![at(0.97, 0.95), at(0.67, 0.92), at(0.94, 0.65)], arrow, Stroke::NONE));
         }
         Glyph::Pointer => {
-            let pts = vec![r.min + vec2(4.0, 1.0), r.min + vec2(4.0, s * 0.85), r.min + vec2(s * 0.42, s * 0.62), r.min + vec2(s * 0.75, s * 0.62)];
-            p.add(Shape::convex_polygon(pts, Color32::WHITE, Stroke::new(1.2, if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink })));
+            let pts = vec![
+                r.min + vec2(4.0, 1.0),
+                r.min + vec2(4.0, s * 0.85),
+                r.min + vec2(s * 0.42, s * 0.62),
+                r.min + vec2(s * 0.75, s * 0.62),
+            ];
+            p.add(Shape::convex_polygon(
+                pts,
+                Color32::WHITE,
+                Stroke::new(1.2, if t.is_dark() { Color32::from_rgb(20, 20, 20) } else { ink }),
+            ));
         }
         Glyph::Undo | Glyph::Redo => {
             // The arrowhead sits on the left end for Undo (anticlockwise), the right for Redo.
@@ -543,22 +648,45 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             let tip = pts[0];
             let blue = k(Color32::from_rgb(30, 90, 200));
             p.add(Shape::line(pts, Stroke::new(2.0, blue)));
-            p.add(Shape::convex_polygon(vec![tip + vec2(0.0, -4.0), tip + vec2(dir * 5.0, 1.0), tip + vec2(-dir * 3.0, 3.0)], blue, Stroke::NONE));
+            p.add(Shape::convex_polygon(
+                vec![tip + vec2(0.0, -4.0), tip + vec2(dir * 5.0, 1.0), tip + vec2(-dir * 3.0, 3.0)],
+                blue,
+                Stroke::NONE,
+            ));
         }
         Glyph::Open => {
             let back = Rect::from_min_max(pos2(r.min.x, r.min.y + s * 0.2), pos2(r.max.x - s * 0.1, r.max.y - s * 0.1));
             p.rect_filled(back, 1.0, Color32::from_rgb(230, 190, 80));
             p.rect_stroke(back, 1.0, thin, egui::StrokeKind::Inside);
-            let front = vec![pos2(r.min.x + s * 0.15, c.y), pos2(r.max.x, c.y), pos2(r.max.x - s * 0.15, back.max.y), pos2(r.min.x, back.max.y)];
+            let front = vec![
+                pos2(r.min.x + s * 0.15, c.y),
+                pos2(r.max.x, c.y),
+                pos2(r.max.x - s * 0.15, back.max.y),
+                pos2(r.min.x, back.max.y),
+            ];
             p.add(Shape::convex_polygon(front, Color32::from_rgb(250, 215, 120), thin));
         }
         Glyph::Save => {
             p.rect_filled(r, 1.0, k(Color32::from_rgb(40, 70, 160)));
-            p.rect_filled(Rect::from_min_size(r.min + vec2(s * 0.2, 1.0), vec2(s * 0.6, s * 0.35)), 0.0, Color32::WHITE);
-            p.rect_filled(Rect::from_min_size(pos2(r.min.x + s * 0.25, r.max.y - s * 0.38), vec2(s * 0.5, s * 0.36)), 0.0, Color32::from_rgb(180, 180, 190));
+            p.rect_filled(
+                Rect::from_min_size(r.min + vec2(s * 0.2, 1.0), vec2(s * 0.6, s * 0.35)),
+                0.0,
+                Color32::WHITE,
+            );
+            p.rect_filled(
+                Rect::from_min_size(pos2(r.min.x + s * 0.25, r.max.y - s * 0.38), vec2(s * 0.5, s * 0.36)),
+                0.0,
+                Color32::from_rgb(180, 180, 190),
+            );
         }
         Glyph::New => {
-            let page = vec![r.min + vec2(s * 0.15, 0.0), pos2(r.max.x - s * 0.3, r.min.y), pos2(r.max.x - s * 0.1, r.min.y + s * 0.2), pos2(r.max.x - s * 0.1, r.max.y), pos2(r.min.x + s * 0.15, r.max.y)];
+            let page = vec![
+                r.min + vec2(s * 0.15, 0.0),
+                pos2(r.max.x - s * 0.3, r.min.y),
+                pos2(r.max.x - s * 0.1, r.min.y + s * 0.2),
+                pos2(r.max.x - s * 0.1, r.max.y),
+                pos2(r.min.x + s * 0.15, r.max.y),
+            ];
             p.add(Shape::convex_polygon(page, Color32::WHITE, thin));
         }
     }
@@ -613,7 +741,12 @@ impl Pen<'_> {
         // The outline's shadow goes under the body, so it shows only outside the shape.
         self.tube_shadow(&pts, true);
         let under: Vec<Pos2> = pts.iter().map(|q| *q + vec2(0.0, 1.6)).collect();
-        glass::gradient_fill(self.p, &under, glass::alpha(Color32::from_rgb(40, 30, 90), 0.55), glass::alpha(Color32::BLACK, 0.6));
+        glass::gradient_fill(
+            self.p,
+            &under,
+            glass::alpha(Color32::from_rgb(40, 30, 90), 0.55),
+            glass::alpha(Color32::BLACK, 0.6),
+        );
         // An opaque base under the translucent face, so nothing below shows through it.
         glass::gradient_fill(self.p, &pts, Color32::from_rgb(22, 24, 40), Color32::from_rgb(12, 13, 24));
         glass::gradient_fill(self.p, &pts, white(0.30), white(0.05));
@@ -634,7 +767,12 @@ impl Pen<'_> {
         if body { self.shape(pts) } else { self.outline(pts) }
     }
     fn dot(&self, c: Pos2, rad: f32) {
-        glass::bead(self.p, c, rad.max(1.2), glass::iris(((c.x - self.r.min.x) / self.r.width().max(1.0)).clamp(0.0, 1.0)));
+        glass::bead(
+            self.p,
+            c,
+            rad.max(1.2),
+            glass::iris(((c.x - self.r.min.x) / self.r.width().max(1.0)).clamp(0.0, 1.0)),
+        );
     }
     /// A white specular glint.
     fn glint(&self, c: Pos2, rad: f32) {
@@ -785,7 +923,12 @@ pub fn draw_glass_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             // A glass outline holding a smaller amber-tinted shape.
             pen.shape(vec![at(0.06, 0.22), at(0.6, 0.04), at(0.96, 0.45), at(0.74, 0.96), at(0.1, 0.84)]);
             let inner = vec![at(0.4, 0.32), at(0.76, 0.44), at(0.62, 0.76), at(0.3, 0.62)];
-            glass::gradient_fill(p, &inner, glass::alpha(Color32::from_rgb(245, 158, 11), 0.6), glass::alpha(Color32::from_rgb(245, 158, 11), 0.35));
+            glass::gradient_fill(
+                p,
+                &inner,
+                glass::alpha(Color32::from_rgb(245, 158, 11), 0.6),
+                glass::alpha(Color32::from_rgb(245, 158, 11), 0.35),
+            );
             pen.outline(inner);
         }
         Glyph::PlaceUnderlay => {
@@ -872,7 +1015,12 @@ pub fn draw_glass_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             pen.outline(pts.clone());
             for q in pts {
                 p.rect_filled(Rect::from_center_size(q, vec2(s * 0.14, s * 0.14)), 1.5, t.face);
-                p.rect_stroke(Rect::from_center_size(q, vec2(s * 0.14, s * 0.14)), 1.5, Stroke::new(1.0, IRIS[0]), egui::StrokeKind::Inside);
+                p.rect_stroke(
+                    Rect::from_center_size(q, vec2(s * 0.14, s * 0.14)),
+                    1.5,
+                    Stroke::new(1.0, IRIS[0]),
+                    egui::StrokeKind::Inside,
+                );
             }
         }
         Glyph::Pointer => {
@@ -886,10 +1034,11 @@ pub fn draw_glass_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
         Glyph::Undo | Glyph::Redo => {
             // An arc over the top with the arrowhead on its left end (Undo) or right (Redo).
             let dir = if g == Glyph::Undo { 1.0 } else { -1.0 };
-            let pts: Vec<Pos2> = arc(at(0.5, 0.62), s * 0.34, std::f32::consts::PI * 1.05, std::f32::consts::PI * 2.0, 12)
-                .into_iter()
-                .map(|q| pos2(c.x + (q.x - c.x) * dir, q.y))
-                .collect();
+            let pts: Vec<Pos2> =
+                arc(at(0.5, 0.62), s * 0.34, std::f32::consts::PI * 1.05, std::f32::consts::PI * 2.0, 12)
+                    .into_iter()
+                    .map(|q| pos2(c.x + (q.x - c.x) * dir, q.y))
+                    .collect();
             let start = pts.first().copied().unwrap_or(c);
             let end = pts.last().copied().unwrap_or(c);
             pen.line(pts);

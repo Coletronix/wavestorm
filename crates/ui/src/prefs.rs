@@ -62,7 +62,8 @@ impl Prefs {
     /// Seconds between automatic saves, or None when autosave is off (always off in the
     /// browser, where projects are files the user downloads).
     pub fn autosave_interval(&self) -> Option<f64> {
-        (cfg!(not(target_arch = "wasm32")) && self.autosave && self.autosave_minutes.is_finite()).then_some(self.autosave_minutes.max(0.25) * 60.0)
+        (cfg!(not(target_arch = "wasm32")) && self.autosave && self.autosave_minutes.is_finite())
+            .then_some(self.autosave_minutes.max(0.25) * 60.0)
     }
 }
 

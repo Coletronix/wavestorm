@@ -38,16 +38,28 @@ fn duration_hours(label: &str) -> Option<f64> {
 /// inches or millimetres; millimetres are converted).
 pub fn parse_pfds_csv(text: &str) -> Result<PfTable, String> {
     let mut lines = text.lines().map(str::trim);
-    let header: Vec<&str> = text.lines().map(str::trim).take_while(|l| !l.eq_ignore_ascii_case("PRECIPITATION FREQUENCY ESTIMATES")).filter(|l| !l.is_empty()).collect();
+    let header: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .take_while(|l| !l.eq_ignore_ascii_case("PRECIPITATION FREQUENCY ESTIMATES"))
+        .filter(|l| !l.is_empty())
+        .collect();
     let metric = header.first().is_some_and(|l| l.to_ascii_lowercase().contains("millimet"));
-    if !header.iter().any(|l| l.to_ascii_lowercase().contains("depth")) && header.iter().any(|l| l.to_ascii_lowercase().contains("intensity")) {
+    if !header.iter().any(|l| l.to_ascii_lowercase().contains("depth"))
+        && header.iter().any(|l| l.to_ascii_lowercase().contains("intensity"))
+    {
         return Err("This NOAA table holds intensities; download the precipitation depth table instead.".into());
     }
     if !lines.any(|l| l.eq_ignore_ascii_case("PRECIPITATION FREQUENCY ESTIMATES")) {
-        return Err("Not a NOAA Atlas 14 precipitation frequency CSV (no PRECIPITATION FREQUENCY ESTIMATES table).".into());
+        return Err(
+            "Not a NOAA Atlas 14 precipitation frequency CSV (no PRECIPITATION FREQUENCY ESTIMATES table).".into()
+        );
     }
     let aris_line = lines.next().unwrap_or("");
-    let aris: Vec<f64> = aris_line.split_once(':').map(|(_, r)| r.split(',').filter_map(|v| v.trim().parse().ok()).collect()).unwrap_or_default();
+    let aris: Vec<f64> = aris_line
+        .split_once(':')
+        .map(|(_, r)| r.split(',').filter_map(|v| v.trim().parse().ok()).collect())
+        .unwrap_or_default();
     if aris.is_empty() {
         return Err("The precipitation frequency table has no recurrence intervals.".into());
     }
@@ -61,18 +73,24 @@ pub fn parse_pfds_csv(text: &str) -> Result<PfTable, String> {
         let Some(hours) = duration_hours(label) else { continue };
         // Rows read "24-hr:, 2.22,2.76,…": skip the empty field after the colon.
         let values = rest.trim().trim_start_matches(',');
-        let depths: Vec<f64> = values.split(',').map(|v| v.trim().parse::<f64>().map(|d| d * k).unwrap_or(f64::NAN)).collect();
+        let depths: Vec<f64> =
+            values.split(',').map(|v| v.trim().parse::<f64>().map(|d| d * k).unwrap_or(f64::NAN)).collect();
         rows.push(PfRow { label: label.trim().to_string(), hours, depths });
     }
     if rows.is_empty() {
         return Err("The precipitation frequency table has no durations.".into());
     }
     let pick = |key: &str| header.iter().find_map(|l| l.strip_prefix(key)).map(|v| v.trim().to_string());
-    let source = [header.get(1).map(|s| s.to_string()), pick("Project area:"), pick("Latitude:").map(|v| format!("Lat {v}")), pick("Longitude:").map(|v| format!("Lon {v}"))]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(", ");
+    let source = [
+        header.get(1).map(|s| s.to_string()),
+        pick("Project area:"),
+        pick("Latitude:").map(|v| format!("Lat {v}")),
+        pick("Longitude:").map(|v| format!("Lon {v}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(", ");
     Ok(PfTable { source, aris, rows })
 }
 

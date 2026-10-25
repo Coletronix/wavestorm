@@ -78,12 +78,17 @@ pub fn loading(project: &Project, results: &Results) -> Vec<LoadRow> {
 }
 
 /// As [`loading`], for the subcatchments `keep` accepts.
-pub fn loading_where(project: &Project, results: &Results, keep: &dyn Fn(crate::project::NodeId) -> bool) -> Vec<LoadRow> {
+pub fn loading_where(
+    project: &Project,
+    results: &Results,
+    keep: &dyn Fn(crate::project::NodeId) -> bool,
+) -> Vec<LoadRow> {
     let s = &project.land_use;
     // Imperviousness is averaged over the scope the settings choose (the whole project, each
     // land use, each subcatchment, or each land use within a subcatchment), then Rv = 0.05 +
     // 0.9 I is applied to every sub-area in that scope.
-    let use_name = |a: &crate::cn::SubArea| a.land_use.clone().filter(|u| !u.is_empty()).unwrap_or_else(|| "(unassigned)".into());
+    let use_name =
+        |a: &crate::cn::SubArea| a.land_use.clone().filter(|u| !u.is_empty()).unwrap_or_else(|| "(unassigned)".into());
     let scope = |id: crate::project::NodeId, name: &str| -> String {
         match s.imperviousness {
             ImperviousBasis::EntireProject => String::new(),
@@ -117,7 +122,14 @@ pub fn loading_where(project: &Project, results: &Results, keep: &dyn Fn(crate::
             let row = match rows.iter_mut().position(|r| r.land_use == name) {
                 Some(i) => &mut rows[i],
                 None => {
-                    rows.push(LoadRow { land_use: name.clone(), area: 0.0, impervious: 0.0, rv: 0.0, runoff: 0.0, loads: vec![0.0; s.pollutants.len()] });
+                    rows.push(LoadRow {
+                        land_use: name.clone(),
+                        area: 0.0,
+                        impervious: 0.0,
+                        rv: 0.0,
+                        runoff: 0.0,
+                        loads: vec![0.0; s.pollutants.len()],
+                    });
                     let last = rows.len() - 1;
                     &mut rows[last]
                 }
@@ -151,7 +163,14 @@ pub fn loading_report(project: &Project, results: &Results) -> Vec<String> {
     let u = &project.units;
     let s = &project.land_use;
     let rows = loading(project, results);
-    let mut head = format!("{:>12} {:<20} {:>7} {:>7} {:>9}", format!("Area({})", u.area_label()), "Land Use", "Imp.%", "Rv", "Runoff");
+    let mut head = format!(
+        "{:>12} {:<20} {:>7} {:>7} {:>9}",
+        format!("Area({})", u.area_label()),
+        "Land Use",
+        "Imp.%",
+        "Rv",
+        "Runoff"
+    );
     for p in &s.pollutants {
         head.push_str(&format!(" {:>11}", format!("{p}(lb)")));
     }
@@ -164,7 +183,14 @@ pub fn loading_report(project: &Project, results: &Results) -> Vec<String> {
     let mut area = 0.0;
     for r in &rows {
         area += r.area;
-        let mut line = format!("{:>12} {:<20} {:>7.2} {:>7.3} {:>9.2}", group(u.area(r.area), u.area_dp()), r.land_use, r.impervious * 100.0, r.rv, r.runoff);
+        let mut line = format!(
+            "{:>12} {:<20} {:>7.2} {:>7.3} {:>9.2}",
+            group(u.area(r.area), u.area_dp()),
+            r.land_use,
+            r.impervious * 100.0,
+            r.rv,
+            r.runoff
+        );
         for (k, l) in r.loads.iter().enumerate() {
             line.push_str(&format!(" {:>11}", group(*l, 2)));
             if let Some(t) = totals.get_mut(k) {
@@ -189,7 +215,8 @@ mod tests {
 
     #[test]
     fn old_settings_load_with_defaults() {
-        let s: LandUseSettings = serde_json::from_str(r#"{"pollutants":[],"uses":[],"annual_rainfall":null,"correction":0.9}"#).unwrap();
+        let s: LandUseSettings =
+            serde_json::from_str(r#"{"pollutants":[],"uses":[],"annual_rainfall":null,"correction":0.9}"#).unwrap();
         assert!(s.report_land_use && s.report_loading);
         assert_eq!(s.imperviousness, ImperviousBasis::EntireProject);
     }
@@ -203,7 +230,8 @@ mod tests {
         lot.land_use = Some("Parking".into());
         let mut wood = SubArea::new(43_560.0, 55.0, "Woods, Good, HSG B");
         wood.land_use = Some("Woods".into());
-        p.node_mut(id).unwrap().data = NodeData::Subcat(Subcatchment { areas: vec![lot, wood], tc: vec![], uh: None, large_units: true });
+        p.node_mut(id).unwrap().data =
+            NodeData::Subcat(Subcatchment { areas: vec![lot, wood], tc: vec![], uh: None, large_units: true });
         let r = crate::calc::calculate(&p);
         let total = |p: &Project| loading(p, &r).iter().map(|x| x.loads[0]).sum::<f64>();
         let rv = |p: &Project| loading(p, &r).iter().map(|x| x.rv * x.area).sum::<f64>();
@@ -224,8 +252,10 @@ mod tests {
         let id = p.add_node(NodeType::Subcat, [0.0, 0.0]);
         let mut a = SubArea::new(43_560.0, 98.0, "Paved parking, HSG B");
         a.land_use = Some("Parking".into());
-        p.node_mut(id).unwrap().data = NodeData::Subcat(Subcatchment { areas: vec![a], tc: vec![], uh: None, large_units: true });
-        let text = |p: &Project| crate::report::node_summary(p, &crate::calc::calculate(p), p.node(id).unwrap()).join("\n");
+        p.node_mut(id).unwrap().data =
+            NodeData::Subcat(Subcatchment { areas: vec![a], tc: vec![], uh: None, large_units: true });
+        let text =
+            |p: &Project| crate::report::node_summary(p, &crate::calc::calculate(p), p.node(id).unwrap()).join("\n");
         assert!(text(&p).contains("TSS="));
         p.land_use.report_loading = false;
         let t = text(&p);
@@ -241,7 +271,8 @@ mod tests {
         let id = p.add_node(NodeType::Subcat, [0.0, 0.0]);
         let mut a = SubArea::new(43_560.0, 98.0, "Paved parking, HSG B");
         a.land_use = Some("Parking".into());
-        p.node_mut(id).unwrap().data = NodeData::Subcat(Subcatchment { areas: vec![a], tc: vec![], uh: None, large_units: true });
+        p.node_mut(id).unwrap().data =
+            NodeData::Subcat(Subcatchment { areas: vec![a], tc: vec![], uh: None, large_units: true });
         let r = crate::calc::calculate(&p);
         let rows = loading(&p, &r);
         // L = 0.226 R C A with R = 42 × 0.9 × 0.95 inches, A = 1 ac, C = 100 mg/L (0.226 is the

@@ -23,7 +23,11 @@ fn prismatic(name: &str, stages: &[(f64, f64)]) -> StorageVolume {
     StorageVolume::new(
         name,
         stages[0].0,
-        VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations: stages.iter().map(|s| s.0).collect(), values: stages.iter().map(|s| s.1).collect() },
+        VolumeShape::Custom {
+            kind: CustomKind::AreaPrismatic,
+            elevations: stages.iter().map(|s| s.0).collect(),
+            values: stages.iter().map(|s| s.1).collect(),
+        },
     )
 }
 
@@ -36,7 +40,18 @@ fn culvert(invert: f64, length: f64, outlet_invert: f64) -> OutletDevice {
         "12\" culvert",
         invert,
         Routing::Primary,
-        DeviceKind::Culvert { shape: PipeShape::Round, width: 1.0, height: 1.0, length, outlet_invert, n: 0.013, ke: 0.9, cc: 0.9, fill: 0.0, entrance: String::new() },
+        DeviceKind::Culvert {
+            shape: PipeShape::Round,
+            width: 1.0,
+            height: 1.0,
+            length,
+            outlet_invert,
+            n: 0.013,
+            ke: 0.9,
+            cc: 0.9,
+            fill: 0.0,
+            entrance: String::new(),
+        },
     )
 }
 
@@ -128,11 +143,31 @@ fn check(label: &str, inflow: (f64, f64, f64), pond: &Pond, published: &[Publish
         );
         let tag = format!("{label} {}\"", c.depth);
         assert!((n.inflow.peak().value - c.inflow).abs() <= 0.01 * c.inflow + 0.02, "{tag} inflow");
-        assert!((out.value - c.outflow).abs() <= 0.03 * c.outflow + 0.01, "{tag} outflow {:.3} vs {}", out.value, c.outflow);
+        assert!(
+            (out.value - c.outflow).abs() <= 0.03 * c.outflow + 0.01,
+            "{tag} outflow {:.3} vs {}",
+            out.value,
+            c.outflow
+        );
         // Late peaks of slowly draining ponds are flat for hours, so their time is loosely defined.
-        assert!((out.time - c.time).abs() <= 0.05 + 0.06 * (c.time - 12.0).max(0.0), "{tag} time {:.2} vs {}", out.time, c.time);
-        assert!((d.peak_elevation - c.elevation).abs() <= 0.02, "{tag} elevation {:.3} vs {}", d.peak_elevation, c.elevation);
-        assert!((d.peak_storage - c.storage).abs() <= 0.02 * c.storage, "{tag} storage {:.0} vs {}", d.peak_storage, c.storage);
+        assert!(
+            (out.time - c.time).abs() <= 0.05 + 0.06 * (c.time - 12.0).max(0.0),
+            "{tag} time {:.2} vs {}",
+            out.time,
+            c.time
+        );
+        assert!(
+            (d.peak_elevation - c.elevation).abs() <= 0.02,
+            "{tag} elevation {:.3} vs {}",
+            d.peak_elevation,
+            c.elevation
+        );
+        assert!(
+            (d.peak_storage - c.storage).abs() <= 0.02 * c.storage,
+            "{tag} storage {:.0} vs {}",
+            d.peak_storage,
+            c.storage
+        );
     }
 }
 
@@ -142,17 +177,36 @@ fn infiltration_pond_with_overflow_weir() {
     let pond = Pond {
         storage: PondStorage {
             volumes: vec![
-                prismatic("Pond", &[(645.50, 511.0), (646.00, 624.0), (647.00, 867.0), (647.70, 1054.0), (647.75, 1380.0), (648.00, 1515.0)]),
+                prismatic(
+                    "Pond",
+                    &[
+                        (645.50, 511.0),
+                        (646.00, 624.0),
+                        (647.00, 867.0),
+                        (647.70, 1054.0),
+                        (647.75, 1380.0),
+                        (648.00, 1515.0),
+                    ],
+                ),
                 prismatic("Forebay", &[(645.50, 88.0), (646.50, 187.0), (647.70, 337.0)]),
             ],
         },
         devices: vec![
-            OutletDevice::new("Overflow weir", 647.55, Routing::Primary, DeviceKind::BroadCrestedWeir { length: 4.0, breadth: 3.0, side_z: 0.0, rise: None }),
+            OutletDevice::new(
+                "Overflow weir",
+                647.55,
+                Routing::Primary,
+                DeviceKind::BroadCrestedWeir { length: 4.0, breadth: 3.0, side_z: 0.0, rise: None },
+            ),
             OutletDevice::new(
                 "Exfiltration",
                 645.50,
                 Routing::Discarded,
-                DeviceKind::Exfiltration { mode: ExfilMode::Conductivity { ks, groundwater: 640.44, wetted: false }, phase_in: 0.0, max_elevation: None },
+                DeviceKind::Exfiltration {
+                    mode: ExfilMode::Conductivity { ks, groundwater: 640.44, wetted: false },
+                    phase_in: 0.0,
+                    max_elevation: None,
+                },
             ),
         ],
         flood_elevation: Some(648.0),
@@ -164,12 +218,22 @@ fn infiltration_pond_with_overflow_weir() {
     ];
     check("1S pond", (2.265, 54.0, 6.7), &pond, &published);
     // The split between seepage and overflow, and their volumes.
-    for (depth, discarded, primary, disc_af, prim_af) in [(4.22, 0.07, 0.04, 0.103, 0.005), (5.33, 0.09, 1.31, 0.115, 0.089)] {
+    for (depth, discarded, primary, disc_af, prim_af) in
+        [(4.22, 0.07, 0.04, 0.103, 0.005), (5.33, 0.09, 1.31, 0.115, 0.089)]
+    {
         let (p, id) = model(depth, (2.265, 54.0, 6.7), pond.clone());
         let r = calc::calculate(&p);
         let n = r.node(id).expect("pond result");
-        assert!((n.routes[3].peak().value - discarded).abs() <= 0.006, "{depth}\" discarded {:.3}", n.routes[3].peak().value);
-        assert!((n.routes[0].peak().value - primary).abs() <= 0.04 * primary + 0.01, "{depth}\" primary {:.3}", n.routes[0].peak().value);
+        assert!(
+            (n.routes[3].peak().value - discarded).abs() <= 0.006,
+            "{depth}\" discarded {:.3}",
+            n.routes[3].peak().value
+        );
+        assert!(
+            (n.routes[0].peak().value - primary).abs() <= 0.04 * primary + 0.01,
+            "{depth}\" primary {:.3}",
+            n.routes[0].peak().value
+        );
         assert!((n.routes[3].volume_cf() / AC - disc_af).abs() <= 0.002, "{depth}\" discarded volume");
         assert!((n.routes[0].volume_cf() / AC - prim_af).abs() <= 0.002, "{depth}\" primary volume");
     }
@@ -181,7 +245,19 @@ fn gravel_cell_pond_with_culvert_and_orifice() {
         storage: PondStorage {
             volumes: vec![
                 gravel(&[(627.75, 720.0), (631.25, 720.0)]),
-                prismatic("Pond", &[(631.25, 1895.0), (632.0, 2235.0), (633.0, 2708.0), (633.2, 2805.0), (633.25, 3056.0), (634.0, 3536.0), (635.0, 4106.0), (635.75, 4549.0)]),
+                prismatic(
+                    "Pond",
+                    &[
+                        (631.25, 1895.0),
+                        (632.0, 2235.0),
+                        (633.0, 2708.0),
+                        (633.2, 2805.0),
+                        (633.25, 3056.0),
+                        (634.0, 3536.0),
+                        (635.0, 4106.0),
+                        (635.75, 4549.0),
+                    ],
+                ),
                 prismatic("Forebay", &[(631.25, 66.0), (632.0, 124.0), (633.0, 223.0), (633.2, 245.0)]),
             ],
         },
@@ -190,7 +266,12 @@ fn gravel_cell_pond_with_culvert_and_orifice() {
             orifice(631.25, 1.0),
             orifice(632.0, 1.7),
             grate(633.55),
-            OutletDevice::new("Spillway", 635.15, Routing::Primary, DeviceKind::BroadCrestedWeir { length: 10.0, breadth: 2.0, side_z: 0.0, rise: None }),
+            OutletDevice::new(
+                "Spillway",
+                635.15,
+                Routing::Primary,
+                DeviceKind::BroadCrestedWeir { length: 10.0, breadth: 2.0, side_z: 0.0, rise: None },
+            ),
         ],
         start_elevation: Some(631.25),
         flood_elevation: Some(635.75),
@@ -239,7 +320,17 @@ fn wet_basin_with_orifice_and_overflow_grate() {
             volumes: vec![
                 prismatic("Forebay", &well),
                 prismatic("Micropool", &well),
-                prismatic("Basin", &[(319.0, 5221.0), (320.0, 6088.0), (321.0, 7012.0), (322.0, 7993.0), (323.0, 9030.0), (324.0, 10123.0)]),
+                prismatic(
+                    "Basin",
+                    &[
+                        (319.0, 5221.0),
+                        (320.0, 6088.0),
+                        (321.0, 7012.0),
+                        (322.0, 7993.0),
+                        (323.0, 9030.0),
+                        (324.0, 10123.0),
+                    ],
+                ),
             ],
         },
         devices: vec![
@@ -247,7 +338,18 @@ fn wet_basin_with_orifice_and_overflow_grate() {
                 "15\" pipe",
                 319.50,
                 Routing::Primary,
-                DeviceKind::Culvert { shape: PipeShape::Round, width: 1.25, height: 1.25, length: 35.0, outlet_invert: 319.25, n: 0.013, ke: 0.5, cc: 0.9, fill: 0.0, entrance: String::new() },
+                DeviceKind::Culvert {
+                    shape: PipeShape::Round,
+                    width: 1.25,
+                    height: 1.25,
+                    length: 35.0,
+                    outlet_invert: 319.25,
+                    n: 0.013,
+                    ke: 0.5,
+                    cc: 0.9,
+                    fill: 0.0,
+                    entrance: String::new(),
+                },
             ),
             orifice(319.86, 2.5),
             OutletDevice::new(
@@ -270,7 +372,9 @@ fn wet_basin_with_orifice_and_overflow_grate() {
         ..Pond::default()
     };
     let areas = [(0.188, 98.0), (0.546, 80.0), (0.723, 98.0), (0.963, 98.0), (0.152, 98.0), (0.298, 39.0)];
-    for (depth, inflow, outflow, time, elevation, storage) in [(2.10, 6.74, 0.19, 13.98, 321.30, 16004.0), (3.10, 10.49, 1.59, 12.14, 321.74, 19322.0)] {
+    for (depth, inflow, outflow, time, elevation, storage) in
+        [(2.10, 6.74, 0.19, 13.98, 321.30, 16004.0), (3.10, 10.49, 1.59, 12.14, 321.74, 19322.0)]
+    {
         let mut p = Project::default();
         p.settings.events = vec![RainEvent::new("Event", "Type II 24-hr", depth)];
         p.settings.current_event = 0;
@@ -295,7 +399,14 @@ fn wet_basin_with_orifice_and_overflow_grate() {
         let n = r.node(pid).expect("pond result");
         let Detail::Pond(d) = &n.detail else { panic!("pond detail") };
         let out = n.outflow.peak();
-        eprintln!("3P basin {depth}\": in {:.2} ({inflow}) out {:.3} @ {:.2} ({outflow} @ {time}) elev {:.3} ({elevation}) stor {:.0} ({storage})", n.inflow.peak().value, out.value, out.time, d.peak_elevation, d.peak_storage);
+        eprintln!(
+            "3P basin {depth}\": in {:.2} ({inflow}) out {:.3} @ {:.2} ({outflow} @ {time}) elev {:.3} ({elevation}) stor {:.0} ({storage})",
+            n.inflow.peak().value,
+            out.value,
+            out.time,
+            d.peak_elevation,
+            d.peak_storage
+        );
         assert!((n.inflow.peak().value - inflow).abs() <= 0.01 * inflow + 0.02, "{depth}\" inflow");
         assert!((out.value - outflow).abs() <= 0.03 * outflow + 0.01, "{depth}\" outflow {:.3}", out.value);
         assert!((out.time - time).abs() <= 0.05 + 0.06 * (time - 12.0).max(0.0), "{depth}\" time {:.2}", out.time);
@@ -312,15 +423,40 @@ fn wet_basin_with_orifice_and_overflow_grate() {
 fn basin_with_primary_and_secondary_culverts() {
     let culvert = |d_in: f64, invert: f64, length: f64, routing: Routing| {
         let d = d_in / 12.0;
-        let kind = DeviceKind::Culvert { shape: PipeShape::Round, width: d, height: d, length, outlet_invert: 826.10, n: 0.010, ke: 0.9, cc: 0.9, fill: 0.0, entrance: String::new() };
+        let kind = DeviceKind::Culvert {
+            shape: PipeShape::Round,
+            width: d,
+            height: d,
+            length,
+            outlet_invert: 826.10,
+            n: 0.010,
+            ke: 0.9,
+            cc: 0.9,
+            fill: 0.0,
+            entrance: String::new(),
+        };
         OutletDevice::new("Culvert", invert, routing, kind)
     };
     let opening = |shape: OpeningShape, plane: Plane, columns: u32, invert: f64, into: usize| {
-        let kind = DeviceKind::Orifice { shape, plane, cd: 0.6, columns, rows: 1, row_spacing: 0.0, weir_at_low_head: true, grate: None };
+        let kind = DeviceKind::Orifice {
+            shape,
+            plane,
+            cd: 0.6,
+            columns,
+            rows: 1,
+            row_spacing: 0.0,
+            weir_at_low_head: true,
+            grate: None,
+        };
         OutletDevice::new("Orifice/Grate", invert, Routing::Device(into), kind)
     };
     let pond = Pond {
-        storage: PondStorage { volumes: vec![prismatic("Basin", &[(831.0, 483.0), (832.0, 722.0), (833.0, 986.0), (834.0, 1276.0), (835.0, 1590.0), (836.0, 1930.0)])] },
+        storage: PondStorage {
+            volumes: vec![prismatic(
+                "Basin",
+                &[(831.0, 483.0), (832.0, 722.0), (833.0, 986.0), (834.0, 1276.0), (835.0, 1590.0), (836.0, 1930.0)],
+            )],
+        },
         devices: vec![
             culvert(6.0, 831.50, 37.0, Routing::Primary),
             opening(OpeningShape::Circular { diameter: 1.5 }, Plane::Horizontal, 1, 833.00, 0),
@@ -331,9 +467,12 @@ fn basin_with_primary_and_secondary_culverts() {
         ..Pond::default()
     };
     // (depth, inflow, outflow, time, elevation, storage)
-    for (depth, inflow, outflow, time, elevation, storage) in
-        [(4.44, 0.85, 0.64, 8.17, 832.49, 986.0), (6.5, 1.78, 1.05, 8.28, 833.72, 2240.0), (8.52, 2.78, 1.46, 8.34, 835.03, 4071.0), (9.36, 3.21, 2.56, 8.13, 835.18, 4311.0)]
-    {
+    for (depth, inflow, outflow, time, elevation, storage) in [
+        (4.44, 0.85, 0.64, 8.17, 832.49, 986.0),
+        (6.5, 1.78, 1.05, 8.28, 833.72, 2240.0),
+        (8.52, 2.78, 1.46, 8.34, 835.03, 4071.0),
+        (9.36, 3.21, 2.56, 8.13, 835.18, 4311.0),
+    ] {
         let mut p = Project::default();
         p.settings.events = vec![RainEvent::new("Event", "Type IA 24-hr", depth)];
         p.settings.current_event = 0;
@@ -382,7 +521,18 @@ fn gravel_cell_pond_with_two_orifices_and_grate() {
             volumes: vec![
                 gravel(&[(637.25, 360.0), (640.75, 360.0)]),
                 prismatic("Forebay", &[(640.75, 32.0), (641.0, 45.0), (642.0, 112.0), (642.7, 174.0)]),
-                prismatic("Pond", &[(640.75, 1955.0), (641.0, 2047.0), (642.0, 2432.0), (642.7, 2717.0), (642.75, 2926.0), (643.0, 3059.0), (643.25, 3176.0)]),
+                prismatic(
+                    "Pond",
+                    &[
+                        (640.75, 1955.0),
+                        (641.0, 2047.0),
+                        (642.0, 2432.0),
+                        (642.7, 2717.0),
+                        (642.75, 2926.0),
+                        (643.0, 3059.0),
+                        (643.25, 3176.0),
+                    ],
+                ),
             ],
         },
         devices: vec![culvert(637.5, 54.0, 636.0), orifice(640.75, 1.0), orifice(641.15, 1.0), grate(642.12)],

@@ -44,7 +44,10 @@ impl Table {
             }
             s.trim_end().to_string()
         };
-        let mut out = vec![line(self.heads.iter().map(|h| h.0.as_str()).collect()), line(self.heads.iter().map(|h| h.1.as_str()).collect())];
+        let mut out = vec![
+            line(self.heads.iter().map(|h| h.0.as_str()).collect()),
+            line(self.heads.iter().map(|h| h.1.as_str()).collect()),
+        ];
         out.push("-".repeat(widths.iter().map(|w| w + 2).sum::<usize>().saturating_sub(2)));
         if self.rows.is_empty() && !self.empty.is_empty() {
             out.push(self.empty.clone());
@@ -57,7 +60,8 @@ impl Table {
 
     /// Comma-separated rendering (headings joined into one line).
     pub fn csv(&self) -> String {
-        let q = |s: &str| if s.contains([',', '"']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() };
+        let q =
+            |s: &str| if s.contains([',', '"']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() };
         let head: Vec<String> = self.heads.iter().map(|(a, b)| q(format!("{a} {b}").trim())).collect();
         let mut out = head.join(",");
         for r in &self.rows {
@@ -72,7 +76,10 @@ fn heading(title: &str, unit: &str) -> (String, String) {
     (title.to_string(), if unit.is_empty() { String::new() } else { format!("({unit})") })
 }
 
-fn subcats<'a>(project: &'a Project, only: Option<&'a [NodeId]>) -> impl Iterator<Item = (&'a Node, &'a crate::project::Subcatchment)> {
+fn subcats<'a>(
+    project: &'a Project,
+    only: Option<&'a [NodeId]>,
+) -> impl Iterator<Item = (&'a Node, &'a crate::project::Subcatchment)> {
     project.nodes.iter().filter(move |n| only.is_none_or(|s| s.contains(&n.id))).filter_map(|n| match &n.data {
         NodeData::Subcat(sc) => Some((n, sc)),
         _ => None,
@@ -101,7 +108,10 @@ pub fn area_table(project: &Project, only: Option<&[NodeId]>, totals: bool) -> T
         }
     }
     rows.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut t = Table { heads: vec![area_heading(u), heading("CN", ""), heading("Description", ""), heading("Subcatchment", "Numbers")], ..Default::default() };
+    let mut t = Table {
+        heads: vec![area_heading(u), heading("CN", ""), heading("Description", ""), heading("Subcatchment", "Numbers")],
+        ..Default::default()
+    };
     let (mut tot, mut wsum) = (0.0, 0.0);
     for (d, cn, a, nodes) in &rows {
         tot += a;
@@ -110,7 +120,12 @@ pub fn area_table(project: &Project, only: Option<&[NodeId]>, totals: bool) -> T
     }
     if totals && tot > 0.0 {
         t.total = Some(t.rows.len());
-        t.rows.push(vec![group(u.area(tot), u.area_dp()), fmt_cn((wsum / tot * 10.0).round() / 10.0), "TOTAL AREA".into(), String::new()]);
+        t.rows.push(vec![
+            group(u.area(tot), u.area_dp()),
+            fmt_cn((wsum / tot * 10.0).round() / 10.0),
+            "TOTAL AREA".into(),
+            String::new(),
+        ]);
     }
     t.empty = "(no subcatchments)".into();
     t
@@ -119,7 +134,8 @@ pub fn area_table(project: &Project, only: Option<&[NodeId]>, totals: bool) -> T
 /// Area by hydrologic soil group.
 pub fn soil_table(project: &Project, only: Option<&[NodeId]>, totals: bool) -> Table {
     let u = &project.units;
-    let mut groups: Vec<(String, f64, Vec<String>)> = Hsg::ALL.iter().map(|h| (format!("HSG {}", h.letter()), 0.0, Vec::new())).collect();
+    let mut groups: Vec<(String, f64, Vec<String>)> =
+        Hsg::ALL.iter().map(|h| (format!("HSG {}", h.letter()), 0.0, Vec::new())).collect();
     groups.push(("Other".into(), 0.0, Vec::new()));
     for (n, sc) in subcats(project, only) {
         for a in &sc.areas {
@@ -132,7 +148,10 @@ pub fn soil_table(project: &Project, only: Option<&[NodeId]>, totals: bool) -> T
             }
         }
     }
-    let mut t = Table { heads: vec![area_heading(u), heading("Soil", "Group"), heading("Subcatchment", "Numbers")], ..Default::default() };
+    let mut t = Table {
+        heads: vec![area_heading(u), heading("Soil", "Group"), heading("Subcatchment", "Numbers")],
+        ..Default::default()
+    };
     let mut tot = 0.0;
     for (name, a, nodes) in &groups {
         tot += a;
@@ -166,7 +185,10 @@ pub fn land_use_table(project: &Project, only: Option<&[NodeId]>, totals: bool) 
         }
     }
     rows.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut t = Table { heads: vec![area_heading(u), heading("Imp.", "%"), heading("Land", "Use"), heading("Subcatchment", "Numbers")], ..Default::default() };
+    let mut t = Table {
+        heads: vec![area_heading(u), heading("Imp.", "%"), heading("Land", "Use"), heading("Subcatchment", "Numbers")],
+        ..Default::default()
+    };
     let (mut tot, mut timp) = (0.0, 0.0);
     let pct = |imp: f64, a: f64| format!("{:.2}", if a > 0.0 { imp / a * 100.0 } else { 0.0 });
     for (name, a, imp, nodes) in &rows {
@@ -187,7 +209,15 @@ pub fn pollutants_table(project: &Project) -> Table {
     let s = &project.land_use;
     let mut heads = vec![heading("Land", "Use")];
     heads.extend(s.pollutants.iter().map(|p| heading(p, "mg/L")));
-    let rows = s.uses.iter().map(|(name, c)| std::iter::once(name.clone()).chain((0..s.pollutants.len()).map(|k| format!("{:.3}", c.get(k).copied().unwrap_or(0.0)))).collect()).collect();
+    let rows = s
+        .uses
+        .iter()
+        .map(|(name, c)| {
+            std::iter::once(name.clone())
+                .chain((0..s.pollutants.len()).map(|k| format!("{:.3}", c.get(k).copied().unwrap_or(0.0))))
+                .collect()
+        })
+        .collect();
     Table { heads, rows, total: None, empty: "(no land uses defined: Settings > Land-Use)".into() }
 }
 
@@ -201,13 +231,15 @@ fn load_heads(project: &Project, first: Vec<(String, String)>) -> Vec<(String, S
 }
 
 fn load_cells(u: &Units, r: &LoadRow) -> Vec<String> {
-    let mut v = vec![format!("{:.2}", r.impervious * 100.0), format!("{:.3}", r.rv), format!("{:.2}", u.rain(r.runoff))];
+    let mut v =
+        vec![format!("{:.2}", r.impervious * 100.0), format!("{:.3}", r.rv), format!("{:.2}", u.rain(r.runoff))];
     v.extend(r.loads.iter().map(|l| group(*l, 2)));
     v
 }
 
 fn sum_rows(rows: &[LoadRow], name: &str, npoll: usize) -> LoadRow {
-    let mut t = LoadRow { land_use: name.into(), area: 0.0, impervious: 0.0, rv: 0.0, runoff: 0.0, loads: vec![0.0; npoll] };
+    let mut t =
+        LoadRow { land_use: name.into(), area: 0.0, impervious: 0.0, rv: 0.0, runoff: 0.0, loads: vec![0.0; npoll] };
     for r in rows {
         t.area += r.area;
         t.impervious += r.impervious * r.area;
@@ -231,7 +263,8 @@ fn sum_rows(rows: &[LoadRow], name: &str, npoll: usize) -> LoadRow {
 pub fn subcat_loading_table(project: &Project, results: &Results, only: Option<&[NodeId]>, totals: bool) -> Table {
     let u = &project.units;
     let np = project.land_use.pollutants.len();
-    let mut t = Table { heads: load_heads(project, vec![area_heading(u), heading("Subcatchment", "")]), ..Default::default() };
+    let mut t =
+        Table { heads: load_heads(project, vec![area_heading(u), heading("Subcatchment", "")]), ..Default::default() };
     let mut all = Vec::new();
     for (n, _) in subcats(project, only) {
         let id = n.id;
@@ -257,7 +290,8 @@ pub fn project_loading_table(project: &Project, results: &Results, only: Option<
     let u = &project.units;
     let np = project.land_use.pollutants.len();
     let rows = loading_where(project, results, &|id| only.is_none_or(|s| s.contains(&id)));
-    let mut t = Table { heads: load_heads(project, vec![area_heading(u), heading("Land", "Use")]), ..Default::default() };
+    let mut t =
+        Table { heads: load_heads(project, vec![area_heading(u), heading("Land", "Use")]), ..Default::default() };
     for r in &rows {
         let mut row = vec![group(u.area(r.area), u.area_dp()), r.land_use.clone()];
         row.extend(load_cells(u, r));
@@ -302,23 +336,24 @@ pub fn pipe_table(project: &Project, only: Option<&[NodeId]>) -> Table {
         empty: "(no pipes or culverts)".into(),
         ..Default::default()
     };
-    let mut push = |node: &Node, inv_in: f64, inv_out: f64, len: f64, n: f64, shape: PipeShape, w: f64, h: f64, fill: f64| {
-        let slope = if len > 0.0 { (inv_in - inv_out) / len } else { 0.0 };
-        let (s, dim) = shape_name(shape, w, h, u);
-        let line = t.rows.len() + 1;
-        t.rows.push(vec![
-            line.to_string(),
-            node.number.clone(),
-            format!("{:.2}", u.len(inv_in)),
-            format!("{:.2}", u.len(inv_out)),
-            format!("{:.1}", u.len(len)),
-            format!("{slope:.4}"),
-            format!("{n:.3}"),
-            s,
-            dim,
-            format!("{:.1}", u.small_len(fill)),
-        ]);
-    };
+    let mut push =
+        |node: &Node, inv_in: f64, inv_out: f64, len: f64, n: f64, shape: PipeShape, w: f64, h: f64, fill: f64| {
+            let slope = if len > 0.0 { (inv_in - inv_out) / len } else { 0.0 };
+            let (s, dim) = shape_name(shape, w, h, u);
+            let line = t.rows.len() + 1;
+            t.rows.push(vec![
+                line.to_string(),
+                node.number.clone(),
+                format!("{:.2}", u.len(inv_in)),
+                format!("{:.2}", u.len(inv_out)),
+                format!("{:.1}", u.len(len)),
+                format!("{slope:.4}"),
+                format!("{n:.3}"),
+                s,
+                dim,
+                format!("{:.1}", u.small_len(fill)),
+            ]);
+        };
     for node in project.nodes.iter().filter(|n| only.is_none_or(|s| s.contains(&n.id))) {
         match &node.data {
             NodeData::Reach(r) => {
@@ -360,7 +395,12 @@ mod tests {
         lot.hsg = Some(Hsg::B);
         lot.land_use = Some("Pavement".into());
         if let Some(n) = p.node_mut(a) {
-            n.data = NodeData::Subcat(Subcatchment { areas: vec![wood.clone(), lot], tc: vec![], uh: None, large_units: true });
+            n.data = NodeData::Subcat(Subcatchment {
+                areas: vec![wood.clone(), lot],
+                tc: vec![],
+                uh: None,
+                large_units: true,
+            });
         }
         if let Some(n) = p.node_mut(b) {
             n.data = NodeData::Subcat(Subcatchment { areas: vec![wood], tc: vec![], uh: None, large_units: true });
@@ -402,7 +442,14 @@ mod tests {
         let mut p = Project::default();
         let r = p.add_node(NodeType::Reach, [0.0, 0.0]);
         if let Some(n) = p.node_mut(r) {
-            n.data = NodeData::Reach(Reach { section: Section::circular(1.5), length: 100.0, inlet_invert: 101.0, outlet_invert: 100.0, n: 0.013, ..Default::default() });
+            n.data = NodeData::Reach(Reach {
+                section: Section::circular(1.5),
+                length: 100.0,
+                inlet_invert: 101.0,
+                outlet_invert: 100.0,
+                n: 0.013,
+                ..Default::default()
+            });
         }
         let t = pipe_table(&p, None);
         assert_eq!(t.rows.len(), 1);

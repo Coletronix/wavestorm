@@ -5,7 +5,11 @@ use crate::project::{NodeData, NodeId, NodeType, Project};
 use std::collections::HashMap;
 
 fn csv_field(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() }
+    if s.contains(',') || s.contains('"') || s.contains('\n') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
 }
 
 fn split_csv(line: &str) -> Vec<String> {
@@ -83,7 +87,8 @@ pub fn import_subareas(project: &mut Project, text: &str) -> Result<(usize, usiz
         if number.is_empty() {
             continue;
         }
-        let area: f64 = get(Some(c_area)).replace(',', "").parse().map_err(|_| format!("row {}: invalid area", k + 2))?;
+        let area: f64 =
+            get(Some(c_area)).replace(',', "").parse().map_err(|_| format!("row {}: invalid area", k + 2))?;
         let cn: f64 = get(Some(c_cn)).parse().map_err(|_| format!("row {}: invalid CN", k + 2))?;
         if !(0.0..=100.0).contains(&cn) || !area.is_finite() || area < 0.0 {
             return Err(format!("row {}: area or CN out of range", k + 2));
@@ -97,7 +102,8 @@ pub fn import_subareas(project: &mut Project, text: &str) -> Result<(usize, usiz
     }
     let (mut created, mut updated) = (0, 0);
     for (number, name, areas) in groups {
-        let existing = project.nodes.iter().find(|n| n.node_type() == NodeType::Subcat && n.number == number).map(|n| n.id);
+        let existing =
+            project.nodes.iter().find(|n| n.node_type() == NodeType::Subcat && n.number == number).map(|n| n.id);
         let id = match existing {
             Some(id) => {
                 updated += 1;
@@ -177,7 +183,10 @@ mod tests {
         if let Some(n) = p.node_mut(id) {
             n.name = "Lots, north".into();
             n.data = NodeData::Subcat(crate::project::Subcatchment {
-                areas: vec![SubArea::new(2.0 * 43_560.0, 75.0, "1/4 acre lots, 38% imp, HSG B"), SubArea::new(43_560.0, 98.0, "Roofs, \"flat\", HSG B")],
+                areas: vec![
+                    SubArea::new(2.0 * 43_560.0, 75.0, "1/4 acre lots, 38% imp, HSG B"),
+                    SubArea::new(43_560.0, 98.0, "Roofs, \"flat\", HSG B"),
+                ],
                 ..Default::default()
             });
         }
@@ -206,7 +215,11 @@ mod tests {
         b.node_mut(s).unwrap().outflows[0] = Some(r);
         assert_eq!(merge(&mut a, &b), 2);
         let labels: Vec<String> = a.nodes.iter().map(|n| n.label()).collect();
-        assert!(labels.contains(&"1S".to_string()) && labels.contains(&"2S".to_string()) && labels.contains(&"1R".to_string()));
+        assert!(
+            labels.contains(&"1S".to_string())
+                && labels.contains(&"2S".to_string())
+                && labels.contains(&"1R".to_string())
+        );
         let new_s = a.by_label("2S").unwrap();
         assert_eq!(new_s.outflows[0], a.by_label("1R").map(|n| n.id));
     }

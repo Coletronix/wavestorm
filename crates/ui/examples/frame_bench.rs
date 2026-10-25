@@ -20,7 +20,8 @@ fn main() {
             let raw = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
             let mut out = ctx.run_ui(raw, |ui| app.draw(ui));
             out.textures_delta.clear();
-            let d = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay.as_secs_f32()).unwrap_or(-1.0);
+            let d =
+                out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay.as_secs_f32()).unwrap_or(-1.0);
             delays.push(if d > 1e6 { "∞".to_string() } else { format!("{d}") });
         }
         println!("{}", delays.join(" "));
@@ -39,7 +40,10 @@ fn main() {
             let (mut ui_t, mut tess_t) = (0.0, 0.0);
             for i in 0..frames + 10 {
                 let mut raw = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
-                raw.events.push(egui::Event::PointerMoved(egui::pos2(200.0 + (i % 50) as f32 * 15.0, 300.0 + (i % 7) as f32 * 20.0)));
+                raw.events.push(egui::Event::PointerMoved(egui::pos2(
+                    200.0 + (i % 50) as f32 * 15.0,
+                    300.0 + (i % 7) as f32 * 20.0,
+                )));
                 let t0 = Instant::now();
                 let mut out = ctx.run_ui(raw, |ui| app.draw(ui));
                 out.textures_delta.clear();
@@ -52,14 +56,23 @@ fn main() {
                     tess_t += (t2 - t1).as_secs_f64();
                 }
             }
-            println!("{theme:14} {extra:10} ui {:6.2} ms  tessellate {:6.2} ms", ui_t * 1e3 / frames as f64, tess_t * 1e3 / frames as f64);
+            println!(
+                "{theme:14} {extra:10} ui {:6.2} ms  tessellate {:6.2} ms",
+                ui_t * 1e3 / frames as f64,
+                tess_t * 1e3 / frames as f64
+            );
             // With no input, a settled UI should stop asking for frames.
             let mut delays = Vec::new();
             for _ in 0..6 {
                 let raw = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
                 let mut out = ctx.run_ui(raw, |ui| app.draw(ui));
                 out.textures_delta.clear();
-                delays.push(out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay.as_secs_f32()).unwrap_or(-1.0));
+                delays.push(
+                    out.viewport_output
+                        .get(&egui::ViewportId::ROOT)
+                        .map(|v| v.repaint_delay.as_secs_f32())
+                        .unwrap_or(-1.0),
+                );
             }
             println!("    idle repaint delays (s): {delays:?}");
         }

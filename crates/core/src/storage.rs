@@ -22,8 +22,12 @@ pub enum CustomKind {
 }
 
 impl CustomKind {
-    pub const ALL: [CustomKind; 4] =
-        [CustomKind::AreaPrismatic, CustomKind::AreaConic, CustomKind::IncrementalStorage, CustomKind::CumulativeStorage];
+    pub const ALL: [CustomKind; 4] = [
+        CustomKind::AreaPrismatic,
+        CustomKind::AreaConic,
+        CustomKind::IncrementalStorage,
+        CustomKind::CumulativeStorage,
+    ];
     pub fn label(self) -> &'static str {
         match self {
             CustomKind::AreaPrismatic => "Surface Area (Prismatic)",
@@ -83,7 +87,14 @@ pub struct StorageVolume {
 
 impl StorageVolume {
     pub fn new(description: &str, invert: f64, shape: VolumeShape) -> Self {
-        StorageVolume { description: description.into(), invert, shape, voids_pct: 100.0, multiplier: 1.0, embedded_in: None }
+        StorageVolume {
+            description: description.into(),
+            invert,
+            shape,
+            voids_pct: 100.0,
+            multiplier: 1.0,
+            embedded_in: None,
+        }
     }
 
     /// Lowest elevation of the volume.
@@ -97,10 +108,12 @@ impl StorageVolume {
     /// Highest defined elevation.
     pub fn top(&self) -> f64 {
         match &self.shape {
-            VolumeShape::Prismatoid { height, .. } | VolumeShape::VerticalCone { height, .. } | VolumeShape::Arch { height, .. } => {
-                self.invert + height.max(0.0)
+            VolumeShape::Prismatoid { height, .. }
+            | VolumeShape::VerticalCone { height, .. }
+            | VolumeShape::Arch { height, .. } => self.invert + height.max(0.0),
+            VolumeShape::Pipe { height, length, slope, .. } => {
+                self.invert + height.max(0.0) + (slope * length).max(0.0)
             }
-            VolumeShape::Pipe { height, length, slope, .. } => self.invert + height.max(0.0) + (slope * length).max(0.0),
             VolumeShape::Custom { elevations, .. } => elevations.last().copied().unwrap_or(self.invert),
         }
     }
@@ -395,11 +408,16 @@ mod tests {
     #[test]
     fn prismatoid_matches_closed_form() {
         // 10' x 20' x 10' with vertical sides = 2000 cf.
-        let v = StorageVolume::new("vault", 100.0, VolumeShape::Prismatoid { width: 10.0, length: 20.0, height: 10.0, z: 0.0 });
+        let v = StorageVolume::new(
+            "vault",
+            100.0,
+            VolumeShape::Prismatoid { width: 10.0, length: 20.0, height: 10.0, z: 0.0 },
+        );
         assert!((v.gross(110.0) - 2000.0).abs() < 1e-9);
         assert!((v.gross(120.0) - 2000.0).abs() < 1e-9);
         // Sloped sides: compare with numerical integration of the surface area.
-        let s = StorageVolume::new("pond", 0.0, VolumeShape::Prismatoid { width: 10.0, length: 20.0, height: 4.0, z: 3.0 });
+        let s =
+            StorageVolume::new("pond", 0.0, VolumeShape::Prismatoid { width: 10.0, length: 20.0, height: 4.0, z: 3.0 });
         let mut integ = 0.0;
         let n = 4000;
         for i in 0..n {
@@ -412,10 +430,21 @@ mod tests {
     #[test]
     fn embedded_chamber_in_stone() {
         // 1000 cf stone bed at 40% voids with a 200 cf chamber inside: 0.4*(1000-200) + 200 = 520.
-        let stone = StorageVolume { voids_pct: 40.0, ..StorageVolume::new("stone", 0.0, VolumeShape::Prismatoid { width: 10.0, length: 10.0, height: 10.0, z: 0.0 }) };
+        let stone = StorageVolume {
+            voids_pct: 40.0,
+            ..StorageVolume::new(
+                "stone",
+                0.0,
+                VolumeShape::Prismatoid { width: 10.0, length: 10.0, height: 10.0, z: 0.0 },
+            )
+        };
         let chamber = StorageVolume {
             embedded_in: Some(0),
-            ..StorageVolume::new("chamber", 0.0, VolumeShape::Prismatoid { width: 2.0, length: 10.0, height: 10.0, z: 0.0 })
+            ..StorageVolume::new(
+                "chamber",
+                0.0,
+                VolumeShape::Prismatoid { width: 2.0, length: 10.0, height: 10.0, z: 0.0 },
+            )
         };
         let p = PondStorage { volumes: vec![stone, chamber] };
         assert!((p.storage(10.0) - 520.0).abs() < 1e-9);
@@ -423,20 +452,41 @@ mod tests {
 
     #[test]
     fn horizontal_pipe_and_cylinder() {
-        let pipe = StorageVolume::new("pipe", 102.0, VolumeShape::Pipe { shape: PipeShape::Round, width: 4.0, height: 4.0, length: 100.0, slope: 0.0 });
+        let pipe = StorageVolume::new(
+            "pipe",
+            102.0,
+            VolumeShape::Pipe { shape: PipeShape::Round, width: 4.0, height: 4.0, length: 100.0, slope: 0.0 },
+        );
         assert!((pipe.gross(106.0) - PI * 4.0 * 100.0).abs() < 1e-6);
-        let cyl = StorageVolume::new("drywell", 100.0, VolumeShape::VerticalCone { diameter: 10.0, height: 8.0, z: 0.0 });
+        let cyl =
+            StorageVolume::new("drywell", 100.0, VolumeShape::VerticalCone { diameter: 10.0, height: 8.0, z: 0.0 });
         assert!((cyl.gross(108.0) - PI * 25.0 * 8.0).abs() < 1e-9);
-        let sloped = StorageVolume::new("pipe", 0.0, VolumeShape::Pipe { shape: PipeShape::Round, width: 2.0, height: 2.0, length: 100.0, slope: 0.01 });
+        let sloped = StorageVolume::new(
+            "pipe",
+            0.0,
+            VolumeShape::Pipe { shape: PipeShape::Round, width: 2.0, height: 2.0, length: 100.0, slope: 0.01 },
+        );
         assert!((sloped.gross(10.0) - PI * 100.0).abs() < 0.05);
         assert!(sloped.gross(1.0) < PI * 100.0 / 2.0);
     }
 
     #[test]
     fn malformed_custom_data_is_safe() {
-        let v = StorageVolume::new("x", 0.0, VolumeShape::Custom { kind: CustomKind::AreaConic, elevations: vec![5.0], values: vec![] });
+        let v = StorageVolume::new(
+            "x",
+            0.0,
+            VolumeShape::Custom { kind: CustomKind::AreaConic, elevations: vec![5.0], values: vec![] },
+        );
         assert_eq!(v.gross(10.0), 0.0);
-        let v = StorageVolume::new("x", 0.0, VolumeShape::Custom { kind: CustomKind::CumulativeStorage, elevations: vec![1.0, 0.0], values: vec![1.0, 2.0] });
+        let v = StorageVolume::new(
+            "x",
+            0.0,
+            VolumeShape::Custom {
+                kind: CustomKind::CumulativeStorage,
+                elevations: vec![1.0, 0.0],
+                values: vec![1.0, 2.0],
+            },
+        );
         let _ = v.gross(0.5);
     }
 }

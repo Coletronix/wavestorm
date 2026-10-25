@@ -153,7 +153,10 @@ fn published_subcatchment_runoff() {
     let mut failures = Vec::new();
     for (i, c) in CASES.iter().enumerate() {
         let (q, t, v) = run(c);
-        println!("case {i:2}: {} Tc {:4.1}  peak {q:7.2} ({:7.2}) @ {t:5.2} ({:5.2})  vol {v:7.4} ({:7.4})", c.storm, c.tc, c.peak, c.time, c.volume);
+        println!(
+            "case {i:2}: {} Tc {:4.1}  peak {q:7.2} ({:7.2}) @ {t:5.2} ({:5.2})  vol {v:7.4} ({:7.4})",
+            c.storm, c.tc, c.peak, c.time, c.volume
+        );
         // Published values are rounded to 0.01 cfs, 0.01 h and 0.001 af (or whole cubic feet).
         let peak_ok = (q - c.peak).abs() <= 0.03 * c.peak + 0.01;
         // Type IA's peak is a flat plateau, so its time is less sharply defined.
@@ -170,7 +173,9 @@ fn published_subcatchment_runoff() {
 /// the combined peak depends on their relative timing. Published (cfs, h) per event.
 #[test]
 fn published_link_sums() {
-    for (pair, peak, time) in [((6, 7), 3.69, 12.93), ((8, 9), 14.93, 12.80), ((10, 11), 30.07, 12.78), ((12, 13), 40.54, 12.77)] {
+    for (pair, peak, time) in
+        [((6, 7), 3.69, 12.93), ((8, 9), 14.93, 12.80), ((10, 11), 30.07, 12.78), ((12, 13), 40.54, 12.77)]
+    {
         let (a, b) = (&CASES[pair.0], &CASES[pair.1]);
         let mut p = subcat_project(a.storm, a.p, a.dt, a.span, a.weighting);
         let link = p.add_node(NodeType::Link, [0.0, 0.0]);

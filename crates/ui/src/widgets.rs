@@ -9,8 +9,14 @@ use egui::{Align2, Color32, FontId, Id, Pos2, Rect, Response, Sense, Stroke, Str
 pub fn header_cell(p: &egui::Painter, rect: Rect, t: &Tokens) {
     if t.glass {
         p.rect_filled(rect, 0.0, t.light.gamma_multiply(0.7));
-        p.line_segment([rect.left_bottom() - vec2(0.0, 0.5), rect.right_bottom() - vec2(0.0, 0.5)], Stroke::new(1.0, crate::theme::white(0.06)));
-        p.line_segment([rect.right_top() - vec2(0.5, 0.0), rect.right_bottom() - vec2(0.5, 0.0)], Stroke::new(1.0, crate::theme::white(0.05)));
+        p.line_segment(
+            [rect.left_bottom() - vec2(0.0, 0.5), rect.right_bottom() - vec2(0.0, 0.5)],
+            Stroke::new(1.0, crate::theme::white(0.06)),
+        );
+        p.line_segment(
+            [rect.right_top() - vec2(0.5, 0.0), rect.right_bottom() - vec2(0.5, 0.0)],
+            Stroke::new(1.0, crate::theme::white(0.05)),
+        );
     } else {
         p.rect_filled(rect, 0.0, t.face);
         bevel(p, rect, true, t);
@@ -23,7 +29,8 @@ pub fn bevel(p: &egui::Painter, rect: Rect, raised: bool, t: &Tokens) {
         p.rect_stroke(rect.shrink(0.5), t.radius as f32, Stroke::new(1.0, t.shadow), StrokeKind::Inside);
         return;
     }
-    let (o1, o2, i1, i2) = if raised { (t.light, t.dark, t.face, t.shadow) } else { (t.shadow, t.light, t.dark, t.face) };
+    let (o1, o2, i1, i2) =
+        if raised { (t.light, t.dark, t.face, t.shadow) } else { (t.shadow, t.light, t.dark, t.face) };
     let r = rect.shrink(0.5);
     p.line_segment([r.left_bottom(), r.left_top()], Stroke::new(1.0, o1));
     p.line_segment([r.left_top(), r.right_top()], Stroke::new(1.0, o1));
@@ -81,7 +88,12 @@ fn push_button(ui: &mut Ui, label: &str, width: f32, enabled: bool, latched: boo
             crate::glass::surface(p, rect, t.radius as f32, kind, &t);
             p.text(rect.center(), Align2::CENTER_CENTER, label, font, if enabled { t.text } else { t.text_disabled });
             if resp.has_focus() {
-                p.rect_stroke(rect.expand(1.5), t.radius as f32 + 1.5, Stroke::new(1.5, crate::glass::IRIS[0]), StrokeKind::Outside);
+                p.rect_stroke(
+                    rect.expand(1.5),
+                    t.radius as f32 + 1.5,
+                    Stroke::new(1.5, crate::glass::IRIS[0]),
+                    StrokeKind::Outside,
+                );
             }
             return resp;
         }
@@ -109,13 +121,24 @@ fn push_button(ui: &mut Ui, label: &str, width: f32, enabled: bool, latched: boo
 }
 
 /// A small square icon button for toolbars; `draw` paints the icon inside `rect`.
-pub fn tool_button(ui: &mut Ui, tip: &str, selected: bool, draw: impl FnOnce(&egui::Painter, Rect, &Tokens)) -> Response {
+pub fn tool_button(
+    ui: &mut Ui,
+    tip: &str,
+    selected: bool,
+    draw: impl FnOnce(&egui::Painter, Rect, &Tokens),
+) -> Response {
     tool_button_enabled(ui, tip, selected, true, draw)
 }
 
 /// [`tool_button`] that can be disabled: a disabled button ignores clicks and its icon is
 /// greyed out.
-pub fn tool_button_enabled(ui: &mut Ui, tip: &str, selected: bool, enabled: bool, draw: impl FnOnce(&egui::Painter, Rect, &Tokens)) -> Response {
+pub fn tool_button_enabled(
+    ui: &mut Ui,
+    tip: &str,
+    selected: bool,
+    enabled: bool,
+    draw: impl FnOnce(&egui::Painter, Rect, &Tokens),
+) -> Response {
     let t = Tokens::get(ui.ctx());
     let size = if t.glass { 30.0 } else { 24.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(size, size), if enabled { Sense::click() } else { Sense::hover() });
@@ -127,7 +150,13 @@ pub fn tool_button_enabled(ui: &mut Ui, tip: &str, selected: bool, enabled: bool
             crate::glass::glow(p, rect.center(), size * 0.9, crate::glass::alpha(crate::glass::IRIS[2], 0.22));
             crate::glass::surface(p, rect, 9.0, crate::glass::Surface::Selected, &t);
         } else {
-            crate::glass::surface(p, rect, 9.0, if hot { crate::glass::Surface::Hover } else { crate::glass::Surface::Key }, &t);
+            crate::glass::surface(
+                p,
+                rect,
+                9.0,
+                if hot { crate::glass::Surface::Hover } else { crate::glass::Surface::Key },
+                &t,
+            );
         }
         draw(p, rect.shrink(6.0), &t);
         if !enabled {
@@ -264,7 +293,10 @@ pub fn caption(ui: &mut Ui, label: &str, unit: &str, width: f32) {
     let font = FontId::proportional(12.5);
     let unit_text = if unit.is_empty() { String::new() } else { format!("({unit})") };
     let (lw, uw) = ui.fonts_mut(|f| {
-        (f.layout_no_wrap(label.to_string(), font.clone(), t.text).size().x, f.layout_no_wrap(unit_text.clone(), font.clone(), t.text).size().x)
+        (
+            f.layout_no_wrap(label.to_string(), font.clone(), t.text).size().x,
+            f.layout_no_wrap(unit_text.clone(), font.clone(), t.text).size().x,
+        )
     });
     if lw + uw + 6.0 <= width || unit.is_empty() {
         p.with_clip_rect(rect).text(rect.left_center(), Align2::LEFT_CENTER, label, font.clone(), t.text);
@@ -273,7 +305,13 @@ pub fn caption(ui: &mut Ui, label: &str, unit: &str, width: f32) {
         }
     } else {
         // Not enough room for both: one run of text, clipped to the field width.
-        p.with_clip_rect(rect).text(rect.left_center(), Align2::LEFT_CENTER, format!("{label} {unit_text}"), font, t.text);
+        p.with_clip_rect(rect).text(
+            rect.left_center(),
+            Align2::LEFT_CENTER,
+            format!("{label} {unit_text}"),
+            font,
+            t.text,
+        );
     }
 }
 
@@ -286,13 +324,28 @@ pub struct ListEvents {
 
 /// A read-only grid: sunken white box, bevelled header cells, a row-number column and
 /// navy row selection (the classic data-grid look).
-pub fn list_table(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: &[Vec<String>], selected: &mut Option<usize>, height: f32) -> ListEvents {
+pub fn list_table(
+    ui: &mut Ui,
+    id: &str,
+    cols: &[(&str, f32, bool)],
+    rows: &[Vec<String>],
+    selected: &mut Option<usize>,
+    height: f32,
+) -> ListEvents {
     list_table_menu(ui, id, cols, rows, selected, height, &mut |_, _| {})
 }
 
 /// [`list_table`] with a right-click menu: right-clicking any row (empty ones too) selects it
 /// and calls `menu` with the row index to fill the popup.
-pub fn list_table_menu(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: &[Vec<String>], selected: &mut Option<usize>, height: f32, menu: &mut dyn FnMut(&mut Ui, usize)) -> ListEvents {
+pub fn list_table_menu(
+    ui: &mut Ui,
+    id: &str,
+    cols: &[(&str, f32, bool)],
+    rows: &[Vec<String>],
+    selected: &mut Option<usize>,
+    height: f32,
+    menu: &mut dyn FnMut(&mut Ui, usize),
+) -> ListEvents {
     let t = Tokens::get(ui.ctx());
     let mut ev = ListEvents::default();
     let row_h = 18.0;
@@ -307,50 +360,88 @@ pub fn list_table_menu(ui: &mut Ui, id: &str, cols: &[(&str, f32, bool)], rows: 
     for (title, w) in std::iter::once(("#", num_w)).chain(cols.iter().map(|c| (c.0, c.1))) {
         let r = Rect::from_min_size(pos2(x, inner.min.y), vec2(w, row_h + 1.0));
         header_cell(&p, r, &t);
-        p.with_clip_rect(r.shrink(1.0).intersect(inner)).text(r.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, title, font.clone(), t.text);
+        p.with_clip_rect(r.shrink(1.0).intersect(inner)).text(
+            r.left_center() + vec2(4.0, 0.0),
+            Align2::LEFT_CENTER,
+            title,
+            font.clone(),
+            t.text,
+        );
         x += w;
     }
     let body = Rect::from_min_max(pos2(inner.min.x, inner.min.y + row_h + 1.0), inner.max);
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body).id_salt(id));
-    egui::ScrollArea::vertical().id_salt((id, "scroll")).auto_shrink([false, false]).max_height(body.height()).show(&mut child, |ui| {
-        ui.spacing_mut().item_spacing = Vec2::ZERO;
-        let total_rows = rows.len().max(((body.height() / row_h) as usize).saturating_sub(0));
-        for i in 0..total_rows {
-            let (r, resp) = ui.allocate_exact_size(vec2(width - 18.0, row_h), Sense::click());
-            let p = ui.painter();
-            let num = Rect::from_min_size(r.min, vec2(num_w, row_h));
-            header_cell(p, num, &t);
-            p.text(num.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, format!("{}", i + 1), font.clone(), t.text);
-            if resp.secondary_clicked() {
-                *selected = Some(i);
+    egui::ScrollArea::vertical().id_salt((id, "scroll")).auto_shrink([false, false]).max_height(body.height()).show(
+        &mut child,
+        |ui| {
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            let total_rows = rows.len().max(((body.height() / row_h) as usize).saturating_sub(0));
+            for i in 0..total_rows {
+                let (r, resp) = ui.allocate_exact_size(vec2(width - 18.0, row_h), Sense::click());
+                let p = ui.painter();
+                let num = Rect::from_min_size(r.min, vec2(num_w, row_h));
+                header_cell(p, num, &t);
+                p.text(
+                    num.left_center() + vec2(4.0, 0.0),
+                    Align2::LEFT_CENTER,
+                    format!("{}", i + 1),
+                    font.clone(),
+                    t.text,
+                );
+                if resp.secondary_clicked() {
+                    *selected = Some(i);
+                }
+                resp.context_menu(|ui| menu(ui, i));
+                let Some(row) = rows.get(i) else {
+                    p.line_segment(
+                        [pos2(num.max.x, r.max.y - 0.5), pos2(r.max.x, r.max.y - 0.5)],
+                        Stroke::new(1.0, t.face),
+                    );
+                    continue;
+                };
+                let sel = *selected == Some(i);
+                let mut cx = num.max.x;
+                for (j, (_, w, numeric)) in cols.iter().enumerate() {
+                    let cell = Rect::from_min_size(pos2(cx, r.min.y), vec2(*w, row_h));
+                    cx += w;
+                    p.rect_filled(
+                        cell,
+                        0.0,
+                        if sel {
+                            t.select
+                        } else if t.glass {
+                            Color32::TRANSPARENT
+                        } else {
+                            t.field
+                        },
+                    );
+                    p.line_segment([cell.right_top(), cell.right_bottom()], Stroke::new(1.0, t.face));
+                    p.line_segment([cell.left_bottom(), cell.right_bottom()], Stroke::new(1.0, t.face));
+                    let text = row.get(j).map(String::as_str).unwrap_or("");
+                    let (at, align) = if *numeric {
+                        (cell.right_center() - vec2(4.0, 0.0), Align2::RIGHT_CENTER)
+                    } else {
+                        (cell.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER)
+                    };
+                    p.with_clip_rect(cell).text(
+                        at,
+                        align,
+                        text,
+                        font.clone(),
+                        if sel { t.select_text } else { t.text },
+                    );
+                }
+                if resp.clicked() {
+                    *selected = Some(i);
+                    ev.clicked = Some(i);
+                }
+                if resp.double_clicked() {
+                    *selected = Some(i);
+                    ev.double_clicked = Some(i);
+                }
             }
-            resp.context_menu(|ui| menu(ui, i));
-            let Some(row) = rows.get(i) else {
-                p.line_segment([pos2(num.max.x, r.max.y - 0.5), pos2(r.max.x, r.max.y - 0.5)], Stroke::new(1.0, t.face));
-                continue;
-            };
-            let sel = *selected == Some(i);
-            let mut cx = num.max.x;
-            for (j, (_, w, numeric)) in cols.iter().enumerate() {
-                let cell = Rect::from_min_size(pos2(cx, r.min.y), vec2(*w, row_h));
-                cx += w;
-                p.rect_filled(cell, 0.0, if sel { t.select } else if t.glass { Color32::TRANSPARENT } else { t.field });
-                p.line_segment([cell.right_top(), cell.right_bottom()], Stroke::new(1.0, t.face));
-                p.line_segment([cell.left_bottom(), cell.right_bottom()], Stroke::new(1.0, t.face));
-                let text = row.get(j).map(String::as_str).unwrap_or("");
-                let (at, align) = if *numeric { (cell.right_center() - vec2(4.0, 0.0), Align2::RIGHT_CENTER) } else { (cell.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER) };
-                p.with_clip_rect(cell).text(at, align, text, font.clone(), if sel { t.select_text } else { t.text });
-            }
-            if resp.clicked() {
-                *selected = Some(i);
-                ev.clicked = Some(i);
-            }
-            if resp.double_clicked() {
-                *selected = Some(i);
-                ev.double_clicked = Some(i);
-            }
-        }
-    });
+        },
+    );
     ev
 }
 
@@ -365,7 +456,10 @@ pub fn text_box(ui: &mut Ui, text: &mut String, width: f32) -> Response {
     sunken(ui.painter(), rect, t.field, &t);
     let inner = rect.shrink2(vec2(4.0, 2.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-    child.add_sized(inner.size(), egui::TextEdit::singleline(text).frame(egui::Frame::NONE).text_color(t.text).margin(egui::Margin::ZERO))
+    child.add_sized(
+        inner.size(),
+        egui::TextEdit::singleline(text).frame(egui::Frame::NONE).text_color(t.text).margin(egui::Margin::ZERO),
+    )
 }
 
 /// A numeric text box with optional spinner arrows. Returns true when the value changed.
@@ -383,7 +477,11 @@ pub fn num_box(ui: &mut Ui, id: Id, value: &mut f64, decimals: usize, width: f32
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).id_salt(id));
     let resp = child.add_sized(
         inner.size(),
-        egui::TextEdit::singleline(&mut text).id(id).frame(egui::Frame::NONE).text_color(t.text).margin(egui::Margin::ZERO),
+        egui::TextEdit::singleline(&mut text)
+            .id(id)
+            .frame(egui::Frame::NONE)
+            .text_color(t.text)
+            .margin(egui::Margin::ZERO),
     );
     let mut changed = false;
     if resp.changed() {
@@ -414,7 +512,11 @@ pub fn num_box(ui: &mut Ui, id: Id, value: &mut f64, decimals: usize, width: f32
             let p = ui.painter();
             if t.glass {
                 if resp.hovered() {
-                    p.rect_filled(r.shrink(0.5), 4.0, crate::theme::white(if resp.is_pointer_button_down_on() { 0.2 } else { 0.1 }));
+                    p.rect_filled(
+                        r.shrink(0.5),
+                        4.0,
+                        crate::theme::white(if resp.is_pointer_button_down_on() { 0.2 } else { 0.1 }),
+                    );
                 }
             } else {
                 p.rect_filled(r, 0.0, t.face);
@@ -446,7 +548,8 @@ pub fn num_field(ui: &mut Ui, id: &str, label: &str, unit: &str, value: &mut f64
         ui.spacing_mut().item_spacing.y = 1.0;
         caption(ui, label, unit, width);
         let step = 10f64.powi(-(decimals.min(3) as i32)).max(0.01);
-        changed = num_box(ui, ui.id().with(id), value, decimals, width, Some(if decimals == 0 { 1.0 } else { step * 10.0 }));
+        changed =
+            num_box(ui, ui.id().with(id), value, decimals, width, Some(if decimals == 0 { 1.0 } else { step * 10.0 }));
     });
     changed
 }
@@ -463,7 +566,13 @@ pub fn text_field(ui: &mut Ui, label: &str, text: &mut String, width: f32) -> bo
 }
 
 /// A drop-down list with a classic sunken box. Returns true when the selection changed.
-pub fn combo<T: PartialEq + Clone>(ui: &mut Ui, id: &str, current: &mut T, options: &[(T, String)], width: f32) -> bool {
+pub fn combo<T: PartialEq + Clone>(
+    ui: &mut Ui,
+    id: &str,
+    current: &mut T,
+    options: &[(T, String)],
+    width: f32,
+) -> bool {
     let shown = options.iter().find(|(v, _)| v == current).map(|(_, l)| l.clone()).unwrap_or_default();
     let mut changed = false;
     let t = Tokens::get(ui.ctx());
@@ -475,14 +584,15 @@ pub fn combo<T: PartialEq + Clone>(ui: &mut Ui, id: &str, current: &mut T, optio
     {
         crate::glass::surface(ui.painter(), r, t.radius as f32, crate::glass::Surface::Rail, &t);
     }
-    let resp = egui::ComboBox::from_id_salt(ui.id().with(id)).width(width - 8.0).selected_text(shown).show_ui(ui, |ui| {
-        for (v, label) in options {
-            if ui.selectable_label(v == current, label).clicked() && v != current {
-                *current = v.clone();
-                changed = true;
+    let resp =
+        egui::ComboBox::from_id_salt(ui.id().with(id)).width(width - 8.0).selected_text(shown).show_ui(ui, |ui| {
+            for (v, label) in options {
+                if ui.selectable_label(v == current, label).clicked() && v != current {
+                    *current = v.clone();
+                    changed = true;
+                }
             }
-        }
-    });
+        });
     if t.glass {
         let r = resp.response.rect;
         if ui.data(|d| d.get_temp::<Rect>(rect_key)) != Some(r) {
@@ -494,7 +604,14 @@ pub fn combo<T: PartialEq + Clone>(ui: &mut Ui, id: &str, current: &mut T, optio
 }
 
 /// Caption plus combo.
-pub fn combo_field<T: PartialEq + Clone>(ui: &mut Ui, id: &str, label: &str, current: &mut T, options: &[(T, String)], width: f32) -> bool {
+pub fn combo_field<T: PartialEq + Clone>(
+    ui: &mut Ui,
+    id: &str,
+    label: &str,
+    current: &mut T,
+    options: &[(T, String)],
+    width: f32,
+) -> bool {
     let mut changed = false;
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 1.0;
@@ -581,7 +698,8 @@ pub fn group<R>(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
     if t.glass {
         // A faint rounded outline with the title, in muted text, breaking its top edge.
         let pts = crate::glass::rounded(r, 8.0);
-        let gapped: Vec<Pos2> = pts.into_iter().filter(|q| !(q.y < r.min.y + 0.5 && q.x > gap.0 && q.x < gap.1)).collect();
+        let gapped: Vec<Pos2> =
+            pts.into_iter().filter(|q| !(q.y < r.min.y + 0.5 && q.x > gap.0 && q.x < gap.1)).collect();
         if let Some(start) = gapped.iter().position(|q| q.y < r.min.y + 0.5 && q.x >= gap.1) {
             let mut path = vec![pos2(gap.1, r.min.y)];
             path.extend_from_slice(&gapped[start..]);
@@ -650,7 +768,10 @@ pub fn tabs(ui: &mut Ui, names: &[&str], selected: &mut usize) -> bool {
         return changed;
     }
     let base_y = strip.max.y - 0.5;
-    p.line_segment([pos2(strip.min.x, base_y), pos2(strip.max.x, base_y)], Stroke::new(1.0, if t.bevel { t.light } else { t.shadow }));
+    p.line_segment(
+        [pos2(strip.min.x, base_y), pos2(strip.max.x, base_y)],
+        Stroke::new(1.0, if t.bevel { t.light } else { t.shadow }),
+    );
     for (i, (r, name)) in rects.iter().zip(names).enumerate() {
         let resp = ui.interact(*r, ui.id().with(("tab", i)), Sense::click());
         if resp.clicked() && *selected != i {
@@ -734,13 +855,30 @@ pub struct GridEvents {
 
 /// An editable table with a row-number column, one blank row at the end for new entries, and a
 /// right-click menu (insert/delete row). Cells are strings; callers convert.
-pub fn grid(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>, selected: &mut Option<usize>, height: f32, editable: bool) -> GridEvents {
+pub fn grid(
+    ui: &mut Ui,
+    id: &str,
+    cols: &[Column],
+    rows: &mut Vec<Vec<String>>,
+    selected: &mut Option<usize>,
+    height: f32,
+    editable: bool,
+) -> GridEvents {
     grid_marked(ui, id, cols, rows, selected, height, editable, &[])
 }
 
 /// [`grid`] with a colour swatch in the row-number cell of rows that have one (`marks[i]`).
 #[allow(clippy::too_many_arguments)]
-pub fn grid_marked(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<String>>, selected: &mut Option<usize>, height: f32, editable: bool, marks: &[Option<Color32>]) -> GridEvents {
+pub fn grid_marked(
+    ui: &mut Ui,
+    id: &str,
+    cols: &[Column],
+    rows: &mut Vec<Vec<String>>,
+    selected: &mut Option<usize>,
+    height: f32,
+    editable: bool,
+    marks: &[Option<Color32>],
+) -> GridEvents {
     let t = Tokens::get(ui.ctx());
     let mut ev = GridEvents::default();
     let row_h = 18.0;
@@ -756,10 +894,18 @@ pub fn grid_marked(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<St
     let head = Rect::from_min_size(inner.min, vec2(inner.width(), row_h + 2.0));
     child.painter().rect_filled(head, 0.0, t.face);
     let mut x = inner.min.x;
-    for (k, (title, w, tip)) in std::iter::once(("#", num_w, None)).chain(cols.iter().map(|c| (c.title, c.width, c.tip))).enumerate() {
+    for (k, (title, w, tip)) in
+        std::iter::once(("#", num_w, None)).chain(cols.iter().map(|c| (c.title, c.width, c.tip))).enumerate()
+    {
         let r = Rect::from_min_size(pos2(x, head.min.y), vec2(w, head.height()));
         header_cell(child.painter(), r, &t);
-        child.painter().with_clip_rect(r.shrink(1.0)).text(r.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, title, font.clone(), t.text);
+        child.painter().with_clip_rect(r.shrink(1.0)).text(
+            r.left_center() + vec2(4.0, 0.0),
+            Align2::LEFT_CENTER,
+            title,
+            font.clone(),
+            t.text,
+        );
         if let Some(tip) = tip {
             let resp = child.interact(r, gid.with(("head", k)), Sense::hover());
             hover_tip(child.ctx(), &resp, tip);
@@ -771,89 +917,119 @@ pub fn grid_marked(ui: &mut Ui, id: &str, cols: &[Column], rows: &mut Vec<Vec<St
     }
     let body = Rect::from_min_max(pos2(inner.min.x, head.max.y), inner.max);
     let mut body_ui = child.new_child(egui::UiBuilder::new().max_rect(body));
-    egui::ScrollArea::vertical().id_salt(gid.with("scroll")).max_height(body.height()).auto_shrink([false, false]).show(&mut body_ui, |ui| {
-        ui.spacing_mut().item_spacing = Vec2::ZERO;
-        let n = rows.len();
-        for i in 0..n {
-            let (row_rect, _) = ui.allocate_exact_size(vec2(inner.width() - 14.0, row_h), Sense::hover());
-            let p = ui.painter().clone();
-            let num_rect = Rect::from_min_size(row_rect.min, vec2(num_w, row_h));
-            header_cell(&p, num_rect, &t);
-            if let Some(Some(c)) = marks.get(i) {
-                let sw = Rect::from_center_size(num_rect.right_center() - vec2(7.0, 0.0), vec2(8.0, 8.0));
-                p.rect_filled(sw, 2.0, *c);
-                p.rect_stroke(sw, 2.0, Stroke::new(1.0, crate::glass::alpha(Color32::BLACK, 0.4)), StrokeKind::Inside);
-            }
-            let is_sel = *selected == Some(i);
-            p.text(num_rect.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, format!("{}", i + 1), font.clone(), t.text);
-            let num_resp = ui.interact(num_rect, gid.with(("num", i)), Sense::click());
-            if num_resp.clicked() {
-                *selected = Some(i);
-                ev.selected = Some(i);
-            }
-            if num_resp.double_clicked() {
-                ev.double_clicked = Some(i);
-            }
-            if editable {
-                num_resp.context_menu(|ui| {
-                    if ui.button("Insert row").clicked() {
-                        ev.insert_row = Some(i);
-                        ui.close();
-                    }
-                    if ui.button("Delete row").clicked() {
-                        ev.delete_row = Some(i);
-                        ui.close();
-                    }
-                });
-            }
-            let mut cx = row_rect.min.x + num_w;
-            for (j, c) in cols.iter().enumerate() {
-                let cell = Rect::from_min_size(pos2(cx, row_rect.min.y), vec2(c.width, row_h));
-                cx += c.width;
-                let bg = if is_sel { t.select } else if t.glass { Color32::TRANSPARENT } else { t.field };
-                let fg = if is_sel { t.select_text } else { t.text };
-                p.rect_filled(cell, 0.0, bg);
-                p.line_segment([cell.right_top(), cell.right_bottom()], Stroke::new(1.0, t.face));
-                p.line_segment([cell.left_bottom(), cell.right_bottom()], Stroke::new(1.0, t.face));
-                let Some(value) = rows.get_mut(i).and_then(|r| r.get_mut(j)) else { continue };
-                let cid = gid.with(("cell", i, j));
-                let editing = ui.memory(|m| m.has_focus(cid));
-                if editable && (editing || is_sel) {
-                    let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(cell.shrink2(vec2(3.0, 1.0))));
-                    let r = cui.add_sized(
-                        cell.shrink2(vec2(3.0, 1.0)).size(),
-                        egui::TextEdit::singleline(value).id(cid).frame(egui::Frame::NONE).text_color(fg).margin(egui::Margin::ZERO).horizontal_align(if c.numeric { egui::Align::RIGHT } else { egui::Align::LEFT }),
+    egui::ScrollArea::vertical()
+        .id_salt(gid.with("scroll"))
+        .max_height(body.height())
+        .auto_shrink([false, false])
+        .show(&mut body_ui, |ui| {
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            let n = rows.len();
+            for i in 0..n {
+                let (row_rect, _) = ui.allocate_exact_size(vec2(inner.width() - 14.0, row_h), Sense::hover());
+                let p = ui.painter().clone();
+                let num_rect = Rect::from_min_size(row_rect.min, vec2(num_w, row_h));
+                header_cell(&p, num_rect, &t);
+                if let Some(Some(c)) = marks.get(i) {
+                    let sw = Rect::from_center_size(num_rect.right_center() - vec2(7.0, 0.0), vec2(8.0, 8.0));
+                    p.rect_filled(sw, 2.0, *c);
+                    p.rect_stroke(
+                        sw,
+                        2.0,
+                        Stroke::new(1.0, crate::glass::alpha(Color32::BLACK, 0.4)),
+                        StrokeKind::Inside,
                     );
-                    if r.changed() {
-                        ev.changed = true;
-                    }
-                    if r.gained_focus() {
-                        *selected = Some(i);
-                        ev.selected = Some(i);
-                    }
-                } else {
-                    let align = if c.numeric { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
-                    let at = if c.numeric { cell.right_center() - vec2(4.0, 0.0) } else { cell.left_center() + vec2(4.0, 0.0) };
-                    p.with_clip_rect(cell).text(at, align, value.as_str(), font.clone(), fg);
-                    let resp = ui.interact(cell, gid.with(("hit", i, j)), Sense::click());
-                    if resp.clicked() {
-                        *selected = Some(i);
-                        ev.selected = Some(i);
-                        if editable {
-                            ui.memory_mut(|m| m.request_focus(cid));
+                }
+                let is_sel = *selected == Some(i);
+                p.text(
+                    num_rect.left_center() + vec2(4.0, 0.0),
+                    Align2::LEFT_CENTER,
+                    format!("{}", i + 1),
+                    font.clone(),
+                    t.text,
+                );
+                let num_resp = ui.interact(num_rect, gid.with(("num", i)), Sense::click());
+                if num_resp.clicked() {
+                    *selected = Some(i);
+                    ev.selected = Some(i);
+                }
+                if num_resp.double_clicked() {
+                    ev.double_clicked = Some(i);
+                }
+                if editable {
+                    num_resp.context_menu(|ui| {
+                        if ui.button("Insert row").clicked() {
+                            ev.insert_row = Some(i);
+                            ui.close();
+                        }
+                        if ui.button("Delete row").clicked() {
+                            ev.delete_row = Some(i);
+                            ui.close();
+                        }
+                    });
+                }
+                let mut cx = row_rect.min.x + num_w;
+                for (j, c) in cols.iter().enumerate() {
+                    let cell = Rect::from_min_size(pos2(cx, row_rect.min.y), vec2(c.width, row_h));
+                    cx += c.width;
+                    let bg = if is_sel {
+                        t.select
+                    } else if t.glass {
+                        Color32::TRANSPARENT
+                    } else {
+                        t.field
+                    };
+                    let fg = if is_sel { t.select_text } else { t.text };
+                    p.rect_filled(cell, 0.0, bg);
+                    p.line_segment([cell.right_top(), cell.right_bottom()], Stroke::new(1.0, t.face));
+                    p.line_segment([cell.left_bottom(), cell.right_bottom()], Stroke::new(1.0, t.face));
+                    let Some(value) = rows.get_mut(i).and_then(|r| r.get_mut(j)) else { continue };
+                    let cid = gid.with(("cell", i, j));
+                    let editing = ui.memory(|m| m.has_focus(cid));
+                    if editable && (editing || is_sel) {
+                        let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(cell.shrink2(vec2(3.0, 1.0))));
+                        let r = cui.add_sized(
+                            cell.shrink2(vec2(3.0, 1.0)).size(),
+                            egui::TextEdit::singleline(value)
+                                .id(cid)
+                                .frame(egui::Frame::NONE)
+                                .text_color(fg)
+                                .margin(egui::Margin::ZERO)
+                                .horizontal_align(if c.numeric { egui::Align::RIGHT } else { egui::Align::LEFT }),
+                        );
+                        if r.changed() {
+                            ev.changed = true;
+                        }
+                        if r.gained_focus() {
+                            *selected = Some(i);
+                            ev.selected = Some(i);
+                        }
+                    } else {
+                        let align = if c.numeric { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
+                        let at = if c.numeric {
+                            cell.right_center() - vec2(4.0, 0.0)
+                        } else {
+                            cell.left_center() + vec2(4.0, 0.0)
+                        };
+                        p.with_clip_rect(cell).text(at, align, value.as_str(), font.clone(), fg);
+                        let resp = ui.interact(cell, gid.with(("hit", i, j)), Sense::click());
+                        if resp.clicked() {
+                            *selected = Some(i);
+                            ev.selected = Some(i);
+                            if editable {
+                                ui.memory_mut(|m| m.request_focus(cid));
+                            }
+                        }
+                        if resp.double_clicked() {
+                            ev.double_clicked = Some(i);
                         }
                     }
-                    if resp.double_clicked() {
-                        ev.double_clicked = Some(i);
+                    if let Some(tip) = c.tip {
+                        let resp = ui.interact(cell, gid.with(("tip", i, j)), Sense::hover());
+                        hover_tip(ui.ctx(), &resp, tip);
                     }
                 }
-                if let Some(tip) = c.tip {
-                    let resp = ui.interact(cell, gid.with(("tip", i, j)), Sense::hover());
-                    hover_tip(ui.ctx(), &resp, tip);
-                }
             }
-        }
-    });
+        });
     if let Some(i) = ev.delete_row
         && i < rows.len()
     {

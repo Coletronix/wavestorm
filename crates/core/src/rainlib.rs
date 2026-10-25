@@ -98,7 +98,9 @@ pub fn eval_expr(text: &str) -> Option<f64> {
                 _ => {
                     let start = self.i;
                     while let Some(c) = self.peek() {
-                        let exp_sign = (c == b'+' || c == b'-') && self.i > start && matches!(self.s.get(self.i - 1), Some(b'e' | b'E'));
+                        let exp_sign = (c == b'+' || c == b'-')
+                            && self.i > start
+                            && matches!(self.s.get(self.i - 1), Some(b'e' | b'E'));
                         if c.is_ascii_digit() || c == b'.' || c == b'e' || c == b'E' || exp_sign {
                             self.i += 1;
                         } else {
@@ -198,7 +200,12 @@ struct Curve {
 
 impl Curve {
     fn has_data(&self) -> bool {
-        !(self.depth.is_empty() && self.inten.is_empty() && self.incr.is_empty() && self.timedepth.is_empty() && self.timeincr.is_empty() && self.coef.is_empty())
+        !(self.depth.is_empty()
+            && self.inten.is_empty()
+            && self.incr.is_empty()
+            && self.timedepth.is_empty()
+            && self.timeincr.is_empty()
+            && self.coef.is_empty())
             || self.coef1.is_some()
     }
 }
@@ -236,12 +243,16 @@ pub fn parse_hcr_file(text: &str) -> Result<HcrFile, String> {
                     "timeincr" => c.timeincr.extend(numbers(&value, line)?),
                     "coef" => {
                         let v = numbers(&value, line)?;
-                        let seg: [f64; 5] = v.try_into().map_err(|_| format!("Line {line}: coef needs a time limit and four coefficients"))?;
+                        let seg: [f64; 5] = v
+                            .try_into()
+                            .map_err(|_| format!("Line {line}: coef needs a time limit and four coefficients"))?;
                         c.coef.push(seg);
                     }
                     "coef1" => {
                         let v = numbers(&value, line)?;
-                        let abc: [f64; 3] = v.try_into().map_err(|_| format!("Line {line}: coef1 needs three coefficients (a, b, c)"))?;
+                        let abc: [f64; 3] = v
+                            .try_into()
+                            .map_err(|_| format!("Line {line}: coef1 needs three coefficients (a, b, c)"))?;
                         c.coef1 = Some(abc);
                     }
                     _ => {}
@@ -348,7 +359,8 @@ fn build_storm(name: &str, c: &Curve, tu: f64, du: f64) -> Result<Storm, String>
         let duration = c.duration.ok_or("coef1 needs a duration")?;
         let peak = c.peaktime.map(|p| p.clamp(0.0, duration));
         let step = duration / 240.0;
-        let shape = Storm::chicago(name, duration, if a > 0.0 { a } else { 1.0 }, b, cc, peak, step).ok_or("invalid IDF coefficients")?;
+        let shape = Storm::chicago(name, duration, if a > 0.0 { a } else { 1.0 }, b, cc, peak, step)
+            .ok_or("invalid IDF coefficients")?;
         let default_depth = (a > 0.0).then(|| shape.default_depth.unwrap_or(0.0) * du);
         let s = Storm {
             comment,
@@ -361,7 +373,8 @@ fn build_storm(name: &str, c: &Curve, tu: f64, du: f64) -> Result<Storm, String>
     }
     if !c.depth.is_empty() {
         let duration = c.duration.map_or(1.0, |d| d * tu);
-        let mut s = Storm::from_mass_points(name, &comment, duration, &c.depth, smooth).ok_or("the mass curve must start at zero and increase")?;
+        let mut s = Storm::from_mass_points(name, &comment, duration, &c.depth, smooth)
+            .ok_or("the mass curve must start at zero and increase")?;
         let first = c.depth.first().copied().unwrap_or(0.0);
         let total = c.depth.last().copied().unwrap_or(1.0) - first;
         if (total - 1.0).abs() > 1e-6 {
@@ -375,7 +388,8 @@ fn build_storm(name: &str, c: &Curve, tu: f64, du: f64) -> Result<Storm, String>
         if n < 2 || c.inten.iter().any(|v| *v < 0.0) {
             return Err("intensity points must be non-negative, at least two".into());
         }
-        let mut s = Storm::from_intensity_points(name, &comment, duration, &c.inten).ok_or("invalid intensity points")?;
+        let mut s =
+            Storm::from_intensity_points(name, &comment, duration, &c.inten).ok_or("invalid intensity points")?;
         // The intensity is linear between points, so the mass curve is piecewise quadratic;
         // a cubic with the exact end tangents reproduces it exactly.
         let sum: f64 = c.inten.windows(2).map(|w| 0.5 * (w[0] + w[1])).sum();
@@ -388,7 +402,8 @@ fn build_storm(name: &str, c: &Curve, tu: f64, du: f64) -> Result<Storm, String>
     }
     if !c.incr.is_empty() {
         let duration = c.duration.map_or(1.0, |d| d * tu);
-        let mut s = Storm::from_increments(name, &comment, duration, &c.incr, smooth).ok_or("incremental depths must be non-negative with a positive total")?;
+        let mut s = Storm::from_increments(name, &comment, duration, &c.incr, smooth)
+            .ok_or("incremental depths must be non-negative with a positive total")?;
         s.default_depth = s.default_depth.map(|d| d * du);
         return Ok(finish(s, c, du));
     }
@@ -460,7 +475,12 @@ pub fn write_hcr(storm: &Storm) -> String {
     }
     out.push('\n');
     let n = storm.times.len();
-    let even = n >= 2 && storm.times.iter().enumerate().all(|(i, t)| (t - storm.duration * i as f64 / (n - 1) as f64).abs() < 1e-9 * storm.duration.max(1.0));
+    let even = n >= 2
+        && storm
+            .times
+            .iter()
+            .enumerate()
+            .all(|(i, t)| (t - storm.duration * i as f64 / (n - 1) as f64).abs() < 1e-9 * storm.duration.max(1.0));
     let peak = storm.tangents.iter().map(|t| t.1).fold(0.0_f64, f64::max);
     if even && storm.smooth && storm.tangents.len() == n && peak > 0.0 {
         // Storms read from intensity points carry exact tangents: write them back as intensities.
@@ -587,8 +607,20 @@ pub struct IdfFile {
 impl IdfFile {
     /// The file form of a project IDF curve (for saving it).
     pub fn from_curve(c: &IdfCurve) -> IdfFile {
-        let mut events: Vec<IdfEvent> = c.events.iter().map(|(n, a, b, cc)| IdfEvent { name: n.clone(), shape: IdfShape::Coef { a: *a, b: *b, c: *cc }, factor: 1.0 }).collect();
-        events.extend(c.tables.iter().map(|(n, p)| IdfEvent { name: n.clone(), shape: IdfShape::Table(p.clone()), factor: 1.0 }));
+        let mut events: Vec<IdfEvent> = c
+            .events
+            .iter()
+            .map(|(n, a, b, cc)| IdfEvent {
+                name: n.clone(),
+                shape: IdfShape::Coef { a: *a, b: *b, c: *cc },
+                factor: 1.0,
+            })
+            .collect();
+        events.extend(c.tables.iter().map(|(n, p)| IdfEvent {
+            name: n.clone(),
+            shape: IdfShape::Table(p.clone()),
+            factor: 1.0,
+        }));
         IdfFile { name: c.name.clone(), comment: String::new(), events }
     }
 
@@ -648,7 +680,13 @@ pub fn parse_idf(text: &str) -> Result<IdfFile, String> {
             .iter()
             .enumerate()
             .map(|(i, ari)| {
-                let pts: Vec<(f64, f64)> = table.rows.iter().filter_map(|r| r.depths.get(i).filter(|d| d.is_finite() && **d > 0.0).map(|d| (r.hours * 60.0, d / r.hours))).collect();
+                let pts: Vec<(f64, f64)> = table
+                    .rows
+                    .iter()
+                    .filter_map(|r| {
+                        r.depths.get(i).filter(|d| d.is_finite() && **d > 0.0).map(|d| (r.hours * 60.0, d / r.hours))
+                    })
+                    .collect();
                 IdfEvent { name: noaa::event_name(*ari), shape: IdfShape::Table(pts), factor: 1.0 }
             })
             .filter(|e| matches!(&e.shape, IdfShape::Table(p) if p.len() >= 2))
@@ -672,7 +710,16 @@ pub fn parse_idf(text: &str) -> Result<IdfFile, String> {
         match key.as_str() {
             "name" => name = value,
             "comment" => comment = value,
-            "timeunits" => tu = if value.trim().to_ascii_lowercase().starts_with("hour") || value.trim().eq_ignore_ascii_case("hr") { 60.0 } else if value.trim().to_ascii_lowercase().starts_with("sec") { 1.0 / 60.0 } else { 1.0 },
+            "timeunits" => {
+                tu = if value.trim().to_ascii_lowercase().starts_with("hour") || value.trim().eq_ignore_ascii_case("hr")
+                {
+                    60.0
+                } else if value.trim().to_ascii_lowercase().starts_with("sec") {
+                    1.0 / 60.0
+                } else {
+                    1.0
+                }
+            }
             "depthunits" => du = 1.0 / depth_factor(&value),
             "curve" | "event" => evs.push(Ev { name: value, factor: 1.0, coef: None, pts: Vec::new() }),
             "factor" | "freqfactor" | "frequencyfactor" => {
@@ -681,7 +728,9 @@ pub fn parse_idf(text: &str) -> Result<IdfFile, String> {
                 }
             }
             "coef" | "coef1" => {
-                let abc: [f64; 3] = numbers(&value, line)?.try_into().map_err(|_| format!("Line {line}: coef needs three coefficients (a, b, c)"))?;
+                let abc: [f64; 3] = numbers(&value, line)?
+                    .try_into()
+                    .map_err(|_| format!("Line {line}: coef needs three coefficients (a, b, c)"))?;
                 if evs.is_empty() {
                     evs.push(Ev { name: name.clone(), factor: 1.0, coef: None, pts: Vec::new() });
                 }
@@ -728,8 +777,7 @@ pub fn parse_idf(text: &str) -> Result<IdfFile, String> {
 /// Writes an IDF file in the format read by [`parse_idf`] (minutes, inches per hour).
 /// Shown wherever `.idf` files are read or written: no real `.idf` file has been available to
 /// check against, so the layout is our own guess and may not match other programs' files.
-pub const IDF_PROVISIONAL: &str =
-    "IDF (.idf) support is provisional: the file layout is WAVEStorm' own and has not been verified against real .idf files from other programs.";
+pub const IDF_PROVISIONAL: &str = "IDF (.idf) support is provisional: the file layout is WAVEStorm' own and has not been verified against real .idf files from other programs.";
 
 pub fn write_idf(idf: &IdfFile) -> String {
     let clean = |s: &str| s.replace(['\r', '\n'], " ");
@@ -870,18 +918,30 @@ impl RainTable {
     /// Events for the columns that hold data in `row`, using the given storm name. Event names
     /// are the column headings ("10-Year").
     pub fn events(&self, row: &RainRow, storm: &str) -> Vec<RainEvent> {
-        self.columns.iter().zip(&row.depths).filter(|(_, d)| **d > 0.0).map(|(c, d)| RainEvent::new(c, storm, *d)).collect()
+        self.columns
+            .iter()
+            .zip(&row.depths)
+            .filter(|(_, d)| **d > 0.0)
+            .map(|(c, d)| RainEvent::new(c, storm, *d))
+            .collect()
     }
 }
 
 fn is_duration_token(t: &str) -> bool {
     let l = t.to_ascii_lowercase();
     let l = l.trim_end_matches('s');
-    ["-hr", "-min", "-day", "hr", "min", "day"].iter().any(|u| l.ends_with(u)) && l.chars().next().is_some_and(|c| c.is_ascii_digit())
+    ["-hr", "-min", "-day", "hr", "min", "day"].iter().any(|u| l.ends_with(u))
+        && l.chars().next().is_some_and(|c| c.is_ascii_digit())
 }
 
 fn storm_key(name: &str) -> String {
-    name.split_whitespace().filter(|t| !is_duration_token(t)).collect::<String>().chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_uppercase()
+    name.split_whitespace()
+        .filter(|t| !is_duration_token(t))
+        .collect::<String>()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_uppercase()
 }
 
 /// Finds the storm in `available` that a lookup table code (such as "II", "MSE3", "NOAA_C",
@@ -1090,7 +1150,8 @@ coef=24.00      0.5920    0.0230   -.00025    0
         let a = parse_hcr(inten).unwrap();
         monotone_ends_at_one(&a);
         // Trapezoid sum of the points: 0.2+... ; fraction at the end of step 2 matches the quadratic.
-        let sum: f64 = [0.0, 0.2, 0.6, 1.2, 2.1, 2.15, 1.8, 1.1, 0.7, 0.1, 0.05].windows(2).map(|w| 0.5 * (w[0] + w[1])).sum();
+        let sum: f64 =
+            [0.0, 0.2, 0.6, 1.2, 2.1, 2.15, 1.8, 1.1, 0.7, 0.1, 0.05].windows(2).map(|w| 0.5 * (w[0] + w[1])).sum();
         let mid = 0.05;
         // Linear intensity 0 -> .2 over 0.1 h: mass(t) = 0.1*0.2*(t/0.1)^2/2 in step units
         let expect = (0.1 * 0.2 * (mid / 0.1_f64).powi(2) / 2.0) / (0.1 * sum);
@@ -1133,7 +1194,10 @@ coef=24.00      0.5920    0.0230   -.00025    0
         let minutes = "name=R\ntimeunits=minutes\nduration=1440\npeaktime=1440*0.3\ncurve=2-yr\nstormdepth=37.2\ndepthunits=mm\ncoef1= 863/60 5 0.8\n";
         let s = parse_hcr(minutes).unwrap();
         assert_eq!(s.duration, 24.0);
-        assert!((s.fraction_at(24.0 * 0.3) - 0.3).abs() < 0.01, "peak at 30 % of the storm: 30 % of the depth has fallen");
+        assert!(
+            (s.fraction_at(24.0 * 0.3) - 0.3).abs() < 0.01,
+            "peak at 30 % of the storm: 30 % of the depth has fallen"
+        );
         assert!((s.default_depth.unwrap() - 37.2 / 25.4).abs() < 1e-9);
     }
 
@@ -1226,7 +1290,10 @@ coef=24.00      0.5920    0.0230   -.00025    0
         let r = t.lookup("ak", "Aleutians East, Cold Bay AP AK_IA").unwrap();
         assert_eq!(r.storm, "IA");
         let ev = t.events(r, "Type IA 24-hr");
-        assert_eq!(ev.iter().map(|e| (e.name.as_str(), e.depth)).collect::<Vec<_>>(), vec![("1-Year", 1.78), ("2-Year", 2.16), ("10-Year", 3.14)]);
+        assert_eq!(
+            ev.iter().map(|e| (e.name.as_str(), e.depth)).collect::<Vec<_>>(),
+            vec![("1-Year", 1.78), ("2-Year", 2.16), ("10-Year", 3.14)]
+        );
         let al = t.counties("AL");
         assert_eq!(al.len(), 2);
         assert_eq!(t.events(al[0], "Type III 24-hr").len(), 2, "zero depths are skipped");
@@ -1235,11 +1302,40 @@ coef=24.00      0.5920    0.0230   -.00025    0
 
     #[test]
     fn storm_codes_resolve() {
-        let names: Vec<String> = ["Type II 24-hr", "Type IA 24-hr", "NOAA 24-hr C", "NOAA10 24-hr D", "MSE 24-hr 3", "CA 24-hr 4", "Nevada2 24-hr North", "Nevada 24-hr South", "ND 24-hr 2", "PR_VI 24-hr 3", "NRCC 24-hr A", "TX 24-hr B", "SW 24-hr 3"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let want = [("II", "Type II 24-hr"), ("IA", "Type IA 24-hr"), ("NOAA_C", "NOAA 24-hr C"), ("N10_D", "NOAA10 24-hr D"), ("MSE3", "MSE 24-hr 3"), ("CA-4", "CA 24-hr 4"), ("NV2_N", "Nevada2 24-hr North"), ("2_ND", "ND 24-hr 2"), ("PR_VI_3", "PR_VI 24-hr 3"), ("NR_A", "NRCC 24-hr A"), ("NO_C", "NOAA 24-hr C"), ("NV_S", "Nevada 24-hr South"), ("TX_B", "TX 24-hr B"), ("SW_3", "SW 24-hr 3")];
+        let names: Vec<String> = [
+            "Type II 24-hr",
+            "Type IA 24-hr",
+            "NOAA 24-hr C",
+            "NOAA10 24-hr D",
+            "MSE 24-hr 3",
+            "CA 24-hr 4",
+            "Nevada2 24-hr North",
+            "Nevada 24-hr South",
+            "ND 24-hr 2",
+            "PR_VI 24-hr 3",
+            "NRCC 24-hr A",
+            "TX 24-hr B",
+            "SW 24-hr 3",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let want = [
+            ("II", "Type II 24-hr"),
+            ("IA", "Type IA 24-hr"),
+            ("NOAA_C", "NOAA 24-hr C"),
+            ("N10_D", "NOAA10 24-hr D"),
+            ("MSE3", "MSE 24-hr 3"),
+            ("CA-4", "CA 24-hr 4"),
+            ("NV2_N", "Nevada2 24-hr North"),
+            ("2_ND", "ND 24-hr 2"),
+            ("PR_VI_3", "PR_VI 24-hr 3"),
+            ("NR_A", "NRCC 24-hr A"),
+            ("NO_C", "NOAA 24-hr C"),
+            ("NV_S", "Nevada 24-hr South"),
+            ("TX_B", "TX 24-hr B"),
+            ("SW_3", "SW 24-hr 3"),
+        ];
         for (code, name) in want {
             assert_eq!(storm_for_code(code, &names).as_deref(), Some(name), "{code}");
         }
@@ -1265,7 +1361,8 @@ coef=24.00      0.5920    0.0230   -.00025    0
     /// Runs every file of the user-supplied library (skipped when the folder is absent).
     #[test]
     fn sample_library_parses() {
-        let dir = std::env::var("WAVESTORM_RAIN_LIB").unwrap_or_else(|_| "../../reference_images/expert_reference/Rainfall".into());
+        let dir = std::env::var("WAVESTORM_RAIN_LIB")
+            .unwrap_or_else(|_| "../../reference_images/expert_reference/Rainfall".into());
         let Ok(read) = std::fs::read_dir(&dir) else {
             eprintln!("rainfall library folder absent; skipping");
             return;

@@ -134,16 +134,28 @@ fn slope(kind: &TcKind) -> f64 {
 }
 
 /// Adds one node starting at `x0`; returns the x where it ends.
-fn add_node(results: Option<&Results>, node: &Node, x0: f64, next_entry: Option<f64>, pond_width: f64, out: &mut Profile) -> f64 {
+fn add_node(
+    results: Option<&Results>,
+    node: &Node,
+    x0: f64,
+    next_entry: Option<f64>,
+    pond_width: f64,
+    out: &mut Profile,
+) -> f64 {
     let res = results.and_then(|r| r.node(node.id));
     match &node.data {
         NodeData::Subcat(s) => {
             let end = next_entry.unwrap_or(0.0);
-            let segs: Vec<(f64, f64, String)> = s
-                .tc
-                .iter()
-                .map(|t| (t.kind.length().max(0.0), slope(&t.kind), if t.description.is_empty() { t.kind.label().to_string() } else { t.description.clone() }))
-                .collect();
+            let segs: Vec<(f64, f64, String)> =
+                s.tc.iter()
+                    .map(|t| {
+                        (
+                            t.kind.length().max(0.0),
+                            slope(&t.kind),
+                            if t.description.is_empty() { t.kind.label().to_string() } else { t.description.clone() },
+                        )
+                    })
+                    .collect();
             let total: f64 = segs.iter().map(|s| s.0).sum();
             if total <= 0.0 {
                 // No lengths: a short flat line so the node still shows.
@@ -203,13 +215,27 @@ fn add_node(results: Option<&Results>, node: &Node, x0: f64, next_entry: Option<
                     DeviceKind::Culvert { height, outlet_invert, length, fill, .. } => {
                         let run = length.max(w * 0.6);
                         let h = (height - fill).max(0.0);
-                        out.fill(Ink::Outlet, vec![[xr, d.invert], [xr + run, *outlet_invert], [xr + run, outlet_invert + h], [xr, d.invert + h]]);
+                        out.fill(
+                            Ink::Outlet,
+                            vec![
+                                [xr, d.invert],
+                                [xr + run, *outlet_invert],
+                                [xr + run, outlet_invert + h],
+                                [xr, d.invert + h],
+                            ],
+                        );
                         right = right.max(xr + run);
                     }
-                    DeviceKind::SharpCrestedWeir { .. } | DeviceKind::BroadCrestedWeir { .. } | DeviceKind::VeeTrapWeir { .. } | DeviceKind::CustomWeir { .. } => {
+                    DeviceKind::SharpCrestedWeir { .. }
+                    | DeviceKind::BroadCrestedWeir { .. }
+                    | DeviceKind::VeeTrapWeir { .. }
+                    | DeviceKind::CustomWeir { .. } => {
                         let run = w * 0.3;
                         let t = ((top - bottom) * 0.04).max(0.05);
-                        out.fill(Ink::Outlet, vec![[xr, d.invert - t], [xr + run, d.invert - t], [xr + run, d.invert], [xr, d.invert]]);
+                        out.fill(
+                            Ink::Outlet,
+                            vec![[xr, d.invert - t], [xr + run, d.invert - t], [xr + run, d.invert], [xr, d.invert]],
+                        );
                         right = right.max(xr + run);
                     }
                     _ => {}
@@ -241,8 +267,14 @@ mod tests {
             n.data = NodeData::Subcat(Subcatchment {
                 areas: vec![SubArea::new(5.0 * 43_560.0, 75.0, "area")],
                 tc: vec![
-                    TcSegment::new(TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.24, p2: 3.0, surface: "Grass".into() }, "AB"),
-                    TcSegment::new(TcKind::Shallow { length: 400.0, slope: 0.01, kv: 16.13, surface: "Unpaved".into() }, ""),
+                    TcSegment::new(
+                        TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.24, p2: 3.0, surface: "Grass".into() },
+                        "AB",
+                    ),
+                    TcSegment::new(
+                        TcKind::Shallow { length: 400.0, slope: 0.01, kv: 16.13, surface: "Unpaved".into() },
+                        "",
+                    ),
                 ],
                 uh: None,
                 large_units: true,
@@ -250,11 +282,18 @@ mod tests {
         }
         if let Some(n) = p.node_mut(r) {
             n.outflows[0] = Some(pd);
-            n.data = NodeData::Reach(Reach { length: 500.0, inlet_invert: 110.0, outlet_invert: 105.0, ..Reach::default() });
+            n.data =
+                NodeData::Reach(Reach { length: 500.0, inlet_invert: 110.0, outlet_invert: 105.0, ..Reach::default() });
         }
         if let Some(n) = p.node_mut(pd) {
             n.data = NodeData::Pond(Pond {
-                storage: PondStorage { volumes: vec![StorageVolume::new("Basin", 100.0, VolumeShape::Prismatoid { length: 100.0, width: 50.0, height: 6.0, z: 3.0 })] },
+                storage: PondStorage {
+                    volumes: vec![StorageVolume::new(
+                        "Basin",
+                        100.0,
+                        VolumeShape::Prismatoid { length: 100.0, width: 50.0, height: 6.0, z: 3.0 },
+                    )],
+                },
                 ..Pond::default()
             });
         }
@@ -265,7 +304,10 @@ mod tests {
         let path = prof.shapes.iter().find(|sh| sh.ink == Ink::FlowPath).unwrap();
         assert_eq!(path.points.first().unwrap()[1], 118.0);
         assert_eq!(path.points.last().unwrap(), &[500.0, 112.0]);
-        assert!(prof.labels.iter().any(|l| l.text == "AB") && prof.labels.iter().any(|l| l.text == "Shallow Concentrated Flow"));
+        assert!(
+            prof.labels.iter().any(|l| l.text == "AB")
+                && prof.labels.iter().any(|l| l.text == "Shallow Concentrated Flow")
+        );
         // Reach and pond both carry water at their peaks.
         assert_eq!(prof.shapes.iter().filter(|sh| sh.ink == Ink::Water).count(), 2);
         let [x0, y0, x1, y1] = prof.bounds().unwrap();
@@ -275,7 +317,10 @@ mod tests {
     #[test]
     fn undescribed_nodes_do_not_panic() {
         let mut p = Project::default();
-        let ids: Vec<NodeId> = [NodeType::Subcat, NodeType::Reach, NodeType::Pond, NodeType::Link].iter().map(|t| p.add_node(*t, [0.0, 0.0])).collect();
+        let ids: Vec<NodeId> = [NodeType::Subcat, NodeType::Reach, NodeType::Pond, NodeType::Link]
+            .iter()
+            .map(|t| p.add_node(*t, [0.0, 0.0]))
+            .collect();
         let prof = chain(&p, None, &ids);
         assert!(prof.bounds().is_some());
     }

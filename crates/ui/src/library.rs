@@ -39,7 +39,11 @@ pub fn init(folder: &str, persist: bool) {
     st.persist = persist;
     st.folder = folder.trim().to_string();
     st.scanned = scan(&st.folder);
-    st.imports = if persist { store::read(IMPORT_KEY).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default() } else { Vec::new() };
+    st.imports = if persist {
+        store::read(IMPORT_KEY).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     rebuild(&mut st);
 }
 
@@ -181,7 +185,11 @@ fn scan(folder: &str) -> RainLibrary {
     for path in files {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let lower = name.to_ascii_lowercase();
-        if !(lower.ends_with(".hcr") || lower.ends_with(".huh") || lower.ends_with(".idf") || lower.ends_with("-rain.txt")) {
+        if !(lower.ends_with(".hcr")
+            || lower.ends_with(".huh")
+            || lower.ends_with(".idf")
+            || lower.ends_with("-rain.txt"))
+        {
             continue;
         }
         if std::fs::metadata(&path).map_or(true, |m| m.len() > 40_000_000) {
@@ -224,9 +232,13 @@ pub fn uh_names(p: &Project) -> Vec<String> {
 
 /// A storm from the project, the built-in list or the library.
 pub fn find_storm(p: &Project, name: &str) -> Option<Storm> {
-    p.storm(name)
-        .or_else(|| current().storms.iter().find(|s| s.name == name).cloned())
-        .or_else(|| builtin_storms().into_iter().chain(p.storms.iter().cloned()).chain(current().storms.iter().cloned()).find(|s| same_name(&s.name, name)))
+    p.storm(name).or_else(|| current().storms.iter().find(|s| s.name == name).cloned()).or_else(|| {
+        builtin_storms()
+            .into_iter()
+            .chain(p.storms.iter().cloned())
+            .chain(current().storms.iter().cloned())
+            .find(|s| same_name(&s.name, name))
+    })
 }
 
 /// Names equal apart from runs of whitespace.

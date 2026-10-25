@@ -10,8 +10,8 @@ use crate::windows::WindowAction;
 use egui::{RichText, Sense, Ui, vec2};
 use wavestorm_core::cn::{CN_TABLE, Hsg};
 use wavestorm_core::noaa::PfTable;
-use wavestorm_core::rainfall::RainEvent;
 use wavestorm_core::noaa::parse_pfds_csv;
+use wavestorm_core::rainfall::RainEvent;
 use wavestorm_core::rainlib::{IdfFile, RainTable, parse_idf, parse_rain_table, storm_for_code};
 
 /// Where the events come from.
@@ -51,9 +51,19 @@ pub struct EventLookup {
 
 impl EventLookup {
     pub fn new(doc: &Doc) -> Self {
-        let storm = doc.project.settings.events.get(doc.project.settings.current_event).map_or_else(|| "Type II 24-hr".to_string(), |e| e.storm.clone());
+        let storm = doc
+            .project
+            .settings
+            .events
+            .get(doc.project.settings.current_event)
+            .map_or_else(|| "Type II 24-hr".to_string(), |e| e.storm.clone());
         let lib = library::current();
-        let source = lib.tables.iter().find(|t| t.name.eq_ignore_ascii_case("NRCS2-Rain")).or(lib.tables.first()).map(|t| Source::Table(t.name.clone()));
+        let source = lib
+            .tables
+            .iter()
+            .find(|t| t.name.eq_ignore_ascii_case("NRCS2-Rain"))
+            .or(lib.tables.first())
+            .map(|t| Source::Table(t.name.clone()));
         EventLookup {
             source,
             ext_tables: Vec::new(),
@@ -77,7 +87,12 @@ impl EventLookup {
         let text = String::from_utf8_lossy(bytes);
         let lower = file_name.to_ascii_lowercase();
         let stem = file_name.rsplit_once('.').map_or(file_name, |(s, _)| s).to_string();
-        let first_line = text.trim_start_matches('\u{feff}').lines().find(|l| !l.trim().is_empty()).unwrap_or("").to_ascii_lowercase();
+        let first_line = text
+            .trim_start_matches('\u{feff}')
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("")
+            .to_ascii_lowercase();
         self.county = None;
         self.message.clear();
         if lower.ends_with("-rain.txt") || first_line.starts_with("id,state,county") {
@@ -242,17 +257,31 @@ fn table_pane(ui: &mut Ui, st: &mut EventLookup, table: &RainTable, storm_names:
         }
         ui.vertical(|ui| {
             ui.add_space(16.0);
-            ui.label(RichText::new(format!("{} counties/stations, {} depth columns", table.counties(&st.state).len(), table.columns.len())).color(t.text_dim));
+            ui.label(
+                RichText::new(format!(
+                    "{} counties/stations, {} depth columns",
+                    table.counties(&st.state).len(),
+                    table.columns.len()
+                ))
+                .color(t.text_dim),
+            );
         });
     });
     let rows = table.counties(&st.state);
-    let depth_w = (((ui.available_width() - 24.0 - 18.0 - 250.0 - 80.0) / table.columns.len().max(1) as f32).clamp(38.0, 64.0)).floor();
+    let depth_w = (((ui.available_width() - 24.0 - 18.0 - 250.0 - 80.0) / table.columns.len().max(1) as f32)
+        .clamp(38.0, 64.0))
+    .floor();
     let mut cols: Vec<(String, f32, bool)> = vec![("County".into(), 250.0, false), ("Storm".into(), 80.0, false)];
     cols.extend(table.columns.iter().map(|c| (c.replace("-Year", "-yr"), depth_w, true)));
     let cols_ref: Vec<(&str, f32, bool)> = cols.iter().map(|(n, w, r)| (n.as_str(), *w, *r)).collect();
     let cells: Vec<Vec<String>> = rows
         .iter()
-        .map(|r| [r.county.clone(), r.storm.clone()].into_iter().chain(r.depths.iter().map(|d| if *d > 0.0 { format!("{d:.2}") } else { String::new() })).collect())
+        .map(|r| {
+            [r.county.clone(), r.storm.clone()]
+                .into_iter()
+                .chain(r.depths.iter().map(|d| if *d > 0.0 { format!("{d:.2}") } else { String::new() }))
+                .collect()
+        })
         .collect();
     if st.county.is_none() && !rows.is_empty() {
         // The first county is selected until the user picks another.
@@ -273,7 +302,13 @@ fn table_pane(ui: &mut Ui, st: &mut EventLookup, table: &RainTable, storm_names:
                 }
                 None => {
                     let codes = r.storm_codes().join(", ");
-                    st.message = if codes.is_empty() { "This table lists no storm distribution for the county; choose one below.".into() } else { format!("Storm distribution {codes} is not installed; add the rainfall files to the library or choose another storm.") };
+                    st.message = if codes.is_empty() {
+                        "This table lists no storm distribution for the county; choose one below.".into()
+                    } else {
+                        format!(
+                            "Storm distribution {codes} is not installed; add the rainfall files to the library or choose another storm."
+                        )
+                    };
                 }
             }
         }
@@ -317,7 +352,10 @@ fn table_pane(ui: &mut Ui, st: &mut EventLookup, table: &RainTable, storm_names:
 fn idf_pane(ui: &mut Ui, st: &mut EventLookup, idf: &IdfFile, storm_opts: &[(String, String)]) -> Candidates {
     let t = Tokens::get(ui.ctx());
     ui.label(RichText::new(format!("PROVISIONAL: {}", wavestorm_core::rainlib::IDF_PROVISIONAL)).color(t.warning));
-    ui.label(RichText::new(if idf.comment.is_empty() { idf.name.clone() } else { format!("{}: {}", idf.name, idf.comment) }).color(t.text_dim));
+    ui.label(
+        RichText::new(if idf.comment.is_empty() { idf.name.clone() } else { format!("{}: {}", idf.name, idf.comment) })
+            .color(t.text_dim),
+    );
     ui.horizontal(|ui| {
         widgets::num_field(ui, "lk-idf-h", "Storm Duration:", "hours", &mut st.idf_hours, 2, 110.0);
         widgets::text_field(ui, "Event name suffix:", &mut st.idf_suffix, 110.0);
@@ -327,7 +365,10 @@ fn idf_pane(ui: &mut Ui, st: &mut EventLookup, idf: &IdfFile, storm_opts: &[(Str
     let mut rows: Vec<Vec<String>> = Vec::new();
     let marks = [5.0, 15.0, 30.0, 60.0, 120.0, 360.0, 1440.0];
     for e in &idf.events {
-        let mut r = vec![e.name.clone(), if (e.factor - 1.0).abs() > 1e-9 { format!("{:.2}", e.factor) } else { String::new() }];
+        let mut r = vec![
+            e.name.clone(),
+            if (e.factor - 1.0).abs() > 1e-9 { format!("{:.2}", e.factor) } else { String::new() },
+        ];
         r.extend(marks.iter().map(|m| e.intensity(*m).map(|i| format!("{i:.2}")).unwrap_or_default()));
         rows.push(r);
     }
@@ -343,22 +384,36 @@ fn idf_pane(ui: &mut Ui, st: &mut EventLookup, idf: &IdfFile, storm_opts: &[(Str
 }
 
 /// NOAA Atlas 14 table: duration rows by recurrence interval.
-fn noaa_pane(ui: &mut Ui, table: &PfTable, row: &mut Option<usize>, storm: &mut String, storm_opts: &[(String, String)]) -> Candidates {
+fn noaa_pane(
+    ui: &mut Ui,
+    table: &PfTable,
+    row: &mut Option<usize>,
+    storm: &mut String,
+    storm_opts: &[(String, String)],
+) -> Candidates {
     let t = Tokens::get(ui.ctx());
     ui.label(RichText::new(&table.source).color(t.text_dim));
     widgets::combo_field(ui, "lk-storm", "Storm Type:", storm, storm_opts, 240.0);
     let mut cols: Vec<(String, f32, bool)> = vec![("Duration".into(), 80.0, false)];
     cols.extend(table.aris.iter().map(|a| (format!("{}-Year", *a as i64), 62.0, true)));
     let cols_ref: Vec<(&str, f32, bool)> = cols.iter().map(|(n, w, r)| (n.as_str(), *w, *r)).collect();
-    let rows: Vec<Vec<String>> = table.rows.iter().map(|r| std::iter::once(r.label.clone()).chain(r.depths.iter().map(|d| if d.is_finite() { format!("{d:.2}") } else { String::new() })).collect()).collect();
+    let rows: Vec<Vec<String>> = table
+        .rows
+        .iter()
+        .map(|r| {
+            std::iter::once(r.label.clone())
+                .chain(r.depths.iter().map(|d| if d.is_finite() { format!("{d:.2}") } else { String::new() }))
+                .collect()
+        })
+        .collect();
     let h = (ui.available_height() - 150.0).max(100.0);
     widgets::list_table(ui, "noaa-table", &cols_ref, &rows, row, h);
     let all: Vec<usize> = (0..table.aris.len()).collect();
     let events = wavestorm_core::noaa::events(table, row.unwrap_or(0), &all, storm.as_str());
-    let default_on = events.iter().map(|e| COMMON_ARIS.iter().any(|a| wavestorm_core::noaa::event_name(*a) == e.name)).collect();
+    let default_on =
+        events.iter().map(|e| COMMON_ARIS.iter().any(|a| wavestorm_core::noaa::event_name(*a) == e.name)).collect();
     Candidates { events, default_on }
 }
-
 
 /// Manning's n for channels and conduits (typical values from standard hydraulics texts).
 pub const MANNING: &[(&str, f64)] = &[
@@ -431,48 +486,65 @@ pub fn cn_lookup(ctx: &egui::Context, st: &mut CnLookup) -> Option<(f64, String)
     let mut picked = None;
     let mut open = true;
     let t = Tokens::get(ctx);
-    crate::frame::Win::new("Curve Number Lookup (TR-55 Table 2-2)").open(&mut open).default_size(vec2(560.0, 440.0)).resizable(true).show(ctx, |ui| {
-        let groups: Vec<&str> = {
-            let mut g: Vec<&str> = CN_TABLE.iter().map(|r| r.group).collect();
-            g.dedup();
-            g
-        };
-        ui.horizontal(|ui| {
-            for g in &groups {
-                if crate::widgets::radio(ui, st.group == *g || (st.group.is_empty() && *g == groups[0]), g).clicked() {
-                    st.group = g.to_string();
-                }
-            }
-        });
-        let group = if st.group.is_empty() { groups.first().copied().unwrap_or("") } else { st.group.as_str() };
-        ui.label(RichText::new("Click a soil-group value to use it.").color(t.text_dim));
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("cn-grid").striped(true).spacing(vec2(10.0, 3.0)).show(ui, |ui| {
-                ui.label(RichText::new("Cover description").strong());
-                for h in Hsg::ALL {
-                    ui.label(RichText::new(format!("HSG {}", h.letter())).strong());
-                }
-                ui.end_row();
-                for row in CN_TABLE.iter().filter(|r| r.group == group) {
-                    let imp = row.impervious_pct.filter(|p| *p > 0.0 && *p < 100.0).map(|p| format!(" ({p}% imp)")).unwrap_or_default();
-                    ui.label(format!("{}{imp}", row.cover));
-                    for h in Hsg::ALL {
-                        match row.cn_for(h) {
-                            Some(cn) => {
-                                if ui.add(egui::Label::new(RichText::new(format!("{cn}")).color(t.select)).sense(Sense::click())).on_hover_text(row.description(h)).clicked() {
-                                    picked = Some((cn as f64, row.description(h)));
-                                }
-                            }
-                            None => {
-                                ui.label("-");
-                            }
-                        }
+    crate::frame::Win::new("Curve Number Lookup (TR-55 Table 2-2)")
+        .open(&mut open)
+        .default_size(vec2(560.0, 440.0))
+        .resizable(true)
+        .show(ctx, |ui| {
+            let groups: Vec<&str> = {
+                let mut g: Vec<&str> = CN_TABLE.iter().map(|r| r.group).collect();
+                g.dedup();
+                g
+            };
+            ui.horizontal(|ui| {
+                for g in &groups {
+                    if crate::widgets::radio(ui, st.group == *g || (st.group.is_empty() && *g == groups[0]), g)
+                        .clicked()
+                    {
+                        st.group = g.to_string();
                     }
-                    ui.end_row();
                 }
             });
+            let group = if st.group.is_empty() { groups.first().copied().unwrap_or("") } else { st.group.as_str() };
+            ui.label(RichText::new("Click a soil-group value to use it.").color(t.text_dim));
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::Grid::new("cn-grid").striped(true).spacing(vec2(10.0, 3.0)).show(ui, |ui| {
+                    ui.label(RichText::new("Cover description").strong());
+                    for h in Hsg::ALL {
+                        ui.label(RichText::new(format!("HSG {}", h.letter())).strong());
+                    }
+                    ui.end_row();
+                    for row in CN_TABLE.iter().filter(|r| r.group == group) {
+                        let imp = row
+                            .impervious_pct
+                            .filter(|p| *p > 0.0 && *p < 100.0)
+                            .map(|p| format!(" ({p}% imp)"))
+                            .unwrap_or_default();
+                        ui.label(format!("{}{imp}", row.cover));
+                        for h in Hsg::ALL {
+                            match row.cn_for(h) {
+                                Some(cn) => {
+                                    if ui
+                                        .add(
+                                            egui::Label::new(RichText::new(format!("{cn}")).color(t.select))
+                                                .sense(Sense::click()),
+                                        )
+                                        .on_hover_text(row.description(h))
+                                        .clicked()
+                                    {
+                                        picked = Some((cn as f64, row.description(h)));
+                                    }
+                                }
+                                None => {
+                                    ui.label("-");
+                                }
+                            }
+                        }
+                        ui.end_row();
+                    }
+                });
+            });
         });
-    });
     if picked.is_some() || !open {
         st.open = false;
     }

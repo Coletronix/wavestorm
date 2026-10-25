@@ -128,9 +128,21 @@ pub fn scs_uh_runoff(
 #[allow(clippy::too_many_arguments)]
 // `!(x > 0.0)` is deliberately NaN-safe (true for NaN).
 #[allow(clippy::neg_cmp_op_on_partial_ord)]
-pub fn sbuh_runoff(rain: &Rainfall, parts: &[CnArea], ia_ratio: f64, tc_hr: f64, t0: f64, dt: f64, n: usize) -> RunoffSeries {
+pub fn sbuh_runoff(
+    rain: &Rainfall,
+    parts: &[CnArea],
+    ia_ratio: f64,
+    tc_hr: f64,
+    t0: f64,
+    dt: f64,
+    n: usize,
+) -> RunoffSeries {
     let area_sf: f64 = parts.iter().map(|p| p.area_sf).sum();
-    let mut out = RunoffSeries { hydrograph: Hydrograph::zeros(t0, dt, n), precip: Vec::with_capacity(n), excess: Vec::with_capacity(n) };
+    let mut out = RunoffSeries {
+        hydrograph: Hydrograph::zeros(t0, dt, n),
+        precip: Vec::with_capacity(n),
+        excess: Vec::with_capacity(n),
+    };
     if n == 0 || !(dt > 0.0) {
         return out;
     }

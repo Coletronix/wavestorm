@@ -46,7 +46,15 @@ fn nice_step(range: f64, target: usize) -> f64 {
     let raw = range / target.max(1) as f64;
     let mag = 10f64.powf(raw.log10().floor());
     let norm = raw / mag;
-    let step = if norm < 1.5 { 1.0 } else if norm < 3.5 { 2.0 } else if norm < 7.5 { 5.0 } else { 10.0 };
+    let step = if norm < 1.5 {
+        1.0
+    } else if norm < 3.5 {
+        2.0
+    } else if norm < 7.5 {
+        5.0
+    } else {
+        10.0
+    };
     step * mag
 }
 
@@ -73,10 +81,24 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     }
     let mut top = rect.min.y + 6.0;
     if !spec.subtitle.is_empty() {
-        bold(&p, pos2(rect.center().x, top + 8.0), Align2::CENTER_CENTER, spec.subtitle, FontId::proportional(14.0), t.text);
+        bold(
+            &p,
+            pos2(rect.center().x, top + 8.0),
+            Align2::CENTER_CENTER,
+            spec.subtitle,
+            FontId::proportional(14.0),
+            t.text,
+        );
         top += 18.0;
     }
-    bold(&p, pos2(rect.center().x, top + 8.0), Align2::CENTER_CENTER, spec.title, FontId::proportional(14.0), t.chart_title);
+    bold(
+        &p,
+        pos2(rect.center().x, top + 8.0),
+        Align2::CENTER_CENTER,
+        spec.title,
+        FontId::proportional(14.0),
+        t.chart_title,
+    );
     top += 20.0;
 
     // Data ranges.
@@ -105,7 +127,12 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     // Rating curves (elevation on y) shouldn't start at zero.
     let y_from_zero = spec.marks.is_empty() && yr.0 >= 0.0;
     if !y_from_zero {
-        let min_y = spec.series.iter().flat_map(|s| s.y.iter().copied()).filter(|v| v.is_finite()).fold(f64::INFINITY, f64::min);
+        let min_y = spec
+            .series
+            .iter()
+            .flat_map(|s| s.y.iter().copied())
+            .filter(|v| v.is_finite())
+            .fold(f64::INFINITY, f64::min);
         let min_y = spec.marks.iter().map(|m| m.0).fold(min_y, f64::min);
         if min_y.is_finite() {
             yr.0 = min_y;
@@ -114,12 +141,16 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     let (x0, x1) = view.x.unwrap_or(xr);
     let ystep_auto = nice_step(yr.1 - yr.0, 8);
     let pad = (yr.1 - yr.0) * 0.06;
-    let (y0, y1) = view.y.unwrap_or(((yr.0 / ystep_auto).floor() * ystep_auto, ((yr.1 + pad) / ystep_auto).ceil() * ystep_auto));
+    let (y0, y1) =
+        view.y.unwrap_or(((yr.0 / ystep_auto).floor() * ystep_auto, ((yr.1 + pad) / ystep_auto).ceil() * ystep_auto));
 
     let summary_w = if spec.summary.is_empty() { 0.0 } else { (rect.width() * 0.34).min(260.0) };
     let legend_w: f32 = if spec.series.len() > 1 || !spec.summary.is_empty() { 96.0 } else { 0.0 };
     let depth = if spec.three_d { vec2(10.0, -7.0) * (spec.series.len().clamp(2, 5) as f32) } else { Vec2::ZERO };
-    let plot = Rect::from_min_max(pos2(rect.min.x + 58.0, top + 6.0 - depth.y), pos2(rect.max.x - legend_w.max(16.0) - depth.x, rect.max.y - 40.0));
+    let plot = Rect::from_min_max(
+        pos2(rect.min.x + 58.0, top + 6.0 - depth.y),
+        pos2(rect.max.x - legend_w.max(16.0) - depth.x, rect.max.y - 40.0),
+    );
     if plot.width() < 40.0 || plot.height() < 40.0 {
         return;
     }
@@ -130,8 +161,16 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     if spec.three_d {
         let back = plot.translate(depth);
         p.rect_filled(back, 0.0, t.chart_bg);
-        p.add(Shape::convex_polygon(vec![plot.left_bottom(), plot.right_bottom(), back.right_bottom(), back.left_bottom()], t.chart_bg.gamma_multiply(0.92), Stroke::new(1.0, t.chart_grid)));
-        p.add(Shape::convex_polygon(vec![plot.left_top(), plot.left_bottom(), back.left_bottom(), back.left_top()], t.chart_bg.gamma_multiply(0.96), Stroke::new(1.0, t.chart_grid)));
+        p.add(Shape::convex_polygon(
+            vec![plot.left_bottom(), plot.right_bottom(), back.right_bottom(), back.left_bottom()],
+            t.chart_bg.gamma_multiply(0.92),
+            Stroke::new(1.0, t.chart_grid),
+        ));
+        p.add(Shape::convex_polygon(
+            vec![plot.left_top(), plot.left_bottom(), back.left_bottom(), back.left_top()],
+            t.chart_bg.gamma_multiply(0.96),
+            Stroke::new(1.0, t.chart_grid),
+        ));
     }
     let grid = |a: Pos2, b: Pos2| {
         p.extend(Shape::dashed_line(&[a, b], Stroke::new(1.0, t.chart_grid), 3.0, 3.0));
@@ -178,7 +217,14 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
         p.text(pos2(plot.min.x - 5.0, py), Align2::RIGHT_CENTER, fmt_tick(y, ystep), font.clone(), t.text);
         y += ystep;
     }
-    bold(&p, pos2((plot.min.x + plot.max.x) / 2.0, rect.max.y - 12.0), Align2::CENTER_CENTER, spec.x_label, FontId::proportional(12.5), t.text);
+    bold(
+        &p,
+        pos2((plot.min.x + plot.max.x) / 2.0, rect.max.y - 12.0),
+        Align2::CENTER_CENTER,
+        spec.x_label,
+        FontId::proportional(12.5),
+        t.text,
+    );
     let galley = p.layout_no_wrap(spec.y_label.to_string(), FontId::proportional(12.5), t.text);
     let gpos = pos2(rect.min.x + 6.0, (plot.min.y + plot.max.y) / 2.0 + galley.size().x / 2.0);
     p.add(egui::epaint::TextShape::new(gpos, galley, t.text).with_angle(-std::f32::consts::FRAC_PI_2));
@@ -188,9 +234,16 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     for (v, label) in spec.marks {
         if *v >= y0 && *v <= y1 {
             let py = sy(*v);
-            p.line_segment([pos2(plot.min.x, py), pos2(plot.max.x, py)], Stroke::new(1.0, Color32::from_rgba_unmultiplied(200, 60, 60, 160)));
+            p.line_segment(
+                [pos2(plot.min.x, py), pos2(plot.max.x, py)],
+                Stroke::new(1.0, Color32::from_rgba_unmultiplied(200, 60, 60, 160)),
+            );
             // Labels at the same height are spread to the right.
-            let x = stacked.iter().filter(|(y, _)| (*y - py).abs() < 12.0).map(|(_, x)| *x).fold(plot.min.x + 4.0, f32::max);
+            let x = stacked
+                .iter()
+                .filter(|(y, _)| (*y - py).abs() < 12.0)
+                .map(|(_, x)| *x)
+                .fold(plot.min.x + 4.0, f32::max);
             let mark_text = if t.is_dark() { t.error } else { Color32::from_rgb(160, 30, 30) };
             let g = p.layout_no_wrap(label.clone(), font.clone(), mark_text);
             let w = g.size().x;
@@ -200,19 +253,28 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
     }
 
     // Series: back to front.
-    let clip = p.with_clip_rect(plot.expand2(vec2(depth.x.abs() + 2.0, depth.y.abs() + 2.0)).translate(vec2(depth.x / 2.0, depth.y / 2.0)).intersect(rect));
+    let clip = p.with_clip_rect(
+        plot.expand2(vec2(depth.x.abs() + 2.0, depth.y.abs() + 2.0))
+            .translate(vec2(depth.x / 2.0, depth.y / 2.0))
+            .intersect(rect),
+    );
     let n = spec.series.len();
     let mut peak_boxes: Vec<(Pos2, String, Color32)> = Vec::new();
     let mut all_pts: Vec<Pos2> = Vec::new();
     // First series sits at the front; later ones step back. Draw back to front.
     for (i, s) in spec.series.iter().enumerate().rev() {
         let off = if spec.three_d { depth / (n.max(1) as f32) * i as f32 } else { Vec2::ZERO };
-        let pts: Vec<Pos2> = s.x.iter().zip(&s.y).filter(|(x, y)| x.is_finite() && y.is_finite()).map(|(x, y)| pos2(sx(*x), sy(*y)) + off).collect();
+        let pts: Vec<Pos2> =
+            s.x.iter()
+                .zip(&s.y)
+                .filter(|(x, y)| x.is_finite() && y.is_finite())
+                .map(|(x, y)| pos2(sx(*x), sy(*y)) + off)
+                .collect();
         if pts.len() < 2 {
             continue;
         }
         if spec.three_d {
-            let base = sy(y0.max(0.0).min(y1)) ;
+            let base = sy(y0.max(0.0).min(y1));
             // Solid extrusion: front face (area under the curve, light tint), top face (ribbon
             // swept straight back in depth, series colour) and a darker right end cap. Opaque
             // triangle meshes only, so steep spikes stay clean.
@@ -259,16 +321,23 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
             if t.glass {
                 // A lit glass tube: glow, cast shadow, the line, and a highlight on top.
                 clip.add(Shape::line(pts.clone(), Stroke::new(7.0, crate::glass::alpha(s.color, 0.12))));
-                clip.add(Shape::line(pts.iter().map(|q| *q + vec2(0.8, 2.5)).collect(), Stroke::new(3.0, crate::glass::alpha(Color32::BLACK, 0.6))));
+                clip.add(Shape::line(
+                    pts.iter().map(|q| *q + vec2(0.8, 2.5)).collect(),
+                    Stroke::new(3.0, crate::glass::alpha(Color32::BLACK, 0.6)),
+                ));
             }
             clip.add(Shape::line(pts.clone(), Stroke::new(2.0, s.color)));
             if t.glass {
-                clip.add(Shape::line(pts.iter().map(|q| *q + vec2(-0.3, -0.6)).collect(), Stroke::new(0.8, crate::theme::white(0.55))));
+                clip.add(Shape::line(
+                    pts.iter().map(|q| *q + vec2(-0.3, -0.6)).collect(),
+                    Stroke::new(0.8, crate::theme::white(0.55)),
+                ));
             }
             all_pts.extend(pts.iter().copied());
         }
         if let Some(label) = &s.peak_label
-            && let Some((j, _)) = s.y.iter().enumerate().filter(|(_, v)| v.is_finite()).max_by(|a, b| a.1.total_cmp(b.1))
+            && let Some((j, _)) =
+                s.y.iter().enumerate().filter(|(_, v)| v.is_finite()).max_by(|a, b| a.1.total_cmp(b.1))
             && let (Some(x), Some(y)) = (s.x.get(j), s.y.get(j))
             && *y > 0.0
         {
@@ -281,7 +350,11 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
         let x = plot.max.x - 6.0;
         // Largest size / highest position whose box contains no plotted point.
         let block = |size: f32| {
-            let w = spec.summary.iter().map(|l| p.layout_no_wrap(l.clone(), FontId::proportional(size), t.text).size().x).fold(0.0f32, f32::max);
+            let w = spec
+                .summary
+                .iter()
+                .map(|l| p.layout_no_wrap(l.clone(), FontId::proportional(size), t.text).size().x)
+                .fold(0.0f32, f32::max);
             (w + 4.0, size * 1.25 * spec.summary.len() as f32 + 2.0)
         };
         let fits = |top: f32, bw: f32, bh: f32| {
@@ -316,7 +389,8 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
 
     // Peak labels, nudged apart vertically. Light themes use the classic yellow tag; dark
     // themes a dark tag edged in the series colour.
-    let (tag_fill, tag_text) = if t.is_dark() { (t.chart_bg, t.text) } else { (Color32::from_rgb(255, 255, 220), Color32::BLACK) };
+    let (tag_fill, tag_text) =
+        if t.is_dark() { (t.chart_bg, t.text) } else { (Color32::from_rgb(255, 255, 220), Color32::BLACK) };
     let mut placed: Vec<Rect> = Vec::new();
     for (at, label, color) in peak_boxes {
         let g = p.layout_no_wrap(label.clone(), FontId::proportional(11.5), tag_text);
@@ -347,7 +421,8 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
         let lx = rect.max.x - legend_w + 4.0;
         let mut ly = top + 4.0;
         let lr = Rect::from_min_size(pos2(lx, ly), vec2(legend_w - 10.0, 4.0 + 15.0 * spec.series.len() as f32));
-        let (fill, ink, edge) = if t.is_dark() { (t.chart_plot, t.text, t.shadow) } else { (Color32::WHITE, Color32::BLACK, t.dark) };
+        let (fill, ink, edge) =
+            if t.is_dark() { (t.chart_plot, t.text, t.shadow) } else { (Color32::WHITE, Color32::BLACK, t.dark) };
         let radius = if t.glass { 6.0 } else { 0.0 };
         p.rect_filled(lr, radius, fill);
         p.rect_stroke(lr, radius, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
@@ -355,18 +430,29 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
             ly += 2.0;
             let sw = Rect::from_min_size(pos2(lx + 4.0, ly + 2.0), vec2(10.0, 10.0));
             p.rect_filled(sw, radius / 2.0, s.color);
-            p.rect_stroke(sw, radius / 2.0, Stroke::new(1.0, if t.is_dark() { s.color } else { Color32::BLACK }), egui::StrokeKind::Inside);
+            p.rect_stroke(
+                sw,
+                radius / 2.0,
+                Stroke::new(1.0, if t.is_dark() { s.color } else { Color32::BLACK }),
+                egui::StrokeKind::Inside,
+            );
             p.text(pos2(sw.max.x + 4.0, sw.center().y), Align2::LEFT_CENTER, &s.name, FontId::proportional(11.0), ink);
             ly += 13.0;
         }
     }
     // Drag-zoom: drag down-right to zoom, up-left to reset.
     if resp.dragged()
-        && let (Some(a), Some(b)) = (resp.interact_pointer_pos().map(|q| q - resp.drag_delta()), resp.interact_pointer_pos())
+        && let (Some(a), Some(b)) =
+            (resp.interact_pointer_pos().map(|q| q - resp.drag_delta()), resp.interact_pointer_pos())
     {
         let _ = a;
         let origin = ui.ctx().data(|d| d.get_temp::<Pos2>(resp.id.with("origin"))).unwrap_or(b);
-        ui.painter().rect_stroke(Rect::from_two_pos(origin, b), 0.0, Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
+        ui.painter().rect_stroke(
+            Rect::from_two_pos(origin, b),
+            0.0,
+            Stroke::new(1.0, t.text),
+            egui::StrokeKind::Inside,
+        );
     }
     if resp.drag_started()
         && let Some(p0) = resp.interact_pointer_pos()

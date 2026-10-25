@@ -99,7 +99,11 @@ impl TcPathState {
             .map(|(i, w)| {
                 let len = (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]) * self.fpu;
                 let seg = existing.iter().find(|s| s.path.is_some_and(|[a, b]| a <= i && i < b));
-                let flow = seg.and_then(|s| tc::path_flow_of(&s.kind)).unwrap_or(if i == 0 { PathFlow::Sheet } else { PathFlow::Shallow });
+                let flow = seg.and_then(|s| tc::path_flow_of(&s.kind)).unwrap_or(if i == 0 {
+                    PathFlow::Sheet
+                } else {
+                    PathFlow::Shallow
+                });
                 let slope = seg.filter(|s| s.path.is_some_and(|[a, _]| a == i)).and_then(|s| s.kind.slope());
                 PathLeg { length: len, flow, slope }
             })
@@ -179,7 +183,11 @@ impl ManualGrid {
             let cols = names.iter().map(|n| m.series_for(n).iter().map(|q| Self::fmt(*q, u)).collect()).collect();
             ManualGrid { multi, names, cols }
         } else {
-            ManualGrid { multi, names: vec![String::new()], cols: vec![m.flows.iter().map(|q| Self::fmt(*q, u)).collect()] }
+            ManualGrid {
+                multi,
+                names: vec![String::new()],
+                cols: vec![m.flows.iter().map(|q| Self::fmt(*q, u)).collect()],
+            }
         }
     }
 
@@ -223,7 +231,8 @@ impl ManualGrid {
     }
 
     fn series(col: &[String], u: &Units) -> Vec<f64> {
-        let vals: Vec<Option<f64>> = col.iter().map(|s| s.trim().parse::<f64>().ok().filter(|v| v.is_finite())).collect();
+        let vals: Vec<Option<f64>> =
+            col.iter().map(|s| s.trim().parse::<f64>().ok().filter(|v| v.is_finite())).collect();
         let filled = interpolate_blanks(&vals);
         let end = filled.iter().rposition(Option::is_some).map_or(0, |i| i + 1);
         filled[..end].iter().map(|v| u.flow_in(v.unwrap_or(0.0))).collect()
@@ -285,19 +294,23 @@ fn remap_routes(devices: &mut [OutletDevice], f: impl Fn(usize) -> Option<usize>
 /// device label and template, or Some(None) on Cancel.
 fn device_chooser(ctx: &egui::Context) -> Option<Option<(&'static str, wavestorm_core::outlets::DeviceKind)>> {
     let mut out = None;
-    crate::frame::Win::new("Select Outlet Device Type").id(egui::Id::new("device-chooser")).collapsible(false).resizable(false).show(ctx, |ui| {
-        ui.label("Choose the type of outlet device:");
-        ui.add_space(2.0);
-        for (label, kind) in outlet::templates() {
-            if widgets::button(ui, label, 220.0).clicked() {
-                out = Some(Some((label, kind)));
+    crate::frame::Win::new("Select Outlet Device Type")
+        .id(egui::Id::new("device-chooser"))
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.label("Choose the type of outlet device:");
+            ui.add_space(2.0);
+            for (label, kind) in outlet::templates() {
+                if widgets::button(ui, label, 220.0).clicked() {
+                    out = Some(Some((label, kind)));
+                }
             }
-        }
-        ui.add_space(4.0);
-        if widgets::button(ui, "Cancel", 80.0).clicked() {
-            out = Some(None);
-        }
-    });
+            ui.add_space(4.0);
+            if widgets::button(ui, "Cancel", 80.0).clicked() {
+                out = Some(None);
+            }
+        });
     out
 }
 
@@ -320,48 +333,60 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
     let mut keep = true;
     let mut apply = false;
     let title = format!("Edit {} {} - {}", st.draft.node_type().label(), st.draft.label(), doc.project.title);
-    crate::frame::Win::new(title).id(egui::Id::new(("edit", st.node))).collapsible(false).resizable(true).default_size(vec2(560.0, 420.0)).show(ctx, |ui| {
-        let names = tabs(st.draft.node_type());
-        st.tab = st.tab.min(names.len() - 1);
-        widgets::tabs(ui, names, &mut st.tab);
-        widgets::tab_body(ui, |ui| {
-            ui.set_min_size(vec2(520.0, 300.0));
-            let tab = names.get(st.tab).copied().unwrap_or("General");
-            match tab {
-                "General" => general(ui, st, &doc.project),
-                "Notes" => {
-                    ui.label("Notes (included in reports):");
-                    ui.add_sized(vec2(ui.available_width(), 260.0), egui::TextEdit::multiline(&mut st.draft.notes));
-                }
-                _ => match st.draft.node_type() {
-                    NodeType::Subcat => subcat_tab(ui, st, &units, tab, doc, actions),
-                    NodeType::Reach => reach_tab(ui, st, &units),
-                    NodeType::Pond => pond_tab(ui, st, &units, tab, doc),
-                    NodeType::Link => {
-                        let events: Vec<String> = doc.project.settings.events.iter().map(|e| e.name.clone()).collect();
-                        link_tab(ui, st, &units, tab, actions, &events)
+    crate::frame::Win::new(title)
+        .id(egui::Id::new(("edit", st.node)))
+        .collapsible(false)
+        .resizable(true)
+        .default_size(vec2(560.0, 420.0))
+        .show(ctx, |ui| {
+            let names = tabs(st.draft.node_type());
+            st.tab = st.tab.min(names.len() - 1);
+            widgets::tabs(ui, names, &mut st.tab);
+            widgets::tab_body(ui, |ui| {
+                ui.set_min_size(vec2(520.0, 300.0));
+                let tab = names.get(st.tab).copied().unwrap_or("General");
+                match tab {
+                    "General" => general(ui, st, &doc.project),
+                    "Notes" => {
+                        ui.label("Notes (included in reports):");
+                        ui.add_sized(vec2(ui.available_width(), 260.0), egui::TextEdit::multiline(&mut st.draft.notes));
                     }
-                    NodeType::Text => text_tab(ui, st),
-                },
+                    _ => match st.draft.node_type() {
+                        NodeType::Subcat => subcat_tab(ui, st, &units, tab, doc, actions),
+                        NodeType::Reach => reach_tab(ui, st, &units),
+                        NodeType::Pond => pond_tab(ui, st, &units, tab, doc),
+                        NodeType::Link => {
+                            let events: Vec<String> =
+                                doc.project.settings.events.iter().map(|e| e.name.clone()).collect();
+                            link_tab(ui, st, &units, tab, actions, &events)
+                        }
+                        NodeType::Text => text_tab(ui, st),
+                    },
+                }
+            });
+            let help = match st.draft.node_type() {
+                NodeType::Subcat => {
+                    if st.tab == 2 {
+                        "tc"
+                    } else {
+                        "cn"
+                    }
+                }
+                NodeType::Reach => "reach",
+                NodeType::Pond => "pond",
+                NodeType::Link => "link",
+                NodeType::Text => "start",
+            };
+            match ok_cancel_apply(ui, true, help) {
+                Buttons::Ok => {
+                    apply = true;
+                    keep = false;
+                }
+                Buttons::Apply => apply = true,
+                Buttons::Cancel => keep = false,
+                Buttons::None => {}
             }
         });
-        let help = match st.draft.node_type() {
-            NodeType::Subcat => if st.tab == 2 { "tc" } else { "cn" },
-            NodeType::Reach => "reach",
-            NodeType::Pond => "pond",
-            NodeType::Link => "link",
-            NodeType::Text => "start",
-        };
-        match ok_cancel_apply(ui, true, help) {
-            Buttons::Ok => {
-                apply = true;
-                keep = false;
-            }
-            Buttons::Apply => apply = true,
-            Buttons::Cancel => keep = false,
-            Buttons::None => {}
-        }
-    });
     // Sub-dialogs.
     if let Some((cn, desc)) = lookup::cn_lookup(ctx, &mut st.cn_lookup)
         && let NodeData::Subcat(sc) = &mut st.draft.data
@@ -476,15 +501,22 @@ fn general(ui: &mut Ui, st: &mut EditState, project: &wavestorm_core::project::P
             for name in crate::library::uh_names(project) {
                 opts.push((name.clone(), name));
             }
-            let changed = widgets::with_tip(ui, "Unit hydrograph shape for this subcatchment only. The project default (Settings > Calculation > Unit Hydro) is the standard NRCS unit hydrograph unless changed there.", |ui| {
-                widgets::combo_field(ui, "uh", "Unit Hydrograph:", &mut uh, &opts, 220.0)
-            });
+            let changed = widgets::with_tip(
+                ui,
+                "Unit hydrograph shape for this subcatchment only. The project default (Settings > Calculation > Unit Hydro) is the standard NRCS unit hydrograph unless changed there.",
+                |ui| widgets::combo_field(ui, "uh", "Unit Hydrograph:", &mut uh, &opts, 220.0),
+            );
             if changed {
                 sc.uh = if uh.is_empty() { None } else { Some(uh) };
             }
             if st.draft.outline.is_some() {
                 ui.add_space(6.0);
-                ui.label(RichText::new("This subcatchment has a traced outline on the diagram (right-click it to update the area).").color(t.hint));
+                ui.label(
+                    RichText::new(
+                        "This subcatchment has a traced outline on the diagram (right-click it to update the area).",
+                    )
+                    .color(t.hint),
+                );
             }
         }
         NodeData::Pond(p) => {
@@ -504,28 +536,128 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
     let outline = st.draft.outline.clone();
     let NodeData::Subcat(sc) = &mut st.draft.data else { return };
     let large = sc.large_units;
-    let area_unit = if large { u.area_label() } else if u.metric() { "m²" } else { "sq-ft" };
-    let to_area = |v: f64| if large { u.area(v) } else if u.metric() { v / wavestorm_core::units::FT_PER_M.powi(2) } else { v };
-    let from_area = |v: f64| if large { u.area_in(v) } else if u.metric() { v * wavestorm_core::units::FT_PER_M.powi(2) } else { v };
+    let area_unit = if large {
+        u.area_label()
+    } else if u.metric() {
+        "m²"
+    } else {
+        "sq-ft"
+    };
+    let to_area = |v: f64| {
+        if large {
+            u.area(v)
+        } else if u.metric() {
+            v / wavestorm_core::units::FT_PER_M.powi(2)
+        } else {
+            v
+        }
+    };
+    let from_area = |v: f64| {
+        if large {
+            u.area_in(v)
+        } else if u.metric() {
+            v * wavestorm_core::units::FT_PER_M.powi(2)
+        } else {
+            v
+        }
+    };
     let t = Tokens::get(ui.ctx());
     if tab == "Area" {
         // Refresh the text buffer when it no longer matches the data (first show, lookups).
-        let parsed: Vec<(f64, f64, String)> = st.area_rows.iter().filter(|r| r.iter().any(|c| !c.trim().is_empty())).map(|r| (widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0), widgets::cell_num(&r[1]).unwrap_or(0.0), r[2].clone())).collect();
-        let same = parsed.len() == sc.areas.len() && parsed.iter().zip(&sc.areas).all(|(p, a)| (p.0 - a.area).abs() < 1e-6 * a.area.abs().max(1.0) && (p.1 - a.cn).abs() < 1e-9 && p.2 == a.description);
+        let parsed: Vec<(f64, f64, String)> = st
+            .area_rows
+            .iter()
+            .filter(|r| r.iter().any(|c| !c.trim().is_empty()))
+            .map(|r| {
+                (
+                    widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0),
+                    widgets::cell_num(&r[1]).unwrap_or(0.0),
+                    r[2].clone(),
+                )
+            })
+            .collect();
+        let same = parsed.len() == sc.areas.len()
+            && parsed.iter().zip(&sc.areas).all(|(p, a)| {
+                (p.0 - a.area).abs() < 1e-6 * a.area.abs().max(1.0) && (p.1 - a.cn).abs() < 1e-9 && p.2 == a.description
+            });
         let drawn = sc.areas.iter().any(|a| a.outline.is_some());
-        let source = |a: &SubArea| if a.outline.is_some() { "drawn" } else if a.remainder && drawn { "remainder" } else { "" };
+        let source = |a: &SubArea| {
+            if a.outline.is_some() {
+                "drawn"
+            } else if a.remainder && drawn {
+                "remainder"
+            } else {
+                ""
+            }
+        };
         if !same {
-            st.area_rows = sc.areas.iter().map(|a| vec![widgets::cell_fmt(to_area(a.area), if large { 3 } else { 0 }), format!("{}", a.cn), a.description.clone(), a.land_use.clone().unwrap_or_default(), source(a).to_string()]).collect();
+            st.area_rows = sc
+                .areas
+                .iter()
+                .map(|a| {
+                    vec![
+                        widgets::cell_fmt(to_area(a.area), if large { 3 } else { 0 }),
+                        format!("{}", a.cn),
+                        a.description.clone(),
+                        a.land_use.clone().unwrap_or_default(),
+                        source(a).to_string(),
+                    ]
+                })
+                .collect();
         }
         let cols = [
-            widgets::Column { title: &format!("Area ({area_unit})"), width: 100.0, numeric: true, tip: Some("Area of this ground cover and soil group combination, in the displayed area units. Drawn sub-areas and the remainder are measured from the diagram.") },
-            widgets::Column { title: "CN", width: 56.0, numeric: true, tip: Some("NRCS runoff curve number (TR-55 Table 2-2) for this cover and hydrologic soil group, 30 to 100. Use Lookup CN... to pick from the tables.") },
-            widgets::Column { title: "Description", width: 240.0, numeric: false, tip: Some("Ground cover and soil group text, printed in reports.") },
-            widgets::Column { title: "Land Use", width: 90.0, numeric: false, tip: Some("Optional land use name for this row; areas are grouped by it in the land use listing.") },
-            widgets::Column { title: "Source", width: 70.0, numeric: false, tip: Some("\"drawn\": a sub-area drawn inside the outline, measured from it (coloured as on the diagram). \"remainder\": the rest of the outline, its area less the drawn sub-areas.") },
+            widgets::Column {
+                title: &format!("Area ({area_unit})"),
+                width: 100.0,
+                numeric: true,
+                tip: Some(
+                    "Area of this ground cover and soil group combination, in the displayed area units. Drawn sub-areas and the remainder are measured from the diagram.",
+                ),
+            },
+            widgets::Column {
+                title: "CN",
+                width: 56.0,
+                numeric: true,
+                tip: Some(
+                    "NRCS runoff curve number (TR-55 Table 2-2) for this cover and hydrologic soil group, 30 to 100. Use Lookup CN... to pick from the tables.",
+                ),
+            },
+            widgets::Column {
+                title: "Description",
+                width: 240.0,
+                numeric: false,
+                tip: Some("Ground cover and soil group text, printed in reports."),
+            },
+            widgets::Column {
+                title: "Land Use",
+                width: 90.0,
+                numeric: false,
+                tip: Some("Optional land use name for this row; areas are grouped by it in the land use listing."),
+            },
+            widgets::Column {
+                title: "Source",
+                width: 70.0,
+                numeric: false,
+                tip: Some(
+                    "\"drawn\": a sub-area drawn inside the outline, measured from it (coloured as on the diagram). \"remainder\": the rest of the outline, its area less the drawn sub-areas.",
+                ),
+            },
         ];
         // Each row's colour on the diagram.
-        let marks: Vec<Option<egui::Color32>> = sc.areas.iter().enumerate().map(|(i, a)| if a.outline.is_some() { Some(crate::diagram::subarea_color(i, &t)) } else if a.remainder && drawn { Some(t.subcat.1) } else { None }).collect();
+        let marks: Vec<Option<egui::Color32>> = sc
+            .areas
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                if a.outline.is_some() {
+                    Some(crate::diagram::subarea_color(i, &t))
+                } else if a.remainder && drawn {
+                    Some(t.subcat.1)
+                } else {
+                    None
+                }
+            })
+            .collect();
         let ev = widgets::grid_marked(ui, "areas", &cols, &mut st.area_rows, &mut st.sel_row, 210.0, true, &marks);
         if ev.changed {
             // Rows keep their drawings: mirror the grid's insert/delete on the old rows, then
@@ -543,7 +675,11 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
                 .enumerate()
                 .filter(|(_, r)| r.iter().take(4).any(|c| !c.trim().is_empty()))
                 .map(|(i, r)| {
-                    let mut a = SubArea::new(widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0).max(0.0), widgets::cell_num(&r[1]).unwrap_or(0.0).clamp(0.0, 100.0), r[2].trim());
+                    let mut a = SubArea::new(
+                        widgets::cell_num(&r[0]).map(from_area).unwrap_or(0.0).max(0.0),
+                        widgets::cell_num(&r[1]).unwrap_or(0.0).clamp(0.0, 100.0),
+                        r[2].trim(),
+                    );
                     a.land_use = r.get(3).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
                     if let Some(o) = old.get(i) {
                         a.outline = o.outline.clone();
@@ -554,7 +690,11 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
                 })
                 .collect();
             // Drawn rows and the remainder are measured, not typed.
-            wavestorm_core::drawing::sync_subareas(sc, outline.as_deref(), wavestorm_core::drawing::feet_per_unit(&doc.project));
+            wavestorm_core::drawing::sync_subareas(
+                sc,
+                outline.as_deref(),
+                wavestorm_core::drawing::feet_per_unit(&doc.project),
+            );
         }
         if ev.double_clicked.is_some() {
             st.cn_lookup.open = true;
@@ -598,11 +738,22 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
                     if r.slope > 0.0 { format!("{:.4}", r.slope) } else { String::new() },
                     format!("{:.2}", u.vel(r.velocity)),
                     r.capacity.map(|c| format!("{:.2}", u.flow(c))).unwrap_or_default(),
-                    if s.description.is_empty() { s.kind.label().to_string() } else { format!("{}, {}", s.kind.label(), s.description) },
+                    if s.description.is_empty() {
+                        s.kind.label().to_string()
+                    } else {
+                        format!("{}, {}", s.kind.label(), s.description)
+                    },
                 ]
             })
             .collect();
-        let cols = [("Tc (min)", 64.0, true), ("Length", 64.0, true), ("Slope", 60.0, true), ("Velocity", 62.0, true), ("Capacity", 62.0, true), ("Description", 230.0, false)];
+        let cols = [
+            ("Tc (min)", 64.0, true),
+            ("Length", 64.0, true),
+            ("Slope", 60.0, true),
+            ("Velocity", 62.0, true),
+            ("Capacity", 62.0, true),
+            ("Description", 230.0, false),
+        ];
         let ev = widgets::list_table(ui, "tc", &cols, &rows, &mut st.sel_row, 180.0);
         let mut edit = ev.double_clicked;
         let sel = st.sel_row.filter(|i| *i < sc.tc.len());
@@ -632,15 +783,35 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
         }
         let total = tc::total_minutes(&sc.tc, cn, 1);
         ui.add_space(4.0);
-        ui.label(RichText::new(format!("Total Tc = {total:.1} min{}", doc.project.settings.min_tc.map(|m| format!(" (minimum {m:.1} min applies)")).unwrap_or_default())).strong());
+        ui.label(
+            RichText::new(format!(
+                "Total Tc = {total:.1} min{}",
+                doc.project.settings.min_tc.map(|m| format!(" (minimum {m:.1} min applies)")).unwrap_or_default()
+            ))
+            .strong(),
+        );
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label("Add segment:");
             let p2 = 3.0;
             let kinds = [
-                ("Sheet Flow", TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.15, p2, surface: "Grass: Short".into() }),
-                ("Shallow Concentrated", TcKind::Shallow { length: 300.0, slope: 0.02, kv: 16.1345, surface: "Unpaved".into() }),
-                ("Channel", TcKind::Channel { length: 500.0, slope: 0.01, n: 0.030, section: Section::Trapezoidal { bottom: 2.0, z_left: 2.0, z_right: 2.0, depth: 1.0 } }),
+                (
+                    "Sheet Flow",
+                    TcKind::Sheet { length: 100.0, slope: 0.02, n: 0.15, p2, surface: "Grass: Short".into() },
+                ),
+                (
+                    "Shallow Concentrated",
+                    TcKind::Shallow { length: 300.0, slope: 0.02, kv: 16.1345, surface: "Unpaved".into() },
+                ),
+                (
+                    "Channel",
+                    TcKind::Channel {
+                        length: 500.0,
+                        slope: 0.01,
+                        n: 0.030,
+                        section: Section::Trapezoidal { bottom: 2.0, z_left: 2.0, z_right: 2.0, depth: 1.0 },
+                    },
+                ),
                 ("Pipe", TcKind::Channel { length: 200.0, slope: 0.01, n: 0.013, section: Section::circular(1.5) }),
                 ("Lag/CN", TcKind::Lag { length: 1000.0, slope: 0.02 }),
                 ("Kirpich", TcKind::Kirpich { length: 1000.0, slope: 0.02, factor: 1.0 }),
@@ -678,7 +849,14 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
         if let Some(p) = &path {
             let fpu = doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit).unwrap_or(1.0);
             let len: f64 = p.windows(2).map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]) * fpu).sum();
-            ui.label(RichText::new(format!("Drawn flow path: {} long, {} legs (shown on the diagram while this subcatchment is selected).", u.fmt_len(len), p.len().saturating_sub(1))).color(t.text_dim));
+            ui.label(
+                RichText::new(format!(
+                    "Drawn flow path: {} long, {} legs (shown on the diagram while this subcatchment is selected).",
+                    u.fmt_len(len),
+                    p.len().saturating_sub(1)
+                ))
+                .color(t.text_dim),
+            );
         }
         // A drawn path goes with its segments: once none measured from it is left, it is
         // removed from the subcatchment (and the diagram).
@@ -928,7 +1106,12 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
         Section::Rating { .. } => 6,
     };
     let mut k = kind(section);
-    let mut opts = vec![(0, "Rectangular".to_string()), (1, "Trapezoidal / Vee".to_string()), (2, "Parabolic".to_string()), (3, "Pipe / Conduit".to_string())];
+    let mut opts = vec![
+        (0, "Rectangular".to_string()),
+        (1, "Trapezoidal / Vee".to_string()),
+        (2, "Parabolic".to_string()),
+        (3, "Pipe / Conduit".to_string()),
+    ];
     if allow_area_perimeter {
         opts.push((4, "Area & Perimeter".to_string()));
     }
@@ -963,8 +1146,12 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
             },
         };
     }
-    let lf = |ui: &mut Ui, id: &str, label: &str, v: &mut f64| conv_field(ui, id, label, u.len_label(), v, |x| u.len(x), |x| u.len_in(x), 2, 110.0);
-    let inch = |ui: &mut Ui, id: &str, label: &str, v: &mut f64| conv_field(ui, id, label, u.small_len_label(), v, |x| u.small_len(x), |x| u.small_len_in(x), 1, 110.0);
+    let lf = |ui: &mut Ui, id: &str, label: &str, v: &mut f64| {
+        conv_field(ui, id, label, u.len_label(), v, |x| u.len(x), |x| u.len_in(x), 2, 110.0)
+    };
+    let inch = |ui: &mut Ui, id: &str, label: &str, v: &mut f64| {
+        conv_field(ui, id, label, u.small_len_label(), v, |x| u.small_len(x), |x| u.small_len_in(x), 1, 110.0)
+    };
     ui.horizontal(|ui| match section {
         Section::Rectangular { width, depth } => {
             lf(ui, "w", "Bottom Width:", width);
@@ -996,7 +1183,17 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
             inch(ui, "fill", "Inside Fill:", fill);
         }
         Section::AreaPerimeter { area, perimeter } => {
-            conv_field(ui, "a", "Flow Area:", if u.metric() { "m²" } else { "sq-ft" }, area, |x| if u.metric() { x / wavestorm_core::units::FT_PER_M.powi(2) } else { x }, |x| if u.metric() { x * wavestorm_core::units::FT_PER_M.powi(2) } else { x }, 2, 110.0);
+            conv_field(
+                ui,
+                "a",
+                "Flow Area:",
+                if u.metric() { "m²" } else { "sq-ft" },
+                area,
+                |x| if u.metric() { x / wavestorm_core::units::FT_PER_M.powi(2) } else { x },
+                |x| if u.metric() { x * wavestorm_core::units::FT_PER_M.powi(2) } else { x },
+                2,
+                110.0,
+            );
             lf(ui, "p", "Wetted Perimeter:", perimeter);
         }
         Section::Custom { points } => {
@@ -1034,7 +1231,16 @@ pub fn section_editor(ui: &mut Ui, section: &mut Section, u: &Units, allow_area_
                 lf(ui, "bf", "Bank-Full Depth:", bank_full);
                 let area_unit = if u.metric() { "m²" } else { "sf" };
                 let area_k = if u.metric() { wavestorm_core::units::FT_PER_M.powi(2) } else { 1.0 };
-                ui.label(RichText::new(format!("{:>3} {:>10} {:>10} {:>10}", "#", format!("Depth ({})", u.len_label()), format!("Flow ({})", u.flow_label()), format!("Area ({area_unit})"))).monospace());
+                ui.label(
+                    RichText::new(format!(
+                        "{:>3} {:>10} {:>10} {:>10}",
+                        "#",
+                        format!("Depth ({})", u.len_label()),
+                        format!("Flow ({})", u.flow_label()),
+                        format!("Area ({area_unit})")
+                    ))
+                    .monospace(),
+                );
                 let mut del = None;
                 for (i, p) in points.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
@@ -1118,9 +1324,13 @@ fn reach_tab(ui: &mut Ui, st: &mut EditState, u: &Units) {
         });
     });
     if wavestorm_core::resize::reach_resizable(&r.section) {
-        widgets::with_tip(ui, "Each calculation sets the diameter to the smallest standard size that carries the current event's peak below the crown (or the flood depth). Sizes and the criterion are on Settings > Calculation > Resize.", |ui| {
-            widgets::check(ui, &mut r.auto_size, "Size automatically");
-        });
+        widgets::with_tip(
+            ui,
+            "Each calculation sets the diameter to the smallest standard size that carries the current event's peak below the crown (or the flood depth). Sizes and the criterion are on Settings > Calculation > Resize.",
+            |ui| {
+                widgets::check(ui, &mut r.auto_size, "Size automatically");
+            },
+        );
     }
     let cap = r.section.manning_q(r.section.full_depth(), r.n, r.slope());
     ui.label(RichText::new(format!("Capacity at bank full = {}", u.fmt_flow(cap))).strong());
@@ -1131,7 +1341,17 @@ fn reach_tab(ui: &mut Ui, st: &mut EditState, u: &Units) {
 fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
     let NodeData::Pond(p) = &mut st.draft.data else { return };
     let large = p.large_units;
-    let vol = |v: f64| if large { u.fmt_volume(v) } else { format!("{} {}", wavestorm_core::units::group(if u.metric() { v / wavestorm_core::units::CF_PER_M3 } else { v }, 0), if u.metric() { "m³" } else { "cf" }) };
+    let vol = |v: f64| {
+        if large {
+            u.fmt_volume(v)
+        } else {
+            format!(
+                "{} {}",
+                wavestorm_core::units::group(if u.metric() { v / wavestorm_core::units::CF_PER_M3 } else { v }, 0),
+                if u.metric() { "m³" } else { "cf" }
+            )
+        }
+    };
     match tab {
         "Storage" => {
             let rows: Vec<Vec<String>> = p
@@ -1141,10 +1361,21 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
                 .enumerate()
                 .map(|(i, v)| {
                     let emb = v.embedded_in.map(|j| format!(" (in #{})", j + 1)).unwrap_or_default();
-                    vec![u.fmt_elev(v.bottom()), vol(p.storage.available(i)), format!("{}: {}{emb}", v.description, v.shape.label())]
+                    vec![
+                        u.fmt_elev(v.bottom()),
+                        vol(p.storage.available(i)),
+                        format!("{}: {}{emb}", v.description, v.shape.label()),
+                    ]
                 })
                 .collect();
-            let ev = widgets::list_table(ui, "storage", &[("Invert", 80.0, true), ("Avail.Storage", 100.0, true), ("Storage Description", 300.0, false)], &rows, &mut st.sel_row, 150.0);
+            let ev = widgets::list_table(
+                ui,
+                "storage",
+                &[("Invert", 80.0, true), ("Avail.Storage", 100.0, true), ("Storage Description", 300.0, false)],
+                &rows,
+                &mut st.sel_row,
+                150.0,
+            );
             let mut edit = ev.double_clicked;
             let mut del = None;
             let sel = st.sel_row.filter(|i| *i < p.storage.volumes.len());
@@ -1177,10 +1408,26 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
                 ui.label("Add storage:");
                 let base = p.storage.bottom().unwrap_or(100.0);
                 let shapes = [
-                    ("Custom Stage Data", VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations: vec![base, base + 1.0, base + 2.0], values: vec![1000.0, 2000.0, 3000.0] }),
+                    (
+                        "Custom Stage Data",
+                        VolumeShape::Custom {
+                            kind: CustomKind::AreaPrismatic,
+                            elevations: vec![base, base + 1.0, base + 2.0],
+                            values: vec![1000.0, 2000.0, 3000.0],
+                        },
+                    ),
                     ("Prismatoid", VolumeShape::Prismatoid { width: 20.0, length: 40.0, height: 4.0, z: 3.0 }),
                     ("Cone/Cylinder", VolumeShape::VerticalCone { diameter: 8.0, height: 6.0, z: 0.0 }),
-                    ("Pipe Storage", VolumeShape::Pipe { shape: PipeShape::Round, width: 4.0, height: 4.0, length: 100.0, slope: 0.0 }),
+                    (
+                        "Pipe Storage",
+                        VolumeShape::Pipe {
+                            shape: PipeShape::Round,
+                            width: 4.0,
+                            height: 4.0,
+                            length: 100.0,
+                            slope: 0.0,
+                        },
+                    ),
                     ("Arch Chamber", VolumeShape::Arch { width: 4.0, height: 2.5, length: 50.0 }),
                 ];
                 for (label, shape) in shapes {
@@ -1188,13 +1435,24 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
                         st.volume_edit = Some((None, StorageVolume::new(label, base, shape)));
                     }
                 }
-                if widgets::button(ui, "Chamber Wizard...", 0.0).on_hover_text("Lay out an underground chamber field in a stone bed").clicked() {
+                if widgets::button(ui, "Chamber Wizard...", 0.0)
+                    .on_hover_text("Lay out an underground chamber field in a stone bed")
+                    .clicked()
+                {
                     st.chamber = Some(super::chamber::ChamberWizard::new(p.chamber.as_ref(), base));
                 }
             });
             if let (Some(b), Some(top)) = (p.storage.bottom(), p.storage.top()) {
                 ui.add_space(4.0);
-                ui.label(RichText::new(format!("Storage {} to {}: {}", u.fmt_elev(b), u.fmt_elev(top), vol(p.storage.storage(top)))).strong());
+                ui.label(
+                    RichText::new(format!(
+                        "Storage {} to {}: {}",
+                        u.fmt_elev(b),
+                        u.fmt_elev(top),
+                        vol(p.storage.storage(top))
+                    ))
+                    .strong(),
+                );
             } else {
                 ui.label("No storage: the pond is modelled as a zero-storage junction (outflow = inflow).");
             }
@@ -1203,34 +1461,48 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
             let rows: Vec<Vec<String>> = p
                 .devices
                 .iter()
-                .map(|d| vec![u.fmt_elev(d.invert), if d.description.is_empty() { d.kind.label().to_string() } else { d.description.clone() }, d.routing.label()])
+                .map(|d| {
+                    vec![
+                        u.fmt_elev(d.invert),
+                        if d.description.is_empty() { d.kind.label().to_string() } else { d.description.clone() },
+                        d.routing.label(),
+                    ]
+                })
                 .collect();
             let count = p.devices.len();
             let mut act: Option<(OutletAction, usize)> = None;
-            let ev = widgets::list_table_menu(ui, "outlets", &[("Invert (feet)", 80.0, true), ("Description", 260.0, false), ("Routing", 100.0, false)], &rows, &mut st.sel_row, 150.0, &mut |ui, i| {
-                let used = i < count;
-                if ui.button("Edit Outlet...").clicked() {
-                    act = Some((OutletAction::Edit, i));
-                    ui.close();
-                }
-                if ui.button("Insert").clicked() {
-                    act = Some((OutletAction::Insert, i.min(count)));
-                    ui.close();
-                }
-                if ui.add_enabled(used, egui::Button::new("Delete")).clicked() {
-                    act = Some((OutletAction::Delete, i));
-                    ui.close();
-                }
-                ui.separator();
-                if ui.add_enabled(used && i > 0, egui::Button::new("Move Up")).clicked() {
-                    act = Some((OutletAction::Up, i));
-                    ui.close();
-                }
-                if ui.add_enabled(used && i + 1 < count, egui::Button::new("Move Down")).clicked() {
-                    act = Some((OutletAction::Down, i));
-                    ui.close();
-                }
-            });
+            let ev = widgets::list_table_menu(
+                ui,
+                "outlets",
+                &[("Invert (feet)", 80.0, true), ("Description", 260.0, false), ("Routing", 100.0, false)],
+                &rows,
+                &mut st.sel_row,
+                150.0,
+                &mut |ui, i| {
+                    let used = i < count;
+                    if ui.button("Edit Outlet...").clicked() {
+                        act = Some((OutletAction::Edit, i));
+                        ui.close();
+                    }
+                    if ui.button("Insert").clicked() {
+                        act = Some((OutletAction::Insert, i.min(count)));
+                        ui.close();
+                    }
+                    if ui.add_enabled(used, egui::Button::new("Delete")).clicked() {
+                        act = Some((OutletAction::Delete, i));
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.add_enabled(used && i > 0, egui::Button::new("Move Up")).clicked() {
+                        act = Some((OutletAction::Up, i));
+                        ui.close();
+                    }
+                    if ui.add_enabled(used && i + 1 < count, egui::Button::new("Move Down")).clicked() {
+                        act = Some((OutletAction::Down, i));
+                        ui.close();
+                    }
+                },
+            );
             if let Some(i) = ev.double_clicked {
                 act = Some((OutletAction::Edit, i));
             }
@@ -1250,14 +1522,30 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
                     OutletAction::Insert => st.device_pick = Some(i),
                     OutletAction::Delete if i < count => {
                         p.devices.remove(i);
-                        remap_routes(&mut p.devices, |j| if j == i { None } else if j > i { Some(j - 1) } else { Some(j) });
+                        remap_routes(&mut p.devices, |j| {
+                            if j == i {
+                                None
+                            } else if j > i {
+                                Some(j - 1)
+                            } else {
+                                Some(j)
+                            }
+                        });
                         st.sel_row = None;
                     }
                     OutletAction::Up | OutletAction::Down => {
                         let k = if a == OutletAction::Up { i.wrapping_sub(1) } else { i + 1 };
                         if i < count && k < count {
                             p.devices.swap(i, k);
-                            remap_routes(&mut p.devices, |j| Some(if j == i { k } else if j == k { i } else { j }));
+                            remap_routes(&mut p.devices, |j| {
+                                Some(if j == i {
+                                    k
+                                } else if j == k {
+                                    i
+                                } else {
+                                    j
+                                })
+                            });
                             st.sel_row = Some(k);
                         }
                     }
@@ -1279,15 +1567,36 @@ fn pond_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, _doc: &Doc) {
                         if widgets::radio(ui, matches!(cur, Tailwater::Differential(_)), "Differential").clicked() {
                             p.tailwater[k] = Tailwater::Differential(1.0);
                         }
-                        if widgets::radio(ui, matches!(cur, Tailwater::Dynamic), "Dynamic (downstream node)").clicked() {
+                        if widgets::radio(ui, matches!(cur, Tailwater::Dynamic), "Dynamic (downstream node)").clicked()
+                        {
                             p.tailwater[k] = Tailwater::Dynamic;
                         }
                         match &mut p.tailwater[k] {
                             Tailwater::Fixed(e) => {
-                                conv_field(ui, &format!("tw{k}"), "Elevation:", u.len_label(), e, |x| u.len(x), |x| u.len_in(x), 2, 110.0);
+                                conv_field(
+                                    ui,
+                                    &format!("tw{k}"),
+                                    "Elevation:",
+                                    u.len_label(),
+                                    e,
+                                    |x| u.len(x),
+                                    |x| u.len_in(x),
+                                    2,
+                                    110.0,
+                                );
                             }
                             Tailwater::Differential(d) => {
-                                conv_field(ui, &format!("tw{k}"), "Below HW by:", u.len_label(), d, |x| u.len(x), |x| u.len_in(x), 2, 110.0);
+                                conv_field(
+                                    ui,
+                                    &format!("tw{k}"),
+                                    "Below HW by:",
+                                    u.len_label(),
+                                    d,
+                                    |x| u.len(x),
+                                    |x| u.len_in(x),
+                                    2,
+                                    110.0,
+                                );
                             }
                             _ => {}
                         }
@@ -1318,103 +1627,140 @@ fn volume_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
         _ => 0,
     };
     let mut result = Buttons::None;
-    crate::frame::Win::new(format!("Storage Volume: {}", vol.shape.label())).collapsible(false).resizable(true).show(ctx, |ui| {
-        let lf = |ui: &mut Ui, id: &str, label: &str, v: &mut f64| conv_field(ui, id, label, u.len_label(), v, |x| u.len(x), |x| u.len_in(x), 2, 110.0);
-        ui.horizontal(|ui| {
-            widgets::text_field(ui, "Description:", &mut vol.description, 220.0);
-            if !matches!(vol.shape, VolumeShape::Custom { .. }) {
-                lf(ui, "inv", "Invert:", &mut vol.invert);
-            }
-        });
-        ui.horizontal(|ui| match &mut vol.shape {
-            VolumeShape::Prismatoid { width, length, height, z } => {
-                lf(ui, "w", "Width:", width);
-                lf(ui, "l", "Length:", length);
-                lf(ui, "h", "Height:", height);
-                conv_field(ui, "z", "Side Slope Z:", "h:v", z, |x| x, |x| x, 2, 100.0);
-            }
-            VolumeShape::VerticalCone { diameter, height, z } => {
-                lf(ui, "d", "Diameter:", diameter);
-                lf(ui, "h", "Height:", height);
-                conv_field(ui, "z", "Side Slope Z:", "h:v", z, |x| x, |x| x, 2, 100.0);
-            }
-            VolumeShape::Pipe { shape, width, height, length, slope } => {
-                let opts: Vec<(PipeShape, String)> = PipeShape::ALL.iter().map(|s| (*s, s.label().to_string())).collect();
-                if widgets::combo_field(ui, "ps", "Shape:", shape, &opts, 110.0) && *shape == PipeShape::Round {
-                    *height = *width;
+    crate::frame::Win::new(format!("Storage Volume: {}", vol.shape.label())).collapsible(false).resizable(true).show(
+        ctx,
+        |ui| {
+            let lf = |ui: &mut Ui, id: &str, label: &str, v: &mut f64| {
+                conv_field(ui, id, label, u.len_label(), v, |x| u.len(x), |x| u.len_in(x), 2, 110.0)
+            };
+            ui.horizontal(|ui| {
+                widgets::text_field(ui, "Description:", &mut vol.description, 220.0);
+                if !matches!(vol.shape, VolumeShape::Custom { .. }) {
+                    lf(ui, "inv", "Invert:", &mut vol.invert);
                 }
-                let inch = |ui: &mut Ui, id: &str, label: &str, v: &mut f64| conv_field(ui, id, label, u.small_len_label(), v, |x| u.small_len(x), |x| u.small_len_in(x), 1, 100.0);
-                if inch(ui, "w", if *shape == PipeShape::Round { "Diameter:" } else { "Width:" }, width) && *shape == PipeShape::Round {
-                    *height = *width;
+            });
+            ui.horizontal(|ui| match &mut vol.shape {
+                VolumeShape::Prismatoid { width, length, height, z } => {
+                    lf(ui, "w", "Width:", width);
+                    lf(ui, "l", "Length:", length);
+                    lf(ui, "h", "Height:", height);
+                    conv_field(ui, "z", "Side Slope Z:", "h:v", z, |x| x, |x| x, 2, 100.0);
                 }
-                if *shape != PipeShape::Round {
-                    inch(ui, "h", "Height:", height);
+                VolumeShape::VerticalCone { diameter, height, z } => {
+                    lf(ui, "d", "Diameter:", diameter);
+                    lf(ui, "h", "Height:", height);
+                    conv_field(ui, "z", "Side Slope Z:", "h:v", z, |x| x, |x| x, 2, 100.0);
                 }
-                lf(ui, "l", "Length:", length);
-                conv_field(ui, "s", "Slope:", "ft/ft", slope, |x| x, |x| x, 4, 100.0);
-            }
-            VolumeShape::Arch { width, height, length } => {
-                lf(ui, "w", "Width:", width);
-                lf(ui, "h", "Height:", height);
-                lf(ui, "l", "Length:", length);
-            }
-            VolumeShape::Custom { kind, elevations, values } => {
-                ui.vertical(|ui| {
-                    let opts: Vec<(CustomKind, String)> = CustomKind::ALL.iter().map(|k| (*k, k.label().to_string())).collect();
-                    widgets::combo_field(ui, "ck", "Data Type:", kind, &opts, 220.0);
-                    let is_area = matches!(kind, CustomKind::AreaPrismatic | CustomKind::AreaConic);
-                    type Conv<'a> = Box<dyn Fn(f64) -> f64 + 'a>;
-                    let (val_label, to, from): (String, Conv, Conv) = if is_area {
-                        (format!("Surf.Area ({})", if u.metric() { "m²" } else { "sq-ft" }), Box::new(|v| if u.metric() { v / wavestorm_core::units::FT_PER_M.powi(2) } else { v }), Box::new(|v| if u.metric() { v * wavestorm_core::units::FT_PER_M.powi(2) } else { v }))
-                    } else {
-                        (format!("Storage ({})", if u.metric() { "m³" } else { "cu-ft" }), Box::new(|v| if u.metric() { v / wavestorm_core::units::CF_PER_M3 } else { v }), Box::new(|v| if u.metric() { v * wavestorm_core::units::CF_PER_M3 } else { v }))
+                VolumeShape::Pipe { shape, width, height, length, slope } => {
+                    let opts: Vec<(PipeShape, String)> =
+                        PipeShape::ALL.iter().map(|s| (*s, s.label().to_string())).collect();
+                    if widgets::combo_field(ui, "ps", "Shape:", shape, &opts, 110.0) && *shape == PipeShape::Round {
+                        *height = *width;
+                    }
+                    let inch = |ui: &mut Ui, id: &str, label: &str, v: &mut f64| {
+                        conv_field(
+                            ui,
+                            id,
+                            label,
+                            u.small_len_label(),
+                            v,
+                            |x| u.small_len(x),
+                            |x| u.small_len_in(x),
+                            1,
+                            100.0,
+                        )
                     };
-                    ui.label(RichText::new(format!("{:>3} {:>12} {:>16}", "#", format!("Elev ({})", if u.metric() { "m" } else { "ft" }), val_label)).monospace());
-                    let mut del = None;
-                    egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                        for i in 0..elevations.len().min(values.len()) {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(format!("{:>3}", i + 1)).monospace());
-                                let mut e = u.len(elevations[i]);
-                                if widgets::num_box(ui, ui.id().with(("ce", i)), &mut e, 2, 90.0, None) {
-                                    elevations[i] = u.len_in(e);
-                                }
-                                let mut v = to(values[i]);
-                                if widgets::num_box(ui, ui.id().with(("cv", i)), &mut v, 0, 110.0, None) {
-                                    values[i] = from(v).max(0.0);
-                                }
-                                if widgets::button(ui, "X", 22.0).clicked() {
-                                    del = Some(i);
-                                }
-                            });
+                    if inch(ui, "w", if *shape == PipeShape::Round { "Diameter:" } else { "Width:" }, width)
+                        && *shape == PipeShape::Round
+                    {
+                        *height = *width;
+                    }
+                    if *shape != PipeShape::Round {
+                        inch(ui, "h", "Height:", height);
+                    }
+                    lf(ui, "l", "Length:", length);
+                    conv_field(ui, "s", "Slope:", "ft/ft", slope, |x| x, |x| x, 4, 100.0);
+                }
+                VolumeShape::Arch { width, height, length } => {
+                    lf(ui, "w", "Width:", width);
+                    lf(ui, "h", "Height:", height);
+                    lf(ui, "l", "Length:", length);
+                }
+                VolumeShape::Custom { kind, elevations, values } => {
+                    ui.vertical(|ui| {
+                        let opts: Vec<(CustomKind, String)> =
+                            CustomKind::ALL.iter().map(|k| (*k, k.label().to_string())).collect();
+                        widgets::combo_field(ui, "ck", "Data Type:", kind, &opts, 220.0);
+                        let is_area = matches!(kind, CustomKind::AreaPrismatic | CustomKind::AreaConic);
+                        type Conv<'a> = Box<dyn Fn(f64) -> f64 + 'a>;
+                        let (val_label, to, from): (String, Conv, Conv) = if is_area {
+                            (
+                                format!("Surf.Area ({})", if u.metric() { "m²" } else { "sq-ft" }),
+                                Box::new(|v| if u.metric() { v / wavestorm_core::units::FT_PER_M.powi(2) } else { v }),
+                                Box::new(|v| if u.metric() { v * wavestorm_core::units::FT_PER_M.powi(2) } else { v }),
+                            )
+                        } else {
+                            (
+                                format!("Storage ({})", if u.metric() { "m³" } else { "cu-ft" }),
+                                Box::new(|v| if u.metric() { v / wavestorm_core::units::CF_PER_M3 } else { v }),
+                                Box::new(|v| if u.metric() { v * wavestorm_core::units::CF_PER_M3 } else { v }),
+                            )
+                        };
+                        ui.label(
+                            RichText::new(format!(
+                                "{:>3} {:>12} {:>16}",
+                                "#",
+                                format!("Elev ({})", if u.metric() { "m" } else { "ft" }),
+                                val_label
+                            ))
+                            .monospace(),
+                        );
+                        let mut del = None;
+                        egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                            for i in 0..elevations.len().min(values.len()) {
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new(format!("{:>3}", i + 1)).monospace());
+                                    let mut e = u.len(elevations[i]);
+                                    if widgets::num_box(ui, ui.id().with(("ce", i)), &mut e, 2, 90.0, None) {
+                                        elevations[i] = u.len_in(e);
+                                    }
+                                    let mut v = to(values[i]);
+                                    if widgets::num_box(ui, ui.id().with(("cv", i)), &mut v, 0, 110.0, None) {
+                                        values[i] = from(v).max(0.0);
+                                    }
+                                    if widgets::button(ui, "X", 22.0).clicked() {
+                                        del = Some(i);
+                                    }
+                                });
+                            }
+                        });
+                        if let Some(i) = del {
+                            elevations.remove(i);
+                            values.remove(i);
+                        }
+                        if widgets::button(ui, "Add Stage", 80.0).clicked() {
+                            let e = elevations.last().copied().unwrap_or(100.0) + 1.0;
+                            let v = values.last().copied().unwrap_or(0.0);
+                            elevations.push(e);
+                            values.push(v);
                         }
                     });
-                    if let Some(i) = del {
-                        elevations.remove(i);
-                        values.remove(i);
-                    }
-                    if widgets::button(ui, "Add Stage", 80.0).clicked() {
-                        let e = elevations.last().copied().unwrap_or(100.0) + 1.0;
-                        let v = values.last().copied().unwrap_or(0.0);
-                        elevations.push(e);
-                        values.push(v);
-                    }
-                });
-            }
-        });
-        ui.horizontal(|ui| {
-            conv_field(ui, "voids", "Voids:", "%", &mut vol.voids_pct, |x| x, |x| x.clamp(0.0, 100.0), 1, 90.0);
-            conv_field(ui, "mult", "Multiplier:", "", &mut vol.multiplier, |x| x, |x| x.max(0.0), 0, 90.0);
-            let mut opts: Vec<(Option<usize>, String)> = vec![(None, "(not embedded)".into())];
-            for i in 0..count {
-                if Some(i) != *index {
-                    opts.push((Some(i), format!("Volume #{}", i + 1)));
                 }
-            }
-            widgets::combo_field(ui, "emb", "Embedded in:", &mut vol.embedded_in, &opts, 140.0);
-        });
-        result = ok_cancel_apply(ui, false, "pond");
-    });
+            });
+            ui.horizontal(|ui| {
+                conv_field(ui, "voids", "Voids:", "%", &mut vol.voids_pct, |x| x, |x| x.clamp(0.0, 100.0), 1, 90.0);
+                conv_field(ui, "mult", "Multiplier:", "", &mut vol.multiplier, |x| x, |x| x.max(0.0), 0, 90.0);
+                let mut opts: Vec<(Option<usize>, String)> = vec![(None, "(not embedded)".into())];
+                for i in 0..count {
+                    if Some(i) != *index {
+                        opts.push((Some(i), format!("Volume #{}", i + 1)));
+                    }
+                }
+                widgets::combo_field(ui, "emb", "Embedded in:", &mut vol.embedded_in, &opts, 140.0);
+            });
+            result = ok_cancel_apply(ui, false, "pond");
+        },
+    );
     match result {
         Buttons::Ok | Buttons::Apply => {
             let (index, vol) = (*index, vol.clone());
@@ -1446,7 +1792,8 @@ fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut
                     l.source = LinkSource::Inflows;
                 }
                 if widgets::radio(ui, manual, "Enter hydrograph manually").clicked() && !manual {
-                    l.source = LinkSource::Manual(ManualHydrograph { t0: 0.0, dt: 0.5, flows: vec![0.0], per_event: vec![] });
+                    l.source =
+                        LinkSource::Manual(ManualHydrograph { t0: 0.0, dt: 0.5, flows: vec![0.0], per_event: vec![] });
                     st.manual_grid = None;
                 }
                 if widgets::radio(ui, file, "Import from CSV file").clicked() {
@@ -1469,9 +1816,39 @@ fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut
                                 ui.add_sized(vec2(140.0, 20.0), egui::Label::new(""));
                             });
                             conv_field(ui, "t0", "Starting time (to):", "hours", &mut m.t0, |x| x, |x| x, 2, 140.0);
-                            conv_field(ui, "dt", "Time step (dt):", "hours", &mut m.dt, |x| x, |x| x.max(1e-4), 2, 140.0);
-                            conv_field(ui, "area", "Inflow Area:", u.area_heading(), &mut l.inflow_area, |x| u.area(x), |x| u.area_in(x), 3, 140.0);
-                            conv_field(ui, "imp", "Impervious Area:", "%", &mut l.impervious_pct, |x| x, |x| x.clamp(0.0, 100.0), 2, 140.0);
+                            conv_field(
+                                ui,
+                                "dt",
+                                "Time step (dt):",
+                                "hours",
+                                &mut m.dt,
+                                |x| x,
+                                |x| x.max(1e-4),
+                                2,
+                                140.0,
+                            );
+                            conv_field(
+                                ui,
+                                "area",
+                                "Inflow Area:",
+                                u.area_heading(),
+                                &mut l.inflow_area,
+                                |x| u.area(x),
+                                |x| u.area_in(x),
+                                3,
+                                140.0,
+                            );
+                            conv_field(
+                                ui,
+                                "imp",
+                                "Impervious Area:",
+                                "%",
+                                &mut l.impervious_pct,
+                                |x| x,
+                                |x| x.clamp(0.0, 100.0),
+                                2,
+                                140.0,
+                            );
                             ui.add_space(4.0);
                             if widgets::button(ui, "Interpolate", 100.0).clicked() {
                                 g.interpolate();
@@ -1505,19 +1882,35 @@ fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut
                                 });
                             });
                             // The spare blank row is not a flow line.
-                            let n = g.cols.iter().map(|c| c.iter().rposition(|s| !s.trim().is_empty()).map_or(0, |i| i + 1)).max().unwrap_or(0);
+                            let n = g
+                                .cols
+                                .iter()
+                                .map(|c| c.iter().rposition(|s| !s.trim().is_empty()).map_or(0, |i| i + 1))
+                                .max()
+                                .unwrap_or(0);
                             ui.label(format!("{n} Flow lines present"));
                         });
                     });
                 }
                 LinkSource::Table { name, columns, selected, times } => {
                     ui.label(format!("File: {name} ({} rows, {} hydrographs)", times.len(), columns.len()));
-                    let mut opts: Vec<(Option<String>, String)> = vec![(None, "(MultiEvent: match event names)".into())];
+                    let mut opts: Vec<(Option<String>, String)> =
+                        vec![(None, "(MultiEvent: match event names)".into())];
                     for (c, _) in columns.iter() {
                         opts.push((Some(c.clone()), c.clone()));
                     }
                     widgets::combo_field(ui, "col", "Hydrograph:", selected, &opts, 260.0);
-                    conv_field(ui, "area", "Inflow Area:", u.area_heading(), &mut l.inflow_area, |x| u.area(x), |x| u.area_in(x), 3, 130.0);
+                    conv_field(
+                        ui,
+                        "area",
+                        "Inflow Area:",
+                        u.area_heading(),
+                        &mut l.inflow_area,
+                        |x| u.area(x),
+                        |x| u.area_in(x),
+                        3,
+                        130.0,
+                    );
                 }
                 LinkSource::Inflows => {
                     ui.label("The link outflow is the sum of the nodes routed into it.");
@@ -1527,8 +1920,28 @@ fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut
         "Advanced" => {
             let a = &mut l.adjust;
             ui.horizontal(|ui| {
-                opt_field(ui, "th", "Flow Threshold (primary gets flow above):", u.flow_label(), &mut a.threshold, |x| u.flow(x), |x| u.flow_in(x), 2, 250.0);
-                opt_field(ui, "lim", "Flow Limit (primary capped at):", u.flow_label(), &mut a.limit, |x| u.flow(x), |x| u.flow_in(x), 2, 200.0);
+                opt_field(
+                    ui,
+                    "th",
+                    "Flow Threshold (primary gets flow above):",
+                    u.flow_label(),
+                    &mut a.threshold,
+                    |x| u.flow(x),
+                    |x| u.flow_in(x),
+                    2,
+                    250.0,
+                );
+                opt_field(
+                    ui,
+                    "lim",
+                    "Flow Limit (primary capped at):",
+                    u.flow_label(),
+                    &mut a.limit,
+                    |x| u.flow(x),
+                    |x| u.flow_in(x),
+                    2,
+                    200.0,
+                );
             });
             ui.horizontal(|ui| {
                 conv_field(ui, "mult", "Discharge Multiplier:", "", &mut a.multiplier, |x| x, |x| x.max(0.0), 3, 140.0);
@@ -1538,9 +1951,22 @@ fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut
             ui.horizontal(|ui| {
                 opt_field(ui, "st", "Start Time:", "hours", &mut a.start_time, |x| x, |x| x, 2, 110.0);
                 opt_field(ui, "et", "End Time:", "hours", &mut a.end_time, |x| x, |x| x, 2, 110.0);
-                opt_field(ui, "sv", "Slice Volume:", u.volume_heading(), &mut a.slice_volume, |x| u.volume(x), |x| u.volume_in(x), 3, 140.0);
+                opt_field(
+                    ui,
+                    "sv",
+                    "Slice Volume:",
+                    u.volume_heading(),
+                    &mut a.slice_volume,
+                    |x| u.volume(x),
+                    |x| u.volume_in(x),
+                    3,
+                    140.0,
+                );
             });
-            ui.label(RichText::new("Any flow removed from the primary outflow appears as the secondary outflow.").color(Tokens::get(ui.ctx()).text_dim));
+            ui.label(
+                RichText::new("Any flow removed from the primary outflow appears as the secondary outflow.")
+                    .color(Tokens::get(ui.ctx()).text_dim),
+            );
         }
         "Elevation" => {
             let e = &mut l.elevation;
@@ -1560,12 +1986,42 @@ fn link_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, actions: &mut
             });
             match e {
                 LinkElevation::Fixed(v) => {
-                    conv_field(ui, "fe", "Tailwater Elevation:", u.len_label(), v, |x| u.len(x), |x| u.len_in(x), 2, 150.0);
+                    conv_field(
+                        ui,
+                        "fe",
+                        "Tailwater Elevation:",
+                        u.len_label(),
+                        v,
+                        |x| u.len(x),
+                        |x| u.len_in(x),
+                        2,
+                        150.0,
+                    );
                 }
                 LinkElevation::Tidal { mean, amplitude, period, phase } => {
                     ui.horizontal(|ui| {
-                        conv_field(ui, "m", "Mean Elevation:", u.len_label(), mean, |x| u.len(x), |x| u.len_in(x), 2, 120.0);
-                        conv_field(ui, "a", "Amplitude:", u.len_label(), amplitude, |x| u.len(x), |x| u.len_in(x), 2, 110.0);
+                        conv_field(
+                            ui,
+                            "m",
+                            "Mean Elevation:",
+                            u.len_label(),
+                            mean,
+                            |x| u.len(x),
+                            |x| u.len_in(x),
+                            2,
+                            120.0,
+                        );
+                        conv_field(
+                            ui,
+                            "a",
+                            "Amplitude:",
+                            u.len_label(),
+                            amplitude,
+                            |x| u.len(x),
+                            |x| u.len_in(x),
+                            2,
+                            110.0,
+                        );
                         conv_field(ui, "p", "Period:", "hours", period, |x| x, |x| x, 2, 100.0);
                         conv_field(ui, "ph", "Phase:", "hours", phase, |x| x, |x| x, 2, 100.0);
                     });

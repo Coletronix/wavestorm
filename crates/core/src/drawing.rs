@@ -73,7 +73,8 @@ pub fn triangulate(p: &[Pt]) -> Vec<[usize; 3]> {
         let m = idx.len();
         let ear = (0..m).find(|&i| {
             let (a, b, c) = (idx[(i + m - 1) % m], idx[i], idx[(i + 1) % m]);
-            cross(sub(p[b], p[a]), sub(p[c], p[b])) > 0.0 && !idx.iter().any(|&j| j != a && j != b && j != c && in_triangle(p[j], p[a], p[b], p[c]))
+            cross(sub(p[b], p[a]), sub(p[c], p[b])) > 0.0
+                && !idx.iter().any(|&j| j != a && j != b && j != c && in_triangle(p[j], p[a], p[b], p[c]))
         });
         let Some(i) = ear else { break };
         tris.push([idx[(i + m - 1) % m], idx[i], idx[(i + 1) % m]]);
@@ -101,7 +102,10 @@ fn nearest_on_segment(p: Pt, a: Pt, b: Pt) -> Pt {
 /// The point of polygon `poly`'s boundary nearest `p`.
 pub fn nearest_on_boundary(p: Pt, poly: &[Pt]) -> Pt {
     let n = poly.len();
-    (0..n).map(|i| nearest_on_segment(p, poly[i], poly[(i + 1) % n])).min_by(|a, b| dist(p, *a).total_cmp(&dist(p, *b))).unwrap_or(p)
+    (0..n)
+        .map(|i| nearest_on_segment(p, poly[i], poly[(i + 1) % n]))
+        .min_by(|a, b| dist(p, *a).total_cmp(&dist(p, *b)))
+        .unwrap_or(p)
 }
 
 /// Distance tolerance for a polygon: a millionth of its size.
@@ -178,8 +182,10 @@ pub fn polygons_overlap(a: &[Pt], b: &[Pt]) -> bool {
     if edges(a).any(|(p, q)| edges(b).any(|(r, s)| proper_cross(p, q, r, s, tol))) {
         return true;
     }
-    let probes = |x: &[Pt]| x.iter().copied().chain(edge_samples(x)).chain(std::iter::once(centroid(x))).collect::<Vec<Pt>>();
-    probes(a).into_iter().any(|q| strictly_inside(q, b, tol)) || probes(b).into_iter().any(|q| strictly_inside(q, a, tol))
+    let probes =
+        |x: &[Pt]| x.iter().copied().chain(edge_samples(x)).chain(std::iter::once(centroid(x))).collect::<Vec<Pt>>();
+    probes(a).into_iter().any(|q| strictly_inside(q, b, tol))
+        || probes(b).into_iter().any(|q| strictly_inside(q, a, tol))
 }
 
 /// `p`, or the nearest point of `poly`'s boundary when `p` is outside it.
@@ -204,20 +210,32 @@ pub fn label_spot(region: &[Pt], holes: &[&[Pt]]) -> Option<(Pt, f64)> {
     let holes: Vec<&[Pt]> = holes
         .iter()
         .copied()
-        .filter(|h| h.iter().any(|q| q[0] >= lo[0]) && h.iter().any(|q| q[0] <= hi[0]) && h.iter().any(|q| q[1] >= lo[1]) && h.iter().any(|q| q[1] <= hi[1]))
+        .filter(|h| {
+            h.iter().any(|q| q[0] >= lo[0])
+                && h.iter().any(|q| q[0] <= hi[0])
+                && h.iter().any(|q| q[1] >= lo[1])
+                && h.iter().any(|q| q[1] <= hi[1])
+        })
         .collect();
     let clearance = |p: Pt| -> Option<f64> {
         if !point_in_polygon(p, region) || holes.iter().any(|h| h.len() >= 3 && point_in_polygon(p, h)) {
             return None;
         }
-        let d = std::iter::once(region).chain(holes.iter().copied()).filter(|h| h.len() >= 2).map(|h| dist(p, nearest_on_boundary(p, h))).fold(f64::INFINITY, f64::min);
+        let d = std::iter::once(region)
+            .chain(holes.iter().copied())
+            .filter(|h| h.len() >= 2)
+            .map(|h| dist(p, nearest_on_boundary(p, h)))
+            .fold(f64::INFINITY, f64::min);
         Some(d)
     };
     let search = |lo: Pt, hi: Pt, n: usize, best: Option<(Pt, f64)>| {
         let mut best = best;
         for i in 0..n {
             for j in 0..n {
-                let p = [lo[0] + (hi[0] - lo[0]) * (i as f64 + 0.5) / n as f64, lo[1] + (hi[1] - lo[1]) * (j as f64 + 0.5) / n as f64];
+                let p = [
+                    lo[0] + (hi[0] - lo[0]) * (i as f64 + 0.5) / n as f64,
+                    lo[1] + (hi[1] - lo[1]) * (j as f64 + 0.5) / n as f64,
+                ];
                 if let Some(d) = clearance(p)
                     && best.is_none_or(|(_, b)| d > b)
                 {
@@ -241,9 +259,19 @@ pub fn label_obstacles(p: &Project) -> Vec<Vec<Pt>> {
     let symbols = p.nodes.iter().filter(|n| !matches!(n.data, NodeData::Text(_))).map(|n| {
         let [x, y] = n.pos;
         let bottom = if n.name.is_empty() { d * 0.55 } else { d * 0.9 };
-        vec![[x - d * 0.65, y - d * 0.55], [x + d * 0.65, y - d * 0.55], [x + d * 0.65, y + bottom], [x - d * 0.65, y + bottom]]
+        vec![
+            [x - d * 0.65, y - d * 0.55],
+            [x + d * 0.65, y - d * 0.55],
+            [x + d * 0.65, y + bottom],
+            [x - d * 0.65, y + bottom],
+        ]
     });
-    let paths = p.nodes.iter().filter_map(|n| n.tc_path.as_ref()).filter(|t| t.len() >= 2).map(|t| t.iter().chain(t.iter().rev().skip(1)).copied().collect());
+    let paths = p
+        .nodes
+        .iter()
+        .filter_map(|n| n.tc_path.as_ref())
+        .filter(|t| t.len() >= 2)
+        .map(|t| t.iter().chain(t.iter().rev().skip(1)).copied().collect());
     symbols.chain(paths).collect()
 }
 
@@ -252,20 +280,34 @@ pub fn label_obstacles(p: &Project) -> Vec<Vec<Pt>> {
 /// not it fits, so callers can shrink the label), else the region's centroid with no room.
 pub fn place_label(region: &[Pt], hard: &[&[Pt]], soft: &[&[Pt]], fits: impl Fn(f64) -> bool) -> (Pt, f64) {
     let all = [hard, soft].concat();
-    label_spot(region, &all).filter(|(_, d)| fits(*d)).or_else(|| label_spot(region, hard)).unwrap_or((centroid(region), 0.0))
+    label_spot(region, &all)
+        .filter(|(_, d)| fits(*d))
+        .or_else(|| label_spot(region, hard))
+        .unwrap_or((centroid(region), 0.0))
 }
 
 /// The letters of a node's Tc path points (every point when no segment ends are recorded).
 pub fn tc_path_labels(n: &Node) -> Vec<Option<String>> {
     let len = n.tc_path.as_ref().map_or(0, Vec::len);
-    if n.tc_path_breaks.is_empty() { (0..len).map(|i| Some(crate::tc::point_label(i))).collect() } else { crate::tc::path_labels(len, &n.tc_path_breaks) }
+    if n.tc_path_breaks.is_empty() {
+        (0..len).map(|i| Some(crate::tc::point_label(i))).collect()
+    } else {
+        crate::tc::path_labels(len, &n.tc_path_breaks)
+    }
 }
 
 /// The flow type of each leg of a node's stored Tc path, from the Tc segments measured from it.
 pub fn tc_leg_flows(n: &Node) -> Vec<Option<crate::tc::PathFlow>> {
     let legs = n.tc_path.as_ref().map_or(0, |p| p.len().saturating_sub(1));
     let NodeData::Subcat(sc) = &n.data else { return vec![None; legs] };
-    (0..legs).map(|i| sc.tc.iter().find(|s| s.path.is_some_and(|[a, b]| a <= i && i < b)).and_then(|s| crate::tc::path_flow_of(&s.kind))).collect()
+    (0..legs)
+        .map(|i| {
+            sc.tc
+                .iter()
+                .find(|s| s.path.is_some_and(|[a, b]| a <= i && i < b))
+                .and_then(|s| crate::tc::path_flow_of(&s.kind))
+        })
+        .collect()
 }
 
 /// Why a drawn sub-area cannot be used, if it cannot.
@@ -408,7 +450,15 @@ pub fn remove_path_point(n: &mut Node, v: usize) -> bool {
     }
     path.remove(v);
     let last = path.len() - 1;
-    let map = |i: usize| if i > v { i - 1 } else if i == v { v.saturating_sub(1).min(last) } else { i };
+    let map = |i: usize| {
+        if i > v {
+            i - 1
+        } else if i == v {
+            v.saturating_sub(1).min(last)
+        } else {
+            i
+        }
+    };
     let mut breaks: Vec<usize> = n.tc_path_breaks.iter().map(|b| if *b == v && v == 0 { 0 } else { map(*b) }).collect();
     breaks.dedup();
     n.tc_path_breaks = breaks;
@@ -508,14 +558,22 @@ mod tests {
         assert!(polygons_overlap(&rect(0.0, 0.0, 4.0, 4.0), &rect(1.0, 1.0, 2.0, 2.0)));
         assert!(polygons_overlap(&rect(0.0, 0.0, 2.0, 2.0), &rect(0.0, 0.0, 2.0, 2.0)), "identical");
         let others: [&[Pt]; 1] = [&rect(1.0, 1.0, 2.0, 2.0)];
-        assert_eq!(subarea_problem(&rect(1.5, 1.5, 3.0, 3.0), &outline, &others), Some("Sub-areas cannot overlap each other."));
+        assert_eq!(
+            subarea_problem(&rect(1.5, 1.5, 3.0, 3.0), &outline, &others),
+            Some("Sub-areas cannot overlap each other.")
+        );
         assert_eq!(subarea_problem(&rect(2.0, 1.0, 3.0, 2.0), &outline, &others), None);
     }
 
     #[test]
     fn drawn_subareas_and_remainder() {
         let outline = rect(0.0, 0.0, 100.0, 100.0); // 10,000 units
-        let mut sc = Subcatchment { areas: vec![SubArea::new(5000.0, 61.0, "Open space")], tc: Vec::new(), uh: None, large_units: true };
+        let mut sc = Subcatchment {
+            areas: vec![SubArea::new(5000.0, 61.0, "Open space")],
+            tc: Vec::new(),
+            uh: None,
+            large_units: true,
+        };
         assert!(!sync_subareas(&mut sc, Some(&outline), 2.0), "nothing drawn yet");
         let mut roof = SubArea::new(0.0, 98.0, "Roofs");
         roof.outline = Some(rect(0.0, 0.0, 10.0, 20.0)); // 200 units
@@ -532,7 +590,12 @@ mod tests {
         assert_eq!(only.areas.len(), 2);
         assert!(only.areas[1].remainder && only.areas[1].area == 9_800.0);
         // An undrawn subcatchment scales its rows with the outline.
-        let mut plain = Subcatchment { areas: vec![SubArea::new(300.0, 70.0, "a"), SubArea::new(100.0, 98.0, "b")], tc: Vec::new(), uh: None, large_units: true };
+        let mut plain = Subcatchment {
+            areas: vec![SubArea::new(300.0, 70.0, "a"), SubArea::new(100.0, 98.0, "b")],
+            tc: Vec::new(),
+            uh: None,
+            large_units: true,
+        };
         outline_changed(&mut plain, &rect(0.0, 0.0, 40.0, 20.0), 400.0, 1.0);
         assert_eq!((plain.areas[0].area, plain.areas[1].area), (600.0, 200.0));
     }
@@ -544,7 +607,11 @@ mod tests {
         let n = p.node_mut(id).unwrap();
         // A to B sheet (0-1), B to C shallow (1-3, two legs).
         n.tc_path = Some(vec![[0.0, 0.0], [100.0, 0.0], [100.0, 50.0], [100.0, 150.0]]);
-        let legs = [PathLeg::new(100.0, PathFlow::Sheet), PathLeg::new(50.0, PathFlow::Shallow), PathLeg::new(100.0, PathFlow::Shallow)];
+        let legs = [
+            PathLeg::new(100.0, PathFlow::Sheet),
+            PathLeg::new(50.0, PathFlow::Shallow),
+            PathLeg::new(100.0, PathFlow::Shallow),
+        ];
         n.tc_path_breaks = vec![0, 1, 3];
         if let NodeData::Subcat(sc) = &mut n.data {
             sc.tc = segments_from_path(&legs, &[]);

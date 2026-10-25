@@ -50,7 +50,8 @@ pub fn show(ui: &mut Ui, width: f32) {
 /// the white, and the result is cropped to the artwork plus a 6 px margin.
 pub fn cut_out(src: &RgbImage) -> RgbaImage {
     let (w, h) = (src.width() as usize, src.height() as usize);
-    let depth: Vec<f32> = src.pixels().map(|p| f32::from(255 - p.0.iter().copied().min().unwrap_or(255)) / 255.0).collect();
+    let depth: Vec<f32> =
+        src.pixels().map(|p| f32::from(255 - p.0.iter().copied().min().unwrap_or(255)) / 255.0).collect();
     let white: Vec<f32> = depth.iter().map(|&d| if d < 0.06 { 1.0 } else { 0.0 }).collect();
     let ink = max_filter(&depth, w, h, 2);
     let near_white = max_filter(&white, w, h, 2);
@@ -91,7 +92,10 @@ fn max_filter(v: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
             .map(|i| {
                 let (x, y) = (i % w, i / w);
                 let (c, n) = if horizontal { (x, w) } else { (y, h) };
-                (c.saturating_sub(r)..(c + r + 1).min(n)).map(|k| if horizontal { y * w + k } else { k * w + x }).filter_map(|j| v.get(j).copied()).fold(0.0, f32::max)
+                (c.saturating_sub(r)..(c + r + 1).min(n))
+                    .map(|k| if horizontal { y * w + k } else { k * w + x })
+                    .filter_map(|j| v.get(j).copied())
+                    .fold(0.0, f32::max)
             })
             .collect()
     };

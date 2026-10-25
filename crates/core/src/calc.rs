@@ -5,7 +5,9 @@ use crate::geometry::Section;
 use crate::hydrograph::{Hydrograph, Peak};
 use crate::link::LinkSource;
 use crate::outlets::{self, OutletFlows, Routing};
-use crate::project::{Node, NodeData, NodeId, NodeType, Pond, PondMethod, Project, Reach, ReachMethod, RunoffMethod, Tailwater};
+use crate::project::{
+    Node, NodeData, NodeId, NodeType, Pond, PondMethod, Project, Reach, ReachMethod, RunoffMethod, Tailwater,
+};
 use crate::rainfall::{RainEvent, Rainfall};
 use crate::routing::{self, DetentionTime, StageTable};
 use crate::runoff::{self, CnArea};
@@ -198,7 +200,12 @@ pub fn calculate(project: &Project) -> Results {
         Some(e) => calculate_event(project, e),
         None => {
             let mut r = Results::default();
-            r.messages.push(Message::new(595, Severity::Error, None, "Rainfall not specified: define at least one rainfall event"));
+            r.messages.push(Message::new(
+                595,
+                Severity::Error,
+                None,
+                "Rainfall not specified: define at least one rainfall event",
+            ));
             r
         }
     }
@@ -214,7 +221,13 @@ pub fn calculate_all(project: &Project) -> Vec<Results> {
 #[allow(clippy::neg_cmp_op_on_partial_ord)]
 pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
     let s = &project.settings;
-    let mut r = Results { event: event.name.clone(), event_heading: event.heading(), t0: s.span_start, dt: s.dt, ..Default::default() };
+    let mut r = Results {
+        event: event.name.clone(),
+        event_heading: event.heading(),
+        t0: s.span_start,
+        dt: s.dt,
+        ..Default::default()
+    };
     let n = s.steps();
     if n < 2 || !(s.dt > 0.0) {
         r.messages.push(Message::new(500, Severity::Error, None, "Invalid Time Span or dt"));
@@ -225,7 +238,12 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
         Ok(o) => o,
         Err(looped) => {
             let names: Vec<String> = looped.iter().filter_map(|id| project.node(*id)).map(|n| n.label()).collect();
-            r.messages.push(Message::new(520, Severity::Error, looped.first().copied(), format!("Illegal loop involving {}", names.join(", "))));
+            r.messages.push(Message::new(
+                520,
+                Severity::Error,
+                looped.first().copied(),
+                format!("Illegal loop involving {}", names.join(", ")),
+            ));
             return r;
         }
     };
@@ -233,17 +251,36 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
     let rain = storm.as_ref().map(|st| Rainfall::new(st, event));
     if s.runoff != RunoffMethod::Rational {
         if storm.is_none() {
-            r.messages.push(Message::new(595, Severity::Error, None, format!("Rainfall distribution \"{}\" not found", event.storm)));
+            r.messages.push(Message::new(
+                595,
+                Severity::Error,
+                None,
+                format!("Rainfall distribution \"{}\" not found", event.storm),
+            ));
             return r;
         }
         if event.depth <= 0.0 {
             r.messages.push(Message::new(560, Severity::Error, None, "Storm depth is zero"));
         }
     }
-    r.messages.push(Message::new(13, Severity::Note, None, format!("Time span={:.2}-{:.2} hrs, dt={:.2} hrs, {} points", s.span_start, s.span_end, s.dt, n)));
+    r.messages.push(Message::new(
+        13,
+        Severity::Note,
+        None,
+        format!("Time span={:.2}-{:.2} hrs, dt={:.2} hrs, {} points", s.span_start, s.span_end, s.dt, n),
+    ));
     r.messages.push(Message::new(16, Severity::Note, None, runoff_note(project)));
     r.messages.push(Message::new(19, Severity::Note, None, event.heading()));
-    r.messages.push(Message::new(22, Severity::Note, None, format!("Reach routing by {} method - Pond routing by {} method", s.reach_method.label(), s.pond_method.label())));
+    r.messages.push(Message::new(
+        22,
+        Severity::Note,
+        None,
+        format!(
+            "Reach routing by {} method - Pond routing by {} method",
+            s.reach_method.label(),
+            s.pond_method.label()
+        ),
+    ));
 
     let base_messages = r.messages.clone();
     if s.pond_method == PondMethod::DynStorInd {
@@ -261,7 +298,12 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
             if pass == 11
                 && let Some(p) = &mut prev
             {
-                p.messages.push(Message::new(85, Severity::Warning, None, "Dynamic tailwater did not converge; Oscillations may require smaller dt"));
+                p.messages.push(Message::new(
+                    85,
+                    Severity::Warning,
+                    None,
+                    "Dynamic tailwater did not converge; Oscillations may require smaller dt",
+                ));
             }
         }
         if let Some(p) = prev {
@@ -292,7 +334,15 @@ fn max_elevation_change(a: &Results, b: &Results) -> f64 {
 /// Runs every node once in flow order. `prev` supplies downstream elevations for dynamic
 /// tailwater (the previous pass); otherwise results computed so far are used.
 #[allow(clippy::too_many_arguments)]
-fn run_nodes(project: &Project, event: &RainEvent, order: &[NodeId], rain: Option<&Rainfall>, n: usize, prev: Option<&Results>, r: &mut Results) {
+fn run_nodes(
+    project: &Project,
+    event: &RainEvent,
+    order: &[NodeId],
+    rain: Option<&Rainfall>,
+    n: usize,
+    prev: Option<&Results>,
+    r: &mut Results,
+) {
     let s = &project.settings;
     for id in order.iter().copied() {
         let Some(node) = project.node(id) else { continue };
@@ -312,7 +362,12 @@ fn run_nodes(project: &Project, event: &RainEvent, order: &[NodeId], rain: Optio
         let result = match &node.data {
             NodeData::Subcat(sc) => {
                 if has_upstream {
-                    r.messages.push(Message::new(67, Severity::Warning, Some(id), format!("{} Inflow not allowed - Ignored", node.label())));
+                    r.messages.push(Message::new(
+                        67,
+                        Severity::Warning,
+                        Some(id),
+                        format!("{} Inflow not allowed - Ignored", node.label()),
+                    ));
                 }
                 subcat(project, node, sc, event, rain, n, &mut r.messages)
             }
@@ -329,7 +384,12 @@ fn run_nodes(project: &Project, event: &RainEvent, order: &[NodeId], rain: Optio
                 res.inflow_area = area;
                 res.impervious_area = imp;
                 if !has_upstream {
-                    r.messages.push(Message::new(43, Severity::Hint, Some(id), format!("{} Has no inflow (Outflow=Zero)", node.label())));
+                    r.messages.push(Message::new(
+                        43,
+                        Severity::Hint,
+                        Some(id),
+                        format!("{} Has no inflow (Outflow=Zero)", node.label()),
+                    ));
                 }
                 res
             }
@@ -345,7 +405,12 @@ fn run_nodes(project: &Project, event: &RainEvent, order: &[NodeId], rain: Optio
                         o.add(&out.secondary);
                         o
                     },
-                    routes: [out.primary, out.secondary, Hydrograph::zeros(s.span_start, s.dt, n), Hydrograph::zeros(s.span_start, s.dt, n)],
+                    routes: [
+                        out.primary,
+                        out.secondary,
+                        Hydrograph::zeros(s.span_start, s.dt, n),
+                        Hydrograph::zeros(s.span_start, s.dt, n),
+                    ],
                     inflow_area: area,
                     impervious_area: imp,
                     detail: Detail::Link(link.describe()),
@@ -362,10 +427,16 @@ fn run_nodes(project: &Project, event: &RainEvent, order: &[NodeId], rain: Optio
         let mut result = result;
         // Anything fed by an undefined node is undefined too.
         if result.undefined.is_none()
-            && let Some(up) = project.inflows(id).into_iter().find(|(up, _)| r.nodes.get(up).is_some_and(|u| u.undefined.is_some()))
+            && let Some(up) =
+                project.inflows(id).into_iter().find(|(up, _)| r.nodes.get(up).is_some_and(|u| u.undefined.is_some()))
         {
             let label = project.node(up.0).map(|n| n.label()).unwrap_or_default();
-            r.messages.push(Message::new(95, Severity::Error, Some(id), format!("{} Inflow from {label} is undefined", node.label())));
+            r.messages.push(Message::new(
+                95,
+                Severity::Error,
+                Some(id),
+                format!("{} Inflow from {label} is undefined", node.label()),
+            ));
             result.undefined = Some(format!("inflow from {label} is undefined"));
         }
         r.nodes.insert(id, result);
@@ -398,7 +469,11 @@ fn subcat(
 ) -> NodeResult {
     let s = &project.settings;
     let (comp, base_cn) = subcat_composite(project, sc);
-    let cn_used = if event.amc == crate::rainfall::Amc::II { base_cn } else { cn::round_to(event.amc.adjust_cn(base_cn), if s.round_cn { 0 } else { 2 }) };
+    let cn_used = if event.amc == crate::rainfall::Amc::II {
+        base_cn
+    } else {
+        cn::round_to(event.amc.adjust_cn(base_cn), if s.round_cn { 0 } else { 2 })
+    };
     let tc_segments: Vec<TcResult> = sc.tc.iter().map(|t| t.kind.evaluate(cn_used)).collect();
     let mut tc_min: f64 = tc_segments.iter().map(|t| tc::rounded_minutes(t.minutes, 1)).sum();
     if let Some(m) = s.min_tc {
@@ -418,7 +493,13 @@ fn subcat(
     if area <= 0.0 {
         msgs.push(Message::new(40, Severity::Hint, Some(node.id), format!("{} Not described", node.label())));
         let z = Hydrograph::zeros(s.span_start, s.dt, n);
-        return NodeResult { inflow: z.clone(), outflow: z.clone(), routes: [z.clone(), z.clone(), z.clone(), z], detail: Detail::Subcat(detail), ..Default::default() };
+        return NodeResult {
+            inflow: z.clone(),
+            outflow: z.clone(),
+            routes: [z.clone(), z.clone(), z.clone(), z],
+            detail: Detail::Subcat(detail),
+            ..Default::default()
+        };
     }
     // Calculation grid starting at or before the storm start so no excess is lumped.
     let k = if s.span_start > 0.0 { (s.span_start / s.dt).ceil() as usize } else { 0 };
@@ -439,7 +520,9 @@ fn subcat(
             }
             v
         }
-        CnWeighting::WeightedQ => sc.areas.iter().filter(|a| a.area > 0.0).map(|a| CnArea { area_sf: a.area, cn: amc(a.cn) }).collect(),
+        CnWeighting::WeightedQ => {
+            sc.areas.iter().filter(|a| a.area > 0.0).map(|a| CnArea { area_sf: a.area, cn: amc(a.cn) }).collect()
+        }
     };
     let series = match (s.runoff, rain) {
         (RunoffMethod::ScsTr20, Some(rain)) => {
@@ -447,7 +530,9 @@ fn subcat(
             let uh = project.unit_hydrograph(&uh_name).unwrap_or_else(crate::uh::UnitHydrograph::nrcs);
             Some(runoff::scs_uh_runoff(rain, &parts, s.ia_ratio, tc_hr, &uh, calc_t0, s.dt, calc_n))
         }
-        (RunoffMethod::Sbuh, Some(rain)) => Some(runoff::sbuh_runoff(rain, &parts, s.ia_ratio, tc_hr, calc_t0, s.dt, calc_n)),
+        (RunoffMethod::Sbuh, Some(rain)) => {
+            Some(runoff::sbuh_runoff(rain, &parts, s.ia_ratio, tc_hr, calc_t0, s.dt, calc_n))
+        }
         _ => None,
     };
     let hydro = match series {
@@ -455,7 +540,14 @@ fn subcat(
             let take = |v: &[f64]| v.get(k..).map(|x| x.to_vec()).unwrap_or_default();
             detail.precip = take(&series.precip);
             detail.excess = take(&series.excess);
-            detail.runoff_depth = rain.map(|r| parts.iter().map(|p| p.area_sf / area * runoff::scs_runoff_depth(r.total_depth(), p.cn, s.ia_ratio)).sum()).unwrap_or(0.0);
+            detail.runoff_depth = rain
+                .map(|r| {
+                    parts
+                        .iter()
+                        .map(|p| p.area_sf / area * runoff::scs_runoff_depth(r.total_depth(), p.cn, s.ia_ratio))
+                        .sum()
+                })
+                .unwrap_or(0.0);
             Hydrograph { t0: s.span_start, dt: s.dt, q: take(&series.hydrograph.q) }
         }
         None => {
@@ -478,33 +570,74 @@ fn subcat(
             }
             detail.rational = Some((c_weighted, intensity, duration));
             detail.runoff_depth = c_weighted * intensity * duration;
-            runoff::rational_runoff(c_weighted, area, intensity, duration, tc_hr, s.rational_rise, s.rational_fall, s.span_start, s.dt, n)
+            runoff::rational_runoff(
+                c_weighted,
+                area,
+                intensity,
+                duration,
+                tc_hr,
+                s.rational_rise,
+                s.rational_fall,
+                s.span_start,
+                s.dt,
+                n,
+            )
         }
     };
     if s.runoff != RunoffMethod::Rational && tc_min <= 0.0 {
-        msgs.push(Message::new(46, Severity::Hint, Some(node.id), format!("{} Tc=0 (Instant runoff peak depends on dt)", node.label())));
+        msgs.push(Message::new(
+            46,
+            Severity::Hint,
+            Some(node.id),
+            format!("{} Tc=0 (Instant runoff peak depends on dt)", node.label()),
+        ));
     }
     if s.runoff == RunoffMethod::Rational && tc_hr < 8.0 * s.dt {
-        msgs.push(Message::new(70, Severity::Warning, Some(node.id), format!("{} Tc<8dt requires smaller dt", node.label())));
+        msgs.push(Message::new(
+            70,
+            Severity::Warning,
+            Some(node.id),
+            format!("{} Tc<8dt requires smaller dt", node.label()),
+        ));
     }
     if !hydro.has_flow() {
-        msgs.push(Message::new(45,Severity::Hint, Some(node.id), format!("{} Runoff=Zero", node.label())));
+        msgs.push(Message::new(45, Severity::Hint, Some(node.id), format!("{} Runoff=Zero", node.label())));
     } else {
         if tc_hr > 0.0 && tc_hr < 2.0 * s.dt {
-            msgs.push(Message::new(49, Severity::Hint, Some(node.id), format!("{} Tc<2dt may require smaller dt", node.label())));
+            msgs.push(Message::new(
+                49,
+                Severity::Hint,
+                Some(node.id),
+                format!("{} Tc<2dt may require smaller dt", node.label()),
+            ));
         }
         let p = hydro.peak();
         let span = s.span_end - s.span_start;
         if p.time < s.span_start + 0.05 * span || p.time > s.span_end - 0.05 * span {
-            msgs.push(Message::new(73, Severity::Warning, Some(node.id), format!("{} Peak may fall outside time span", node.label())));
+            msgs.push(Message::new(
+                73,
+                Severity::Warning,
+                Some(node.id),
+                format!("{} Peak may fall outside time span", node.label()),
+            ));
         }
         if hydro.q.last().is_some_and(|q| *q > 0.01 * p.value) {
-            msgs.push(Message::new(37, Severity::Hint, Some(node.id), format!("{} Longer time span advised for full volumes", node.label())));
+            msgs.push(Message::new(
+                37,
+                Severity::Hint,
+                Some(node.id),
+                format!("{} Longer time span advised for full volumes", node.label()),
+            ));
         }
         if let Some(q0) = hydro.q.first()
             && *q0 > 0.01 * p.value
         {
-            msgs.push(Message::new(82, Severity::Warning, Some(node.id), format!("{} Early inflow requires earlier time span", node.label())));
+            msgs.push(Message::new(
+                82,
+                Severity::Warning,
+                Some(node.id),
+                format!("{} Early inflow requires earlier time span", node.label()),
+            ));
         }
         for (i, seg) in detail.tc_segments.iter().enumerate() {
             if let Some(cap) = seg.capacity
@@ -532,15 +665,31 @@ fn subcat(
     }
 }
 
-fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograph, msgs: &mut Vec<Message>) -> NodeResult {
+fn route_reach(
+    project: &Project,
+    node: &Node,
+    reach: &Reach,
+    inflow: &Hydrograph,
+    msgs: &mut Vec<Message>,
+) -> NodeResult {
     let s = &project.settings;
     let n = inflow.len();
     let z = Hydrograph::zeros(inflow.t0, inflow.dt, n);
     if !reach.is_described() {
         if inflow.has_flow() {
-            msgs.push(Message::new(40, Severity::Hint, Some(node.id), format!("{} Not described (Outflow=Inflow)", node.label())));
+            msgs.push(Message::new(
+                40,
+                Severity::Hint,
+                Some(node.id),
+                format!("{} Not described (Outflow=Inflow)", node.label()),
+            ));
         }
-        return NodeResult { inflow: inflow.clone(), outflow: inflow.clone(), routes: [inflow.clone(), z.clone(), z.clone(), z], ..Default::default() };
+        return NodeResult {
+            inflow: inflow.clone(),
+            outflow: inflow.clone(),
+            routes: [inflow.clone(), z.clone(), z.clone(), z],
+            ..Default::default()
+        };
     }
     let slope = reach.slope();
     let full = reach.section.full_depth();
@@ -560,14 +709,23 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
     let mut detail = ReachDetail { capacity, ..Default::default() };
     // Muskingum-Cunge needs a bed slope; a rating-table reach without one is routed by Stor-Ind+Trans.
     let method = if s.reach_method == ReachMethod::MuskingumCunge && slope <= 0.0 {
-        msgs.push(Message::new(98, Severity::Hint, Some(node.id), format!("{} No slope for Muskingum-Cunge - Stor-Ind+Trans used", node.label())));
+        msgs.push(Message::new(
+            98,
+            Severity::Hint,
+            Some(node.id),
+            format!("{} No slope for Muskingum-Cunge - Stor-Ind+Trans used", node.label()),
+        ));
         ReachMethod::StorIndTrans
     } else {
         s.reach_method
     };
     let outflow = match method {
         ReachMethod::StorInd | ReachMethod::StorIndTrans => {
-            let top_depth = if is_pipe { full } else { (full * 4.0).max(reach.section.normal_depth(peak_in * 1.5, reach.n, slope)) };
+            let top_depth = if is_pipe {
+                full
+            } else {
+                (full * 4.0).max(reach.section.normal_depth(peak_in * 1.5, reach.n, slope))
+            };
             let table = StageTable::build(
                 0.0,
                 top_depth.max(0.01),
@@ -575,7 +733,9 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
                 |y| reach.section.props(y).area * len,
                 |y| if is_pipe && y >= full { capacity } else { reach.section.manning_q(y, reach.n, slope) },
             );
-            let res = routing::level_pool(&table, &net_in, 0.0, &mut |y, _, _| table.outflow_at(y).min(if is_pipe { capacity } else { f64::INFINITY }));
+            let res = routing::level_pool(&table, &net_in, 0.0, &mut |y, _, _| {
+                table.outflow_at(y).min(if is_pipe { capacity } else { f64::INFINITY })
+            });
             if let Some(ex) = res.exceeded_by {
                 if is_pipe {
                     let detained = res.storage.iter().copied().fold(0.0, f64::max) - table.storage_at(full);
@@ -583,18 +743,29 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
                         76,
                         Severity::Warning,
                         Some(node.id),
-                        format!("{} Detained {} (Pond w/culvert advised)", node.label(), project.units.fmt_volume(detained.max(0.0))),
+                        format!(
+                            "{} Detained {} (Pond w/culvert advised)",
+                            node.label(),
+                            project.units.fmt_volume(detained.max(0.0))
+                        ),
                     ));
                 } else {
-                    msgs.push(Message::new(91, Severity::Warning, Some(node.id), format!("{} Storage range exceeded by {:.2}'", node.label(), ex)));
+                    msgs.push(Message::new(
+                        91,
+                        Severity::Warning,
+                        Some(node.id),
+                        format!("{} Storage range exceeded by {:.2}'", node.label(), ex),
+                    ));
                 }
             }
             detail.depth = res.elevation.clone();
             detail.storage = res.storage.clone();
-            let (ip, peak_depth) = res.elevation.iter().copied().enumerate().fold((0, 0.0), |b, (i, v)| if v > b.1 { (i, v) } else { b });
+            let (ip, peak_depth) =
+                res.elevation.iter().copied().enumerate().fold((0, 0.0), |b, (i, v)| if v > b.1 { (i, v) } else { b });
             detail.peak_depth = peak_depth;
             detail.peak_depth_time = res.outflow.time(ip);
-            let v_at = |y: f64| reach.section.velocity(y.min(if is_pipe { full } else { f64::INFINITY }), reach.n, slope);
+            let v_at =
+                |y: f64| reach.section.velocity(y.min(if is_pipe { full } else { f64::INFINITY }), reach.n, slope);
             detail.max_velocity = v_at(peak_depth);
             detail.min_travel_min = if detail.max_velocity > 0.0 { len / detail.max_velocity / 60.0 } else { 0.0 };
             let out = if method == ReachMethod::StorIndTrans && detail.max_velocity > 0.0 {
@@ -609,7 +780,8 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
             // unit-hydrograph tail has many vanishing values that would otherwise dilute the mean.
             let flowing: Vec<f64> = out.q.iter().copied().filter(|q| *q > 1e-6).collect();
             let q_avg = if flowing.is_empty() { 0.0 } else { flowing.iter().sum::<f64>() / flowing.len() as f64 };
-            detail.avg_velocity = if q_avg > 0.0 { v_at(reach.section.normal_depth(q_avg, reach.n, slope)) } else { 0.0 };
+            detail.avg_velocity =
+                if q_avg > 0.0 { v_at(reach.section.normal_depth(q_avg, reach.n, slope)) } else { 0.0 };
             detail.avg_travel_min = if detail.avg_velocity > 0.0 { len / detail.avg_velocity / 60.0 } else { 0.0 };
             out
         }
@@ -617,13 +789,21 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
             let q_ref = peak_in.max(1e-6);
             let y = reach.section.normal_depth(q_ref, reach.n, slope);
             let dy = (y * 0.01).max(1e-4);
-            let (qa, qb) = (reach.section.manning_q(y + dy, reach.n, slope), reach.section.manning_q((y - dy).max(0.0), reach.n, slope));
+            let (qa, qb) = (
+                reach.section.manning_q(y + dy, reach.n, slope),
+                reach.section.manning_q((y - dy).max(0.0), reach.n, slope),
+            );
             let (aa, ab) = (reach.section.props(y + dy).area, reach.section.props((y - dy).max(0.0)).area);
             let celerity = if aa > ab { (qa - qb) / (aa - ab) } else { 0.0 };
             let top = reach.section.props(y).top_width;
             let (out, x) = routing::muskingum_cunge(&net_in, len, slope, q_ref, celerity, top);
             if !(0.0..=0.5).contains(&x) {
-                msgs.push(Message::new(97, Severity::Warning, Some(node.id), format!("{} Factor X Out Of Range", node.label())));
+                msgs.push(Message::new(
+                    97,
+                    Severity::Warning,
+                    Some(node.id),
+                    format!("{} Factor X Out Of Range", node.label()),
+                ));
             }
             detail.depth = out.q.iter().map(|q| reach.section.normal_depth(*q, reach.n, slope)).collect();
             let ip = out.max_index().unwrap_or(0);
@@ -639,12 +819,23 @@ fn route_reach(project: &Project, node: &Node, reach: &Reach, inflow: &Hydrograp
     };
     detail.elevation = detail.depth.iter().map(|y| reach.inlet_invert + y).collect();
     if peak_in > capacity && capacity > 0.0 {
-        msgs.push(Message::new(55, Severity::Hint, Some(node.id), format!("{} Peak inflow is {:.0}% of Manning's capacity", node.label(), peak_in / capacity * 100.0)));
+        msgs.push(Message::new(
+            55,
+            Severity::Hint,
+            Some(node.id),
+            format!("{} Peak inflow is {:.0}% of Manning's capacity", node.label(), peak_in / capacity * 100.0),
+        ));
     }
     let mut total = outflow.clone();
     total.add(&lost);
     flow_checks(node, inflow, &total, true, msgs);
-    NodeResult { inflow: inflow.clone(), outflow: total, routes: [outflow, z.clone(), z, lost], detail: Detail::Reach(detail), ..Default::default() }
+    NodeResult {
+        inflow: inflow.clone(),
+        outflow: total,
+        routes: [outflow, z.clone(), z, lost],
+        detail: Detail::Reach(detail),
+        ..Default::default()
+    }
 }
 
 /// Outflow index (0 primary, 1 secondary, 2 tertiary) a device routes to, if it routes directly to one.
@@ -669,7 +860,12 @@ fn device_outlet_level(d: &outlets::OutletDevice) -> f64 {
 fn flow_checks(node: &Node, inflow: &Hydrograph, outflow: &Hydrograph, check_qout: bool, msgs: &mut Vec<Message>) {
     let (pi, po) = (inflow.peak().value, outflow.peak().value);
     if check_qout && po > pi * 1.005 && po - pi > 0.001 {
-        msgs.push(Message::new(89, Severity::Warning, Some(node.id), format!("{} Qout>Qin may require smaller dt", node.label())));
+        msgs.push(Message::new(
+            89,
+            Severity::Warning,
+            Some(node.id),
+            format!("{} Qout>Qin may require smaller dt", node.label()),
+        ));
     }
     let tol = 1e-6 + 0.001 * outflow.q.iter().copied().fold(0.0, f64::max);
     let mut last = 0i8;
@@ -686,7 +882,12 @@ fn flow_checks(node: &Node, inflow: &Hydrograph, outflow: &Hydrograph, check_qou
         last = sign;
     }
     if changes.windows(9).any(|w| matches!((w.first(), w.last()), (Some(a), Some(b)) if b - a <= 19)) {
-        msgs.push(Message::new(86, Severity::Warning, Some(node.id), format!("{} Oscillations may require smaller dt", node.label())));
+        msgs.push(Message::new(
+            86,
+            Severity::Warning,
+            Some(node.id),
+            format!("{} Oscillations may require smaller dt", node.label()),
+        ));
     }
 }
 
@@ -725,7 +926,12 @@ fn tailwater_checks(project: &Project, order: &[NodeId], r: &mut Results) {
                 any_device = true;
                 let x = peak - device_outlet_level(d);
                 if x > 0.005 {
-                    out.push(Message::new(78, Severity::Warning, Some(target), format!("{} Submerged Pond {} device #{} by {:.2}'", down.label(), node.label(), i + 1, x)));
+                    out.push(Message::new(
+                        78,
+                        Severity::Warning,
+                        Some(target),
+                        format!("{} Submerged Pond {} device #{} by {:.2}'", down.label(), node.label(), i + 1, x),
+                    ));
                 }
             }
             if !any_device {
@@ -743,7 +949,18 @@ fn tailwater_checks(project: &Project, order: &[NodeId], r: &mut Results) {
                 }
             }
             if let Some((x, i)) = worst {
-                out.push(Message::new(80, Severity::Warning, Some(target), format!("{} Exceeded Pond {} by {:.2}' @ {:.2} hrs", down.label(), node.label(), x, pres.inflow.time(i))));
+                out.push(Message::new(
+                    80,
+                    Severity::Warning,
+                    Some(target),
+                    format!(
+                        "{} Exceeded Pond {} by {:.2}' @ {:.2} hrs",
+                        down.label(),
+                        node.label(),
+                        x,
+                        pres.inflow.time(i)
+                    ),
+                ));
             }
         }
     }
@@ -770,14 +987,26 @@ fn route_pond(
     let top_store = pond.storage.top().unwrap_or(bottom);
     let top_dev = pond.devices.iter().map(|d| d.invert).fold(bottom, f64::max);
     let top = top_store.max(top_dev) + 10.0;
-    let mut vols: Vec<(usize, f64, f64)> = pond.storage.volumes.iter().enumerate().filter(|(_, v)| v.embedded_in.is_none()).map(|(j, v)| (j, v.bottom(), v.top())).collect();
+    let mut vols: Vec<(usize, f64, f64)> = pond
+        .storage
+        .volumes
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| v.embedded_in.is_none())
+        .map(|(j, v)| (j, v.bottom(), v.top()))
+        .collect();
     vols.sort_by(|a, b| a.1.total_cmp(&b.1));
     let mut highest: Option<(usize, f64)> = None;
     for (j, b, t) in vols {
         if let Some((lj, lt)) = highest
             && b - lt > 0.005
         {
-            msgs.push(Message::new(42, Severity::Hint, Some(node.id), format!("{} Gap in defined storage above volume #{} at {:.2}'", node.label(), lj + 1, lt)));
+            msgs.push(Message::new(
+                42,
+                Severity::Hint,
+                Some(node.id),
+                format!("{} Gap in defined storage above volume #{} at {:.2}'", node.label(), lj + 1, lt),
+            ));
         }
         if highest.is_none_or(|(_, lt)| t > lt) {
             highest = Some((j, t));
@@ -788,20 +1017,35 @@ fn route_pond(
             for (i, d) in pond.devices.iter().enumerate() {
                 let level = device_outlet_level(d);
                 if route_index(d.routing) == Some(k) && level < *e {
-                    msgs.push(Message::new(77, Severity::Warning, Some(node.id), format!("{} Manual tailwater submerged device #{} by {:.2}'", node.label(), i + 1, e - level)));
+                    msgs.push(Message::new(
+                        77,
+                        Severity::Warning,
+                        Some(node.id),
+                        format!("{} Manual tailwater submerged device #{} by {:.2}'", node.label(), i + 1, e - level),
+                    ));
                 }
             }
         }
     }
     for (i, d) in pond.devices.iter().enumerate() {
         if !pond.storage.is_empty() && d.invert > top_store {
-            msgs.push(Message::new(92, Severity::Warning, Some(node.id), format!("{} Outlet Device {} is above defined storage", node.label(), i + 1)));
+            msgs.push(Message::new(
+                92,
+                Severity::Warning,
+                Some(node.id),
+                format!("{} Outlet Device {} is above defined storage", node.label(), i + 1),
+            ));
         }
         if let Some(b) = pond.storage.bottom()
             && d.invert < b
             && !matches!(d.kind, outlets::DeviceKind::Exfiltration { .. })
         {
-            msgs.push(Message::new(44, Severity::Hint, Some(node.id), format!("{} Outlet Device {} is below defined storage", node.label(), i + 1)));
+            msgs.push(Message::new(
+                44,
+                Severity::Hint,
+                Some(node.id),
+                format!("{} Outlet Device {} is below defined storage", node.label(), i + 1),
+            ));
         }
     }
     // Downstream elevation for dynamic tailwater: previous-step elevation of the target node.
@@ -827,7 +1071,11 @@ fn route_pond(
         };
         match pond.tailwater[k] {
             Tailwater::Free => {
-                if s.pond_method == PondMethod::DynStorInd { downstream_elev(k, step) } else { None }
+                if s.pond_method == PondMethod::DynStorInd {
+                    downstream_elev(k, step)
+                } else {
+                    None
+                }
             }
             Tailwater::Fixed(e) => Some(e),
             Tailwater::Differential(d) => Some(hw - d.max(0.0)),
@@ -846,7 +1094,8 @@ fn route_pond(
         let mut el = Vec::with_capacity(n);
         for (i, q) in inflow.q.iter().enumerate() {
             let t = inflow.time(i);
-            let flows = |e: f64| outlets::evaluate(&pond.devices, e, &|r| tw_of(r, e, i), &pond.storage, &initial, t).total();
+            let flows =
+                |e: f64| outlets::evaluate(&pond.devices, e, &|r| tw_of(r, e, i), &pond.storage, &initial, t).total();
             let (mut lo, mut hi) = (bottom, bottom + 1.0);
             let mut guard = 0;
             while flows(hi) < *q && guard < 40 {
@@ -886,7 +1135,8 @@ fn route_pond(
                 Some(node.id),
                 format!("{} Storage range exceeded by {:.2}' - results undefined (extend the storage or add outlet capacity)", node.label(), ex),
             ));
-            undefined = Some(format!("peak elevation exceeds the defined storage (top {:.2}') by {:.2}'", top_store, ex));
+            undefined =
+                Some(format!("peak elevation exceeds the defined storage (top {:.2}') by {:.2}'", top_store, ex));
         }
         elevation = res.elevation;
         storage = res.storage;
@@ -921,24 +1171,47 @@ fn route_pond(
     for r in &routes {
         outflow.add(r);
     }
-    let (ipk, peak_e) = elevation.iter().copied().enumerate().fold((0, f64::NEG_INFINITY), |b, (i, v)| if v > b.1 { (i, v) } else { b });
+    let (ipk, peak_e) = elevation
+        .iter()
+        .copied()
+        .enumerate()
+        .fold((0, f64::NEG_INFINITY), |b, (i, v)| if v > b.1 { (i, v) } else { b });
     let peak_storage = storage.get(ipk).copied().unwrap_or(0.0);
     let detention = routing::detention_time(inflow, &outflow, pond.storage.storage(start));
     if let Some(flood) = pond.flood_elevation
         && peak_e > flood
     {
-        msgs.push(Message::new(58, Severity::Hint, Some(node.id), format!("{} Peaked {:.2}' above defined flood level", node.label(), peak_e - flood)));
+        msgs.push(Message::new(
+            58,
+            Severity::Hint,
+            Some(node.id),
+            format!("{} Peaked {:.2}' above defined flood level", node.label(), peak_e - flood),
+        ));
     }
     for (i, d) in pond.devices.iter().enumerate() {
         if let outlets::DeviceKind::Channel { section, .. } = &d.kind {
             let full = section.full_depth();
             if peak_e.is_finite() && full.is_finite() && peak_e - d.invert > full {
-                msgs.push(Message::new(96, Severity::Warning, Some(node.id), format!("{} Channel Outlet {} depth exceeded by {:.2}'", node.label(), i + 1, peak_e - d.invert - full)));
+                msgs.push(Message::new(
+                    96,
+                    Severity::Warning,
+                    Some(node.id),
+                    format!(
+                        "{} Channel Outlet {} depth exceeded by {:.2}'",
+                        node.label(),
+                        i + 1,
+                        peak_e - d.invert - full
+                    ),
+                ));
             }
         }
     }
     flow_checks(node, inflow, &outflow, start <= bottom, msgs);
-    let tw = [tw_of(Routing::Primary, peak_e, ipk), tw_of(Routing::Secondary, peak_e, ipk), tw_of(Routing::Tertiary, peak_e, ipk)];
+    let tw = [
+        tw_of(Routing::Primary, peak_e, ipk),
+        tw_of(Routing::Secondary, peak_e, ipk),
+        tw_of(Routing::Tertiary, peak_e, ipk),
+    ];
     let detail = PondDetail {
         start_elevation: start,
         peak_elevation: if peak_e.is_finite() { peak_e } else { start },
@@ -951,7 +1224,14 @@ fn route_pond(
         elevation,
         storage,
     };
-    NodeResult { inflow: inflow.clone(), outflow, routes, detail: Detail::Pond(detail), undefined, ..Default::default() }
+    NodeResult {
+        inflow: inflow.clone(),
+        outflow,
+        routes,
+        detail: Detail::Pond(detail),
+        undefined,
+        ..Default::default()
+    }
 }
 
 #[cfg(test)]
@@ -989,7 +1269,11 @@ mod tests {
                     volumes: vec![StorageVolume::new(
                         "Custom",
                         50.0,
-                        VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations: vec![50.0, 55.0], values: vec![0.5 * AC, 1.0 * AC] },
+                        VolumeShape::Custom {
+                            kind: CustomKind::AreaPrismatic,
+                            elevations: vec![50.0, 55.0],
+                            values: vec![0.5 * AC, 1.0 * AC],
+                        },
                     )],
                 },
                 devices: vec![OutletDevice::new(
@@ -1021,7 +1305,11 @@ mod tests {
             n.outflows[0] = Some(link);
             if let NodeData::Pond(pd) = &mut n.data {
                 // A tiny basin, 1 ft deep, cannot hold 25 acres of runoff behind a 1 ft orifice.
-                pd.storage.volumes[0].shape = VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations: vec![50.0, 51.0], values: vec![1000.0, 1000.0] };
+                pd.storage.volumes[0].shape = VolumeShape::Custom {
+                    kind: CustomKind::AreaPrismatic,
+                    elevations: vec![50.0, 51.0],
+                    values: vec![1000.0, 1000.0],
+                };
             }
         }
         let r = calculate(&p);
@@ -1103,7 +1391,11 @@ mod tests {
     fn gap_in_defined_storage_is_hinted() {
         let (mut p, _, pond) = project_with_pond();
         assert!(!calculate(&p).messages.iter().any(|m| m.code == 42));
-        let shape = VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations: vec![60.0, 62.0], values: vec![0.5 * AC, 1.0 * AC] };
+        let shape = VolumeShape::Custom {
+            kind: CustomKind::AreaPrismatic,
+            elevations: vec![60.0, 62.0],
+            values: vec![0.5 * AC, 1.0 * AC],
+        };
         let pd = pond_mut(&mut p, pond);
         pd.storage.volumes.push(StorageVolume::new("Upper", 60.0, shape.clone()));
         let mut embedded = StorageVolume::new("Inside", 57.0, shape);
@@ -1138,7 +1430,15 @@ mod tests {
         use crate::geometry::Section;
         let (mut p, s, _) = project_with_pond();
         if let Some(Node { data: NodeData::Subcat(sc), .. }) = p.node_mut(s) {
-            sc.tc.push(TcSegment::new(TcKind::Channel { length: 100.0, slope: 0.01, n: 0.03, section: Section::Rectangular { width: 1.0, depth: 0.5 } }, ""));
+            sc.tc.push(TcSegment::new(
+                TcKind::Channel {
+                    length: 100.0,
+                    slope: 0.01,
+                    n: 0.03,
+                    section: Section::Rectangular { width: 1.0, depth: 0.5 },
+                },
+                "",
+            ));
         }
         let r = calculate(&p);
         assert!(has_msg(&r, 47, s, "of capacity of segment #2"), "{:?}", r.messages);
@@ -1158,10 +1458,20 @@ mod tests {
     fn channel_outlet_depth_exceeded_is_flagged() {
         use crate::geometry::Section;
         let (mut p, _, pond) = project_with_pond();
-        pond_mut(&mut p, pond).devices = vec![OutletDevice::new("Channel", 50.0, Routing::Primary, DeviceKind::Channel { section: Section::Rectangular { width: 4.0, depth: 0.2 }, n: 0.03, slope: 0.01 })];
+        pond_mut(&mut p, pond).devices = vec![OutletDevice::new(
+            "Channel",
+            50.0,
+            Routing::Primary,
+            DeviceKind::Channel { section: Section::Rectangular { width: 4.0, depth: 0.2 }, n: 0.03, slope: 0.01 },
+        )];
         let r = calculate(&p);
         assert!(has_msg(&r, 96, pond, "Channel Outlet 1 depth exceeded by"), "{:?}", r.messages);
-        pond_mut(&mut p, pond).devices = vec![OutletDevice::new("Channel", 50.0, Routing::Primary, DeviceKind::Channel { section: Section::Rectangular { width: 4.0, depth: 20.0 }, n: 0.03, slope: 0.01 })];
+        pond_mut(&mut p, pond).devices = vec![OutletDevice::new(
+            "Channel",
+            50.0,
+            Routing::Primary,
+            DeviceKind::Channel { section: Section::Rectangular { width: 4.0, depth: 20.0 }, n: 0.03, slope: 0.01 },
+        )];
         assert!(!calculate(&p).messages.iter().any(|m| m.code == 96));
     }
 
@@ -1176,16 +1486,42 @@ mod tests {
             "Culvert",
             50.0,
             Routing::Primary,
-            DeviceKind::Culvert { shape: PipeShape::Round, width: 1.5, height: 1.5, length: 40.0, outlet_invert: 49.8, n: 0.013, ke: 0.5, cc: 0.9, fill: 0.0, entrance: String::new() },
+            DeviceKind::Culvert {
+                shape: PipeShape::Round,
+                width: 1.5,
+                height: 1.5,
+                length: 40.0,
+                outlet_invert: 49.8,
+                n: 0.013,
+                ke: 0.5,
+                cc: 0.9,
+                fill: 0.0,
+                entrance: String::new(),
+            },
         )];
         if let Some(n) = p.node_mut(lower) {
             n.data = NodeData::Pond(Pond {
-                storage: crate::storage::PondStorage { volumes: vec![StorageVolume::new("Lower", 49.5, VolumeShape::Prismatoid { width: 60.0, length: 60.0, height: 8.0, z: 0.0 })] },
+                storage: crate::storage::PondStorage {
+                    volumes: vec![StorageVolume::new(
+                        "Lower",
+                        49.5,
+                        VolumeShape::Prismatoid { width: 60.0, length: 60.0, height: 8.0, z: 0.0 },
+                    )],
+                },
                 devices: vec![OutletDevice::new(
                     "Orifice",
                     49.5,
                     Routing::Primary,
-                    DeviceKind::Orifice { shape: OpeningShape::Circular { diameter: 0.4 }, plane: Plane::Vertical, cd: 0.6, columns: 1, rows: 1, row_spacing: 0.0, weir_at_low_head: true, grate: None },
+                    DeviceKind::Orifice {
+                        shape: OpeningShape::Circular { diameter: 0.4 },
+                        plane: Plane::Vertical,
+                        cd: 0.6,
+                        columns: 1,
+                        rows: 1,
+                        row_spacing: 0.0,
+                        weir_at_low_head: true,
+                        grate: None,
+                    },
                 )],
                 ..Default::default()
             });
@@ -1264,20 +1600,44 @@ mod tests {
                     "Culvert",
                     50.0,
                     Routing::Primary,
-                    DeviceKind::Culvert { shape: PipeShape::Round, width: 1.5, height: 1.5, length: 40.0, outlet_invert: 49.8, n: 0.013, ke: 0.5, cc: 0.9, fill: 0.0, entrance: String::new() },
+                    DeviceKind::Culvert {
+                        shape: PipeShape::Round,
+                        width: 1.5,
+                        height: 1.5,
+                        length: 40.0,
+                        outlet_invert: 49.8,
+                        n: 0.013,
+                        ke: 0.5,
+                        cc: 0.9,
+                        fill: 0.0,
+                        entrance: String::new(),
+                    },
                 )];
             }
         }
         if let Some(n) = p.node_mut(lower) {
             n.data = NodeData::Pond(Pond {
                 storage: crate::storage::PondStorage {
-                    volumes: vec![StorageVolume::new("Lower", 49.5, VolumeShape::Prismatoid { width: 60.0, length: 60.0, height: 8.0, z: 0.0 })],
+                    volumes: vec![StorageVolume::new(
+                        "Lower",
+                        49.5,
+                        VolumeShape::Prismatoid { width: 60.0, length: 60.0, height: 8.0, z: 0.0 },
+                    )],
                 },
                 devices: vec![OutletDevice::new(
                     "Orifice",
                     49.5,
                     Routing::Primary,
-                    DeviceKind::Orifice { shape: OpeningShape::Circular { diameter: 0.75 }, plane: Plane::Vertical, cd: 0.6, columns: 1, rows: 1, row_spacing: 0.0, weir_at_low_head: true, grate: None },
+                    DeviceKind::Orifice {
+                        shape: OpeningShape::Circular { diameter: 0.75 },
+                        plane: Plane::Vertical,
+                        cd: 0.6,
+                        columns: 1,
+                        rows: 1,
+                        row_spacing: 0.0,
+                        weir_at_low_head: true,
+                        grate: None,
+                    },
                 )],
                 ..Default::default()
             });

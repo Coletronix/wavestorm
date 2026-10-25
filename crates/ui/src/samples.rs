@@ -13,7 +13,15 @@ fn seg(kind: TcKind, desc: &str) -> TcSegment {
     TcSegment::new(kind, desc)
 }
 
-fn subcat(p: &mut Project, number: &str, name: &str, pos: [f64; 2], areas: Vec<SubArea>, tc: Vec<TcSegment>, to: NodeId) -> NodeId {
+fn subcat(
+    p: &mut Project,
+    number: &str,
+    name: &str,
+    pos: [f64; 2],
+    areas: Vec<SubArea>,
+    tc: Vec<TcSegment>,
+    to: NodeId,
+) -> NodeId {
     let id = p.add_node(NodeType::Subcat, pos);
     if let Some(n) = p.node_mut(id) {
         n.number = number.into();
@@ -120,7 +128,12 @@ pub fn sample_project() -> Project {
                         grate: None,
                     },
                 ),
-                OutletDevice::new("Emergency Spillway", 104.0, Routing::Secondary, DeviceKind::BroadCrestedWeir { length: 12.0, breadth: 8.0, side_z: 3.0, rise: None }),
+                OutletDevice::new(
+                    "Emergency Spillway",
+                    104.0,
+                    Routing::Secondary,
+                    DeviceKind::BroadCrestedWeir { length: 12.0, breadth: 8.0, side_z: 3.0, rise: None },
+                ),
             ],
             start_elevation: None,
             flood_elevation: Some(105.0),
@@ -152,7 +165,16 @@ pub fn sample_project() -> Project {
         [120.0, 340.0],
         vec![SubArea::new(5.5 * AC, 55.0, "Woods, Good, HSG B"), SubArea::new(1.1 * AC, 70.0, "Woods, Good, HSG C")],
         vec![
-            seg(TcKind::Sheet { length: 100.0, slope: 0.06, n: 0.4, p2: 3.1, surface: "Woods: Light underbrush".into() }, "D-E"),
+            seg(
+                TcKind::Sheet {
+                    length: 100.0,
+                    slope: 0.06,
+                    n: 0.4,
+                    p2: 3.1,
+                    surface: "Woods: Light underbrush".into(),
+                },
+                "D-E",
+            ),
             seg(TcKind::Shallow { length: 650.0, slope: 0.08, kv: 5.0, surface: "Woodland".into() }, "E-F"),
         ],
         swale,
@@ -162,7 +184,10 @@ pub fn sample_project() -> Project {
         "3",
         "Commons Parking",
         [520.0, 60.0],
-        vec![SubArea::new(1.6 * AC, 98.0, "Paved parking, HSG B"), SubArea::new(0.5 * AC, 61.0, "Open Space, Good, HSG B")],
+        vec![
+            SubArea::new(1.6 * AC, 98.0, "Paved parking, HSG B"),
+            SubArea::new(0.5 * AC, 61.0, "Open Space, Good, HSG B"),
+        ],
         vec![seg(TcKind::Direct { minutes: 6.0, length: 0.0, velocity: 0.0 }, "")],
         basin,
     );

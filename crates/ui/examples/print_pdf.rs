@@ -17,7 +17,12 @@ fn main() {
     let bytes = if out.ends_with(".emf") {
         wavestorm_core::printing::diagram_emf(&p, &r, "10/22/2026", background)
     } else {
-        let opts = wavestorm_core::printing::PrintOptions { date: "10/22/2026".into(), tables: true, background, ..Default::default() };
+        let opts = wavestorm_core::printing::PrintOptions {
+            date: "10/22/2026".into(),
+            tables: true,
+            background,
+            ..Default::default()
+        };
         wavestorm_core::printing::report_pdf(&p, &r, &opts)
     };
     std::fs::write(&out, bytes).expect("write");

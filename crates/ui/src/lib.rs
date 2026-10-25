@@ -1,6 +1,13 @@
 //! WAVEStorm user interface (egui). The same code runs on the desktop and in the browser.
 
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unimplemented,
+    clippy::todo,
+    clippy::unreachable
+)]
 
 pub mod chart;
 pub mod diagram;
@@ -29,8 +36,8 @@ use egui::{Align2, Color32, FontId, Key, Pos2, Rect, Sense, Stroke, Ui, pos2, ve
 use icons::Glyph;
 use platform::{Incoming, Platform, Purpose};
 use prefs::Prefs;
-use wavestorm_core::project::{Node, NodeData, NodeId, NodeType, Project};
 use theme::{ThemeKind, Tokens};
+use wavestorm_core::project::{Node, NodeData, NodeId, NodeType, Project};
 use windows::{Window, WindowAction};
 
 /// The application.
@@ -91,7 +98,10 @@ impl WaveStormApp {
         let status = match (persist_prefs, docs.len(), unsaved) {
             (false, _, _) | (true, 0, _) => "Ready".to_string(),
             (true, n, 0) => format!("Reopened {n} project{} from your last session", plural(n)),
-            (true, n, u) => format!("Reopened {n} project{} from your last session, {u} with unsaved changes (save or export to keep them)", plural(n)),
+            (true, n, u) => format!(
+                "Reopened {n} project{} from your last session, {u} with unsaved changes (save or export to keep them)",
+                plural(n)
+            ),
         };
         library::init(&prefs.rainfall_folder, persist_prefs);
         WaveStormApp {
@@ -150,7 +160,9 @@ impl WaveStormApp {
                     self.docs.clear();
                 }
                 // An already open file is switched to rather than opened twice.
-                if let Some(i) = item.path.as_ref().and_then(|p| self.docs.iter().position(|d| d.path.as_ref() == Some(p))) {
+                if let Some(i) =
+                    item.path.as_ref().and_then(|p| self.docs.iter().position(|d| d.path.as_ref() == Some(p)))
+                {
                     self.active = i;
                     self.status = format!("{} is already open", item.name);
                     return Ok(());
@@ -162,11 +174,13 @@ impl WaveStormApp {
                 self.active = self.docs.len() - 1;
                 self.status = format!("Opened {}", item.name);
                 if !warnings.is_empty() {
-                    self.status = format!("Opened {} ({} import warnings: {})", item.name, warnings.len(), warnings.join("; "));
+                    self.status =
+                        format!("Opened {} ({} import warnings: {})", item.name, warnings.len(), warnings.join("; "));
                 }
             }
             Purpose::MergeProject => {
-                let text = String::from_utf8(item.bytes).map_err(|_| "The file is not a WAVEStorm project (not text).".to_string())?;
+                let text = String::from_utf8(item.bytes)
+                    .map_err(|_| "The file is not a WAVEStorm project (not text).".to_string())?;
                 let other = Project::from_json(&text)?;
                 let mut added = 0;
                 self.doc().edit("Project Merge", |p| added = wavestorm_core::exchange::merge(p, &other));
@@ -184,12 +198,17 @@ impl WaveStormApp {
                 }
                 self.docs.push(doc);
                 self.active = self.docs.len() - 1;
-                self.status = format!("Imported {} from TR-20: {nodes} nodes{}", item.name, if notes > 0 { format!(", {notes} notes (see Project Notes)") } else { String::new() });
+                self.status = format!(
+                    "Imported {} from TR-20: {nodes} nodes{}",
+                    item.name,
+                    if notes > 0 { format!(", {notes} notes (see Project Notes)") } else { String::new() }
+                );
             }
             Purpose::NoaaCsv => {
                 // A lookup table (*-Rain.txt), an IDF file or a NOAA Atlas 14 CSV.
                 let doc = self.doc();
-                let lookup = doc.windows.iter_mut().find_map(|w| if let Window::EventLookup(s) = w { Some(s) } else { None });
+                let lookup =
+                    doc.windows.iter_mut().find_map(|w| if let Window::EventLookup(s) = w { Some(s) } else { None });
                 match lookup {
                     Some(s) => s.load_file(&item.name, &item.bytes)?,
                     None => {
@@ -219,7 +238,9 @@ impl WaveStormApp {
                 let (w, h) = (raster.width.max(1) as f64, raster.height.max(1) as f64);
                 // The image starts sized to the diagram as it is in view (90 %, centred), so it
                 // relates to the symbols on screen; the placement tool then adjusts it.
-                let view = canvas.is_finite().then(|| (diagram::to_world(&doc.view, canvas, canvas.min), diagram::to_world(&doc.view, canvas, canvas.max)));
+                let view = canvas.is_finite().then(|| {
+                    (diagram::to_world(&doc.view, canvas, canvas.min), diagram::to_world(&doc.view, canvas, canvas.max))
+                });
                 let (origin, scale) = match view {
                     Some((a, b)) if b.x > a.x && b.y > a.y => {
                         let s = 0.9 * ((b.x - a.x) as f64 / w).min((b.y - a.y) as f64 / h);
@@ -257,7 +278,11 @@ impl WaveStormApp {
             Purpose::RatingCsv => {
                 let rows = dialogs::outlet::parse_rating(&String::from_utf8_lossy(&item.bytes))?;
                 let n = rows.len();
-                let ed = self.doc().windows.iter_mut().find_map(|w| if let Window::Edit(e) = w { e.device_edit.as_mut() } else { None });
+                let ed = self
+                    .doc()
+                    .windows
+                    .iter_mut()
+                    .find_map(|w| if let Window::Edit(e) = w { e.device_edit.as_mut() } else { None });
                 let ok = ed.is_some_and(|ed| dialogs::outlet::set_rating(&mut ed.device.kind, rows));
                 if !ok {
                     return Err("Open a pump or special outlet editor before loading a rating file.".into());
@@ -272,7 +297,12 @@ impl WaveStormApp {
                 if let Some(id) = sel {
                     doc.edit("Link Import", |p| {
                         if let Some(Node { data: NodeData::Link(l), .. }) = p.node_mut(id) {
-                            l.source = wavestorm_core::link::LinkSource::Table { name: item.name.clone(), times, columns, selected: None };
+                            l.source = wavestorm_core::link::LinkSource::Table {
+                                name: item.name.clone(),
+                                times,
+                                columns,
+                                selected: None,
+                            };
                         }
                     });
                 }
@@ -444,7 +474,11 @@ impl WaveStormApp {
             let mut saved = 0;
             for d in &mut self.docs {
                 let Some(path) = d.path.clone().filter(|_| d.dirty) else { continue };
-                let bytes = if d.hcp { Ok(wavestorm_core::hcp::export_bytes(&d.project)) } else { d.project.to_json().map(String::into_bytes) };
+                let bytes = if d.hcp {
+                    Ok(wavestorm_core::hcp::export_bytes(&d.project))
+                } else {
+                    d.project.to_json().map(String::into_bytes)
+                };
                 match bytes.map(|b| std::fs::write(&path, b).map_err(|e| e.to_string())) {
                     Ok(Ok(())) => {
                         d.dirty = false;
@@ -461,7 +495,12 @@ impl WaveStormApp {
         if let Window::ProjectReport(mut st) = w {
             if self.prefs.multiple_project_reports {
                 let doc = self.doc();
-                st.serial = doc.windows.iter().filter_map(|o| if let Window::ProjectReport(s) = o { Some(s.serial + 1) } else { None }).max().unwrap_or(0);
+                st.serial = doc
+                    .windows
+                    .iter()
+                    .filter_map(|o| if let Window::ProjectReport(s) = o { Some(s.serial + 1) } else { None })
+                    .max()
+                    .unwrap_or(0);
                 doc.windows.push(Window::ProjectReport(st));
                 return;
             }
@@ -507,7 +546,13 @@ impl WaveStormApp {
         self.status = if e + w + h == 0 {
             format!("Calculated {} for {event}: no messages", plural(nodes, "node"))
         } else {
-            format!("Calculated {} for {event}: {}, {}, {}", plural(nodes, "node"), plural(e, "error"), plural(w, "warning"), plural(h, "hint"))
+            format!(
+                "Calculated {} for {event}: {}, {}, {}",
+                plural(nodes, "node"),
+                plural(e, "error"),
+                plural(w, "warning"),
+                plural(h, "hint")
+            )
         };
         if fresh && auto && !self.doc().windows.iter().any(|w| matches!(w, Window::Messages)) {
             self.doc().windows.push(Window::Messages);
@@ -574,7 +619,8 @@ impl WaveStormApp {
             // Keep routing between pasted nodes.
             for n in &nodes {
                 if let Some(&id) = map.get(&n.id) {
-                    let outs: Vec<Option<NodeId>> = n.outflows.iter().map(|o| o.and_then(|t| map.get(&t).copied())).collect();
+                    let outs: Vec<Option<NodeId>> =
+                        n.outflows.iter().map(|o| o.and_then(|t| map.get(&t).copied())).collect();
                     if let Some(m) = p.node_mut(id) {
                         for (k, o) in outs.into_iter().enumerate() {
                             if let Some(slot) = m.outflows.get_mut(k) {
@@ -604,7 +650,11 @@ impl WaveStormApp {
             return;
         }
         if cmd && pressed(Key::Z) {
-            if shift { self.doc().redo() } else { self.doc().undo() };
+            if shift {
+                self.doc().redo()
+            } else {
+                self.doc().undo()
+            };
         } else if cmd && pressed(Key::Y) {
             self.doc().redo();
         } else if cmd && pressed(Key::S) {
@@ -663,10 +713,18 @@ impl WaveStormApp {
     /// Opens a recent project; one whose file is gone is reported and dropped from the list.
     fn open_recent(&mut self, e: &platform::recent::Entry) {
         match e.bytes() {
-            Some(bytes) => self.platform.push(Incoming { purpose: Purpose::OpenProject, name: e.name.clone(), path: e.path.clone(), bytes }),
+            Some(bytes) => self.platform.push(Incoming {
+                purpose: Purpose::OpenProject,
+                name: e.name.clone(),
+                path: e.path.clone(),
+                bytes,
+            }),
             None => {
                 platform::recent::forget(e);
-                self.error = Some(format!("{} can no longer be opened (it was moved, renamed or deleted), so it was removed from the recent projects.", e.label()));
+                self.error = Some(format!(
+                    "{} can no longer be opened (it was moved, renamed or deleted), so it was removed from the recent projects.",
+                    e.label()
+                ));
             }
         }
     }
@@ -697,7 +755,11 @@ impl WaveStormApp {
                         self.platform.pick(Purpose::ImportSubareas);
                         ui.close();
                     }
-                    if ui.button("TR-20 Input File...").on_hover_text("Create a new project from a legacy TR-20 input deck").clicked() {
+                    if ui
+                        .button("TR-20 Input File...")
+                        .on_hover_text("Create a new project from a legacy TR-20 input deck")
+                        .clicked()
+                    {
                         self.platform.pick(Purpose::ImportTr20);
                         ui.close();
                     }
@@ -715,7 +777,12 @@ impl WaveStormApp {
                     if ui.button("Diagram (EMF)...").clicked() {
                         let doc = self.doc();
                         let background = underlay::print_background(&doc.project);
-                        let bytes = wavestorm_core::printing::diagram_emf(&doc.project, &doc.results, &dialogs::misc::today(), background);
+                        let bytes = wavestorm_core::printing::diagram_emf(
+                            &doc.project,
+                            &doc.results,
+                            &dialogs::misc::today(),
+                            background,
+                        );
                         let name = format!("{} diagram.emf", sanitize(&doc.project.title));
                         if let Err(e) = self.platform.save(&name, None, &bytes, "emf") {
                             self.error = Some(e);
@@ -888,7 +955,17 @@ impl WaveStormApp {
                     ui.close();
                 }
                 if ui.button("Diagram (PDF)...").clicked() {
-                    let o = wavestorm_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new(), background: None };
+                    let o = wavestorm_core::printing::PrintOptions {
+                        diagram: true,
+                        node_listing: false,
+                        area_listing: false,
+                        summaries: false,
+                        graphs: false,
+                        tables: false,
+                        date: dialogs::misc::today(),
+                        only: Vec::new(),
+                        background: None,
+                    };
                     self.print_pdf(&o);
                     ui.close();
                 }
@@ -922,7 +999,11 @@ impl WaveStormApp {
                     let st = dialogs::storm::IdfEditor::new(self.doc());
                     self.open_window(Window::Idf(st));
                 }
-                if ui.button("Rainfall Event Lookup...").on_hover_text("Create rainfall events from a NOAA Atlas 14 table").clicked() {
+                if ui
+                    .button("Rainfall Event Lookup...")
+                    .on_hover_text("Create rainfall events from a NOAA Atlas 14 table")
+                    .clicked()
+                {
                     let st = dialogs::storm::EventLookup::new(self.doc());
                     self.open_window(Window::EventLookup(st));
                 }
@@ -966,7 +1047,8 @@ impl WaveStormApp {
     fn create_node(&mut self, t: NodeType) {
         let canvas = self.canvas_rect;
         let doc = self.doc();
-        let c = if canvas.is_finite() { diagram::to_world(&doc.view, canvas, canvas.center()) } else { pos2(200.0, 200.0) };
+        let c =
+            if canvas.is_finite() { diagram::to_world(&doc.view, canvas, canvas.center()) } else { pos2(200.0, 200.0) };
         let mut id = 0;
         doc.edit("Node Create", |p| id = p.add_node(t, [c.x as f64, c.y as f64]));
         doc.selection = vec![id];
@@ -1013,7 +1095,9 @@ impl WaveStormApp {
         let mut trial = n.clone();
         trial.outline = Some(outline.clone());
         if let Some(problem) = diagram::drawings_problem(&trial) {
-            self.error = Some(format!("{problem} Redraw the outline around all the drawn sub-areas, or delete those that no longer fit."));
+            self.error = Some(format!(
+                "{problem} Redraw the outline around all the drawn sub-areas, or delete those that no longer fit."
+            ));
             return;
         }
         let old = match (&n.outline, &n.data) {
@@ -1063,7 +1147,8 @@ impl WaveStormApp {
                 e.cn_lookup.open = true;
             }
         }
-        self.status = "Sub-area added: pick its ground cover. The remainder row is the outline less the drawn sub-areas.".into();
+        self.status =
+            "Sub-area added: pick its ground cover. The remainder row is the outline less the drawn sub-areas.".into();
     }
 
     /// Refreshes open edit dialogs of node `id` after its drawings changed on the diagram.
@@ -1241,7 +1326,17 @@ impl WaveStormApp {
             Cmd::ProjectReports => self.open_window(Window::ProjectReport(reports::ProjectReportState::default())),
             Cmd::Print => self.open_window(Window::Print(dialogs::misc::PrintState::default())),
             Cmd::PrintDiagram => {
-                let o = wavestorm_core::printing::PrintOptions { diagram: true, node_listing: false, area_listing: false, summaries: false, graphs: false, tables: false, date: dialogs::misc::today(), only: Vec::new(), background: None };
+                let o = wavestorm_core::printing::PrintOptions {
+                    diagram: true,
+                    node_listing: false,
+                    area_listing: false,
+                    summaries: false,
+                    graphs: false,
+                    tables: false,
+                    date: dialogs::misc::today(),
+                    only: Vec::new(),
+                    background: None,
+                };
                 self.print_pdf(&o);
             }
             Cmd::Notes => {
@@ -1309,7 +1404,11 @@ impl WaveStormApp {
     fn cmd_button(&mut self, ui: &mut Ui, c: Cmd) {
         let enabled = self.cmd_enabled(c);
         let tip = if enabled { c.tip() } else { c.disabled_tip() };
-        if widgets::tool_button_enabled(ui, tip, self.cmd_active(c), enabled, |p, r, t| icons::draw_glyph(p, c.glyph(), r, t)).clicked() {
+        if widgets::tool_button_enabled(ui, tip, self.cmd_active(c), enabled, |p, r, t| {
+            icons::draw_glyph(p, c.glyph(), r, t)
+        })
+        .clicked()
+        {
             self.run(c);
         }
     }
@@ -1317,7 +1416,8 @@ impl WaveStormApp {
     /// The rainfall event selector.
     fn event_combo(&mut self, ui: &mut Ui, width: f32) {
         let doc = self.doc();
-        let events: Vec<(usize, String)> = doc.project.settings.events.iter().enumerate().map(|(i, e)| (i, e.name.clone())).collect();
+        let events: Vec<(usize, String)> =
+            doc.project.settings.events.iter().enumerate().map(|(i, e)| (i, e.name.clone())).collect();
         let mut cur = doc.project.settings.current_event;
         if widgets::combo(ui, "event", &mut cur, &events, width) {
             doc.edit("Select Event", |p| p.settings.current_event = cur);
@@ -1353,8 +1453,26 @@ impl WaveStormApp {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
             let groups: [&[Cmd]; 3] = [
-                &[Cmd::Select, Cmd::Units, Cmd::LandUse, Cmd::Calculation, Cmd::Diagram, Cmd::General, Cmd::Idf, Cmd::Print, Cmd::Messages],
-                &[Cmd::Underlay, Cmd::PlaceUnderlay, Cmd::Calibrate, Cmd::Trace, Cmd::SubArea, Cmd::Measure, Cmd::TcPath],
+                &[
+                    Cmd::Select,
+                    Cmd::Units,
+                    Cmd::LandUse,
+                    Cmd::Calculation,
+                    Cmd::Diagram,
+                    Cmd::General,
+                    Cmd::Idf,
+                    Cmd::Print,
+                    Cmd::Messages,
+                ],
+                &[
+                    Cmd::Underlay,
+                    Cmd::PlaceUnderlay,
+                    Cmd::Calibrate,
+                    Cmd::Trace,
+                    Cmd::SubArea,
+                    Cmd::Measure,
+                    Cmd::TcPath,
+                ],
                 &[Cmd::Undo, Cmd::Redo],
             ];
             for (i, group) in groups.into_iter().enumerate() {
@@ -1388,13 +1506,25 @@ impl WaveStormApp {
                     let kind = if resp.hovered() { glass::Surface::Hover } else { glass::Surface::Rail };
                     glass::surface(p, rect, 12.0, kind, &t);
                     icons::draw_node(p, nt, rect.center() - vec2(0.0, 7.0), 32.0, "", resp.hovered(), false, &t);
-                    p.text(pos2(rect.center().x, rect.max.y - 9.0), Align2::CENTER_CENTER, caption, FontId::proportional(11.0), if resp.hovered() { t.text } else { t.text_dim });
+                    p.text(
+                        pos2(rect.center().x, rect.max.y - 9.0),
+                        Align2::CENTER_CENTER,
+                        caption,
+                        FontId::proportional(11.0),
+                        if resp.hovered() { t.text } else { t.text_dim },
+                    );
                 } else {
                     if resp.hovered() {
                         widgets::bevel(p, rect, true, &t);
                     }
                     icons::draw_node(p, nt, rect.center(), 44.0, "", false, false, &t);
-                    p.text(rect.center() + vec2(0.0, if nt == NodeType::Pond { 6.0 } else { 0.0 }), Align2::CENTER_CENTER, caption, FontId::proportional(11.0), t.node_text);
+                    p.text(
+                        rect.center() + vec2(0.0, if nt == NodeType::Pond { 6.0 } else { 0.0 }),
+                        Align2::CENTER_CENTER,
+                        caption,
+                        FontId::proportional(11.0),
+                        t.node_text,
+                    );
                 }
                 if resp.drag_started() {
                     self.palette_drag = Some(nt);
@@ -1429,13 +1559,20 @@ impl WaveStormApp {
             (Some(w), None) => (format!("X={:.2}", w.x / 100.0), format!("Y={:.2}", w.y / 100.0)),
             _ => (String::new(), String::new()),
         };
-        let errors = doc.results.messages.iter().filter(|m| m.severity >= wavestorm_core::calc::Severity::Warning).count();
+        let errors =
+            doc.results.messages.iter().filter(|m| m.severity >= wavestorm_core::calc::Severity::Warning).count();
         let tool = self.tool.name();
         ui.horizontal(|ui| {
             let cell = |ui: &mut Ui, text: &str, w: f32| {
                 let (r, _) = ui.allocate_exact_size(vec2(w, 18.0), Sense::hover());
                 widgets::bevel(ui.painter(), r, false, &t);
-                ui.painter().with_clip_rect(r.shrink(2.0)).text(r.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, text, FontId::proportional(12.0), t.text);
+                ui.painter().with_clip_rect(r.shrink(2.0)).text(
+                    r.left_center() + vec2(4.0, 0.0),
+                    Align2::LEFT_CENTER,
+                    text,
+                    FontId::proportional(12.0),
+                    t.text,
+                );
             };
             let w = ui.available_width() - 2.0 * 96.0 - 150.0 - 120.0 - 16.0;
             // A hovered toolbar or palette button describes itself here.
@@ -1457,9 +1594,16 @@ impl WaveStormApp {
                 ui.spacing_mut().item_spacing.x = 4.0;
             }
             for (i, d) in self.docs.iter().enumerate() {
-                let mark = if !d.dirty { "" } else if t.glass { " •" } else { " *" };
+                let mark = if !d.dirty {
+                    ""
+                } else if t.glass {
+                    " •"
+                } else {
+                    " *"
+                };
                 let label = format!("{}{mark}", d.title());
-                let w = ui.fonts_mut(|f| f.layout_no_wrap(label.clone(), FontId::proportional(12.5), t.text).size().x) + if t.glass { 24.0 } else { 18.0 };
+                let w = ui.fonts_mut(|f| f.layout_no_wrap(label.clone(), FontId::proportional(12.5), t.text).size().x)
+                    + if t.glass { 24.0 } else { 18.0 };
                 let (r, resp) = ui.allocate_exact_size(vec2(w, if t.glass { 28.0 } else { 20.0 }), Sense::click());
                 let p = ui.painter();
                 let active = i == self.active;
@@ -1486,7 +1630,8 @@ impl WaveStormApp {
         for a in actions {
             match a {
                 CanvasAction::OpenReport(id) => {
-                    let described = self.doc().results.node(id).is_some_and(|r| r.inflow.has_flow() || r.outflow.has_flow());
+                    let described =
+                        self.doc().results.node(id).is_some_and(|r| r.inflow.has_flow() || r.outflow.has_flow());
                     if described { self.open_report(id) } else { self.open_edit(id) }
                 }
                 CanvasAction::OpenEdit(id) => self.open_edit(id),
@@ -1540,7 +1685,10 @@ impl WaveStormApp {
         });
         doc.selection = vec![id];
         let u = doc.project.units;
-        self.status = format!("Created subcatchment with area {} (traced). Edit it to set ground cover and Tc.", u.fmt_area(area_sf));
+        self.status = format!(
+            "Created subcatchment with area {} (traced). Edit it to set ground cover and Tc.",
+            u.fmt_area(area_sf)
+        );
         self.open_edit(id);
     }
 
@@ -1711,16 +1859,20 @@ impl WaveStormApp {
     fn error_dialog(&mut self, ctx: &egui::Context) {
         let Some(msg) = self.error.clone() else { return };
         let mut open = true;
-        crate::frame::Win::new("WAVEStorm").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(ctx, |ui| {
-            ui.set_max_width(420.0);
-            ui.label(&msg);
-            ui.add_space(8.0);
-            ui.vertical_centered(|ui| {
-                if widgets::button(ui, "OK", 80.0).clicked() {
-                    open = false;
-                }
+        crate::frame::Win::new("WAVEStorm")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_max_width(420.0);
+                ui.label(&msg);
+                ui.add_space(8.0);
+                ui.vertical_centered(|ui| {
+                    if widgets::button(ui, "OK", 80.0).clicked() {
+                        open = false;
+                    }
+                });
             });
-        });
         if !open {
             self.error = None;
         }
@@ -1728,7 +1880,15 @@ impl WaveStormApp {
 
     /// Draws the diagram into `inner` with scrollbars in `vbar`/`hbar`; `full` is the area
     /// windows are kept inside.
-    fn canvas(&mut self, ui: &mut Ui, ctx: &egui::Context, full: Rect, inner: Rect, vbar: Rect, hbar: Rect) -> Vec<CanvasAction> {
+    fn canvas(
+        &mut self,
+        ui: &mut Ui,
+        ctx: &egui::Context,
+        full: Rect,
+        inner: Rect,
+        vbar: Rect,
+        hbar: Rect,
+    ) -> Vec<CanvasAction> {
         let mut actions = Vec::new();
         self.canvas_rect = inner;
         frame::set_canvas(ctx, full);
@@ -1747,12 +1907,28 @@ impl WaveStormApp {
     /// The classic layout: menu bar, toolbar, node palette, settings column, diagram with
     /// classic scrollbars, project tabs and a bevelled status bar.
     fn classic_chrome(&mut self, ui: &mut Ui, ctx: &egui::Context, t: &Tokens) -> Vec<CanvasAction> {
-        egui::Panel::top("menu").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 1))).show(ui, |ui| self.menu_bar(ui));
-        egui::Panel::top("toolbar").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 3))).show(ui, |ui| self.toolbar(ui));
-        egui::Panel::bottom("status").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 2))).show(ui, |ui| self.status_bar(ui));
-        egui::Panel::bottom("tabs").frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin { left: 64, right: 2, top: 0, bottom: 2 })).show(ui, |ui| self.project_tabs(ui));
-        egui::Panel::left("palette").exact_size(64.0).resizable(false).frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 6))).show(ui, |ui| self.palette(ui));
-        egui::Panel::right("settings-bar").exact_size(34.0).resizable(false).frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 6))).show(ui, |ui| self.right_toolbar(ui));
+        egui::Panel::top("menu")
+            .frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 1)))
+            .show(ui, |ui| self.menu_bar(ui));
+        egui::Panel::top("toolbar")
+            .frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 3)))
+            .show(ui, |ui| self.toolbar(ui));
+        egui::Panel::bottom("status")
+            .frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 2)))
+            .show(ui, |ui| self.status_bar(ui));
+        egui::Panel::bottom("tabs")
+            .frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin { left: 64, right: 2, top: 0, bottom: 2 }))
+            .show(ui, |ui| self.project_tabs(ui));
+        egui::Panel::left("palette")
+            .exact_size(64.0)
+            .resizable(false)
+            .frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 6)))
+            .show(ui, |ui| self.palette(ui));
+        egui::Panel::right("settings-bar")
+            .exact_size(34.0)
+            .resizable(false)
+            .frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(4, 6)))
+            .show(ui, |ui| self.right_toolbar(ui));
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::same(2)))
             .show(ui, |ui| {
@@ -1777,14 +1953,23 @@ impl WaveStormApp {
     /// clickable messages chip.
     fn glass_chrome(&mut self, ui: &mut Ui, ctx: &egui::Context, t: &Tokens) -> Vec<CanvasAction> {
         glass::backdrop(&ctx.layer_painter(egui::LayerId::background()), ctx.content_rect());
-        let island = |l: i8, r: i8, top: i8, b: i8| egui::Frame::NONE.inner_margin(egui::Margin { left: l, right: r, top, bottom: b });
+        let island = |l: i8, r: i8, top: i8, b: i8| {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: l, right: r, top, bottom: b })
+        };
         egui::Panel::top("glass-header").exact_size(56.0).frame(island(8, 8, 8, 4)).show(ui, |ui| {
             let rect = ui.max_rect();
             glass::surface(ui.painter(), rect, 16.0, glass::Surface::Rail, t);
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(12.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(rect.shrink2(vec2(12.0, 0.0)))
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            );
             self.glass_header(&mut child);
         });
-        egui::Panel::bottom("glass-status").exact_size(26.0).frame(island(16, 16, 0, 4)).show(ui, |ui| self.glass_status(ui));
+        egui::Panel::bottom("glass-status")
+            .exact_size(26.0)
+            .frame(island(16, 16, 0, 4))
+            .show(ui, |ui| self.glass_status(ui));
         egui::Panel::left("glass-palette").exact_size(86.0).resizable(false).frame(island(8, 4, 4, 4)).show(ui, |ui| {
             let rect = ui.max_rect();
             glass::surface(ui.painter(), rect, 16.0, glass::Surface::Rail, t);
@@ -1793,32 +1978,48 @@ impl WaveStormApp {
             child.add_space(2.0);
             self.palette(&mut child);
         });
-        egui::Panel::right("glass-settings").exact_size(58.0).resizable(false).frame(island(4, 8, 4, 4)).show(ui, |ui| {
-            let rect = ui.max_rect();
-            glass::surface(ui.painter(), rect, 16.0, glass::Surface::Rail, t);
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(0.0, 10.0))).layout(egui::Layout::top_down(egui::Align::Center)));
-            child.spacing_mut().item_spacing.y = 4.0;
-            for c in [Cmd::Units, Cmd::LandUse, Cmd::Calculation, Cmd::Diagram, Cmd::General, Cmd::Idf] {
-                self.cmd_button(&mut child, c);
-            }
-            let y = child.cursor().min.y + 6.0;
-            glass::groove(child.painter(), pos2(rect.min.x + 10.0, y), pos2(rect.max.x - 10.0, y));
-            child.add_space(12.0);
-            for c in [Cmd::Notes, Cmd::Messages, Cmd::Print] {
-                self.cmd_button(&mut child, c);
-            }
-        });
+        egui::Panel::right("glass-settings").exact_size(58.0).resizable(false).frame(island(4, 8, 4, 4)).show(
+            ui,
+            |ui| {
+                let rect = ui.max_rect();
+                glass::surface(ui.painter(), rect, 16.0, glass::Surface::Rail, t);
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect.shrink2(vec2(0.0, 10.0)))
+                        .layout(egui::Layout::top_down(egui::Align::Center)),
+                );
+                child.spacing_mut().item_spacing.y = 4.0;
+                for c in [Cmd::Units, Cmd::LandUse, Cmd::Calculation, Cmd::Diagram, Cmd::General, Cmd::Idf] {
+                    self.cmd_button(&mut child, c);
+                }
+                let y = child.cursor().min.y + 6.0;
+                glass::groove(child.painter(), pos2(rect.min.x + 10.0, y), pos2(rect.max.x - 10.0, y));
+                child.add_space(12.0);
+                for c in [Cmd::Notes, Cmd::Messages, Cmd::Print] {
+                    self.cmd_button(&mut child, c);
+                }
+            },
+        );
         egui::CentralPanel::default()
             .frame(island(4, 4, 4, 4))
             .show(ui, |ui| {
                 let full = ui.available_rect_before_wrap();
                 let sb = 8.0;
-                let vbar = Rect::from_min_max(pos2(full.max.x - sb - 3.0, full.min.y + 14.0), pos2(full.max.x - 3.0, full.max.y - sb - 6.0));
-                let hbar = Rect::from_min_max(pos2(full.min.x + 14.0, full.max.y - sb - 3.0), pos2(full.max.x - sb - 6.0, full.max.y - 3.0));
+                let vbar = Rect::from_min_max(
+                    pos2(full.max.x - sb - 3.0, full.min.y + 14.0),
+                    pos2(full.max.x - 3.0, full.max.y - sb - 6.0),
+                );
+                let hbar = Rect::from_min_max(
+                    pos2(full.min.x + 14.0, full.max.y - sb - 3.0),
+                    pos2(full.max.x - sb - 6.0, full.max.y - 3.0),
+                );
                 let actions = self.canvas(ui, ctx, full, full, vbar, hbar);
                 // The diagram is a recess in the glass: inner shadow, lit lip, iridescent rim.
                 glass::recess(ui.painter(), full, 16.0);
-                ui.painter().add(egui::Shape::Path(egui::epaint::PathShape::closed_line(glass::rounded(full.expand(1.0), 17.0), glass::iris_stroke(1.0, 0.3))));
+                ui.painter().add(egui::Shape::Path(egui::epaint::PathShape::closed_line(
+                    glass::rounded(full.expand(1.0), 17.0),
+                    glass::iris_stroke(1.0, 0.3),
+                )));
                 self.glass_dock(ui, full);
                 actions
             })
@@ -1836,9 +2037,13 @@ impl WaveStormApp {
         // The menu bar takes all the width it is given, so give it just its buttons' width.
         let font = egui::TextStyle::Button.resolve(ui.style());
         let pad = 4.0 + ui.spacing().item_spacing.x;
-        let menus_w: f32 = ["Project", "Diagram", "Node", "View", "Print", "Settings", "Help"].iter().map(|s| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), font.clone(), t.text).size().x) + pad).sum();
+        let menus_w: f32 = ["Project", "Diagram", "Node", "View", "Print", "Settings", "Help"]
+            .iter()
+            .map(|s| ui.fonts_mut(|f| f.layout_no_wrap(s.to_string(), font.clone(), t.text).size().x) + pad)
+            .sum();
         let (r, _) = ui.allocate_exact_size(vec2(menus_w, 28.0), Sense::hover());
-        let mut menus = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let mut menus =
+            ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
         self.menu_bar(&mut menus);
         let (r, _) = ui.allocate_exact_size(vec2(14.0, 28.0), Sense::hover());
         glass::groove(ui.painter(), pos2(r.center().x, r.min.y + 4.0), pos2(r.center().x, r.max.y - 4.0));
@@ -1858,7 +2063,16 @@ impl WaveStormApp {
     fn glass_dock(&mut self, ui: &mut Ui, canvas: Rect) {
         let t = Tokens::get(ui.ctx());
         let groups: [&[Cmd]; 4] = [
-            &[Cmd::Select, Cmd::Trace, Cmd::SubArea, Cmd::Measure, Cmd::TcPath, Cmd::Calibrate, Cmd::Underlay, Cmd::PlaceUnderlay],
+            &[
+                Cmd::Select,
+                Cmd::Trace,
+                Cmd::SubArea,
+                Cmd::Measure,
+                Cmd::TcPath,
+                Cmd::Calibrate,
+                Cmd::Underlay,
+                Cmd::PlaceUnderlay,
+            ],
             &[Cmd::ZoomOut, Cmd::ZoomIn, Cmd::ZoomAll, Cmd::ZoomSelected],
             &[Cmd::Edit, Cmd::Delete],
             &[Cmd::Report, Cmd::Compare, Cmd::ProjectReports, Cmd::PrintDiagram],
@@ -1866,9 +2080,16 @@ impl WaveStormApp {
         let buttons: usize = groups.iter().map(|g| g.len()).sum();
         let zoom_w = 46.0;
         let width = buttons as f32 * 34.0 + (groups.len() - 1) as f32 * 15.0 + zoom_w + 16.0;
-        let rect = Rect::from_center_size(pos2(canvas.center().x, canvas.max.y - 34.0), vec2(width.min(canvas.width() - 24.0), 44.0));
+        let rect = Rect::from_center_size(
+            pos2(canvas.center().x, canvas.max.y - 34.0),
+            vec2(width.min(canvas.width() - 24.0), 44.0),
+        );
         glass::surface(ui.painter(), rect, 18.0, glass::Surface::Float, &t);
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(8.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect.shrink2(vec2(8.0, 0.0)))
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
         child.spacing_mut().item_spacing.x = 4.0;
         for (i, group) in groups.into_iter().enumerate() {
             if i > 0 {
@@ -1881,7 +2102,13 @@ impl WaveStormApp {
                     let zoom = self.doc().view.zoom;
                     let (r, resp) = child.allocate_exact_size(vec2(zoom_w, 24.0), Sense::click());
                     glass::well(child.painter(), r, 8.0, if resp.hovered() { t.light } else { t.field });
-                    child.painter().text(r.center(), Align2::CENTER_CENTER, format!("{:.0}%", zoom * 100.0), FontId::proportional(12.0), t.text_dim);
+                    child.painter().text(
+                        r.center(),
+                        Align2::CENTER_CENTER,
+                        format!("{:.0}%", zoom * 100.0),
+                        FontId::proportional(12.0),
+                        t.text_dim,
+                    );
                     if resp.on_hover_text("Zoom to 100%").clicked() {
                         let factor = 1.0 / zoom.max(1e-3);
                         self.zoom(factor);
@@ -1929,7 +2156,13 @@ impl WaveStormApp {
                 let w = ui.fonts_mut(|f| f.layout_no_wrap(text.clone(), font.clone(), t.text).size().x) + 28.0;
                 let (r, resp) = ui.allocate_exact_size(vec2(w, 20.0), Sense::click());
                 let p = ui.painter();
-                glass::surface(p, r, 10.0, if resp.hovered() { glass::Surface::Hover } else { glass::Surface::Key }, &t);
+                glass::surface(
+                    p,
+                    r,
+                    10.0,
+                    if resp.hovered() { glass::Surface::Hover } else { glass::Surface::Key },
+                    &t,
+                );
                 glass::glow(p, pos2(r.min.x + 11.0, r.center().y), 8.0, glass::alpha(dot, 0.5));
                 glass::bead(p, pos2(r.min.x + 11.0, r.center().y), 3.5, dot);
                 p.text(pos2(r.min.x + 20.0, r.center().y), Align2::LEFT_CENTER, text, font.clone(), t.text);
@@ -2010,7 +2243,11 @@ impl WaveStormApp {
         if t.glass {
             glass::backdrop(&ctx.layer_painter(egui::LayerId::background()), ctx.content_rect());
         }
-        let bar = if t.glass { egui::Frame::NONE.inner_margin(egui::Margin { left: 20, right: 20, top: 14, bottom: 8 }) } else { egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 1)) };
+        let bar = if t.glass {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 20, right: 20, top: 14, bottom: 8 })
+        } else {
+            egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(2, 1))
+        };
         egui::Panel::top("start-menu").frame(bar).show(ui, |ui| {
             if t.glass {
                 glass::surface(ui.painter(), ui.max_rect().expand2(vec2(12.0, 6.0)), 16.0, glass::Surface::Rail, t);
@@ -2033,7 +2270,11 @@ impl WaveStormApp {
                 ui.menu_button("View", |ui| self.theme_menu(ui));
             });
         });
-        let status = if t.glass { egui::Frame::NONE.inner_margin(egui::Margin::symmetric(16, 4)) } else { egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(6, 3)) };
+        let status = if t.glass {
+            egui::Frame::NONE.inner_margin(egui::Margin::symmetric(16, 4))
+        } else {
+            egui::Frame::NONE.fill(t.face).inner_margin(egui::Margin::symmetric(6, 3))
+        };
         egui::Panel::bottom("start-status").frame(status).show(ui, |ui| {
             ui.label(egui::RichText::new(&self.status).size(12.0).color(t.text_dim));
         });
@@ -2042,14 +2283,17 @@ impl WaveStormApp {
             let width = 560.0f32.min(ui.available_width() - 32.0);
             let recent = platform::recent::list();
             let height = 330.0 + 26.0 * recent.len().clamp(1, 8) as f32;
-            let card = Rect::from_center_size(ui.max_rect().center(), vec2(width, height.min(ui.available_height() - 24.0)));
+            let card =
+                Rect::from_center_size(ui.max_rect().center(), vec2(width, height.min(ui.available_height() - 24.0)));
             if t.glass {
                 glass::surface(ui.painter(), card, 18.0, glass::Surface::Float, t);
             } else {
                 ui.painter().rect_filled(card, t.radius as f32, t.face);
                 widgets::bevel(ui.painter(), card, true, t);
             }
-            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(card.shrink(24.0)).layout(egui::Layout::top_down(egui::Align::Center)));
+            let mut inner = ui.new_child(
+                egui::UiBuilder::new().max_rect(card.shrink(24.0)).layout(egui::Layout::top_down(egui::Align::Center)),
+            );
             logo::show(&mut inner, 360.0);
             inner.add_space(8.0);
             inner.label(egui::RichText::new("No project is open").size(16.0).color(t.text));
@@ -2071,10 +2315,19 @@ impl WaveStormApp {
             inner.label(egui::RichText::new("Recent projects").strong().color(t.text));
             inner.add_space(4.0);
             if recent.is_empty() {
-                inner.label(egui::RichText::new(if cfg!(target_arch = "wasm32") { "Projects you open or download appear here." } else { "Projects you open or save appear here." }).color(t.text_dim));
+                inner.label(
+                    egui::RichText::new(if cfg!(target_arch = "wasm32") {
+                        "Projects you open or download appear here."
+                    } else {
+                        "Projects you open or save appear here."
+                    })
+                    .color(t.text_dim),
+                );
             }
             for e in recent.iter().take(8) {
-                let resp = inner.add(egui::Button::new(egui::RichText::new(e.label()).color(t.text)).frame(false)).on_hover_text("Open this project");
+                let resp = inner
+                    .add(egui::Button::new(egui::RichText::new(e.label()).color(t.text)).frame(false))
+                    .on_hover_text("Open this project");
                 if resp.clicked() {
                     self.open_recent(e);
                 }
@@ -2195,7 +2448,9 @@ impl Cmd {
             Cmd::Trace => "Trace a subcatchment outline",
             Cmd::Measure => "Measure length",
             Cmd::TcPath => "Draw the selected subcatchment's Tc flow path (segment lengths are measured from it)",
-            Cmd::SubArea => "Draw a sub-area of different cover inside the selected subcatchment's outline (the rest is the remainder)",
+            Cmd::SubArea => {
+                "Draw a sub-area of different cover inside the selected subcatchment's outline (the rest is the remainder)"
+            }
             Cmd::PlaceUnderlay => "Move or resize the background (drawings follow it)",
             Cmd::Undo => "Undo",
             Cmd::Redo => "Redo",
@@ -2209,7 +2464,8 @@ fn separator(ui: &mut Ui) {
     let x = r.center().x;
     ui.painter().line_segment([pos2(x, r.min.y + 2.0), pos2(x, r.max.y - 2.0)], Stroke::new(1.0, t.shadow));
     if t.bevel {
-        ui.painter().line_segment([pos2(x + 1.0, r.min.y + 2.0), pos2(x + 1.0, r.max.y - 2.0)], Stroke::new(1.0, t.light));
+        ui.painter()
+            .line_segment([pos2(x + 1.0, r.min.y + 2.0), pos2(x + 1.0, r.max.y - 2.0)], Stroke::new(1.0, t.light));
     }
 }
 
@@ -2222,13 +2478,15 @@ pub fn project_from_bytes(name: &str, bytes: Vec<u8>) -> Result<(Project, bool, 
         let (p, w) = wavestorm_core::hcp::import_bytes(&bytes)?;
         Ok((p, true, w))
     } else {
-        let text = String::from_utf8(bytes).map_err(|_| "The file is not a WAVEStorm project (not text).".to_string())?;
+        let text =
+            String::from_utf8(bytes).map_err(|_| "The file is not a WAVEStorm project (not text).".to_string())?;
         Ok((Project::from_json(&text)?, false, Vec::new()))
     }
 }
 
 fn sanitize(s: &str) -> String {
-    let s: String = s.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { '_' }).collect();
+    let s: String =
+        s.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { '_' }).collect();
     if s.trim().is_empty() { "project".into() } else { s.trim().to_string() }
 }
 
@@ -2263,7 +2521,8 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
             if let Some(Window::Edit(e)) = app.doc().windows.last_mut()
                 && let wavestorm_core::project::NodeData::Pond(p) = &e.draft.data
             {
-                e.chamber = Some(dialogs::chamber::ChamberWizard::new(p.chamber.as_ref(), p.storage.bottom().unwrap_or(100.0)));
+                e.chamber =
+                    Some(dialogs::chamber::ChamberWizard::new(p.chamber.as_ref(), p.storage.bottom().unwrap_or(100.0)));
             }
         }
         "select" => {
@@ -2292,7 +2551,16 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
             if let Some(w) = app.doc().windows.last_mut() {
                 match w {
                     Window::Report(r) => {
-                        r.tab = [reports::Tab::Summary, reports::Tab::Hydrograph, reports::Tab::Discharge, reports::Tab::Storage, reports::Tab::Events, reports::Tab::Sizing, reports::Tab::Profile, reports::Tab::Tr55][n.min(7)];
+                        r.tab = [
+                            reports::Tab::Summary,
+                            reports::Tab::Hydrograph,
+                            reports::Tab::Discharge,
+                            reports::Tab::Storage,
+                            reports::Tab::Events,
+                            reports::Tab::Sizing,
+                            reports::Tab::Profile,
+                            reports::Tab::Tr55,
+                        ][n.min(7)];
                     }
                     Window::Edit(e) => e.tab = n,
                     Window::Settings(s) => s.tab = n,
@@ -2308,9 +2576,16 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
                 && let NodeData::Pond(p) = &e.draft.data
             {
                 if let Some(name) = arg.trim().strip_prefix("new ") {
-                    if let Some((label, kind)) = dialogs::outlet::templates().into_iter().find(|(l, _)| *l == name.trim()) {
+                    if let Some((label, kind)) =
+                        dialogs::outlet::templates().into_iter().find(|(l, _)| *l == name.trim())
+                    {
                         let base = p.storage.bottom().unwrap_or(100.0);
-                        let dev = wavestorm_core::outlets::OutletDevice::new(label, base, wavestorm_core::outlets::Routing::Primary, kind);
+                        let dev = wavestorm_core::outlets::OutletDevice::new(
+                            label,
+                            base,
+                            wavestorm_core::outlets::Routing::Primary,
+                            kind,
+                        );
                         e.device_edit = Some(dialogs::outlet::DeviceEditor::new(None, dev));
                     }
                 } else if let Some(i) = arg.trim().parse::<usize>().ok().and_then(|n| n.checked_sub(1))
@@ -2343,9 +2618,17 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
         // Test hook: give a link a small multi-event manual hydrograph (label of the link).
         "linkmanual" => {
             if let Some(id) = find(app, arg) {
-                let events: Vec<String> = app.doc().project.settings.events.iter().take(3).map(|e| e.name.clone()).collect();
-                if let Some(wavestorm_core::project::NodeData::Link(l)) = app.doc().project.node_mut(id).map(|n| &mut n.data) {
-                    let col = |k: f64| (0..8).map(|i| if i % 2 == 0 { k * i as f64 } else { f64::NAN }).filter(|q| q.is_finite()).collect::<Vec<f64>>();
+                let events: Vec<String> =
+                    app.doc().project.settings.events.iter().take(3).map(|e| e.name.clone()).collect();
+                if let Some(wavestorm_core::project::NodeData::Link(l)) =
+                    app.doc().project.node_mut(id).map(|n| &mut n.data)
+                {
+                    let col = |k: f64| {
+                        (0..8)
+                            .map(|i| if i % 2 == 0 { k * i as f64 } else { f64::NAN })
+                            .filter(|q| q.is_finite())
+                            .collect::<Vec<f64>>()
+                    };
                     l.source = wavestorm_core::link::LinkSource::Manual(wavestorm_core::link::ManualHydrograph {
                         t0: 10.0,
                         dt: 0.5,
@@ -2361,7 +2644,10 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
             let st = dialogs::misc::LandUseState::new(&app.doc().project);
             app.open_window(Window::LandUse(st));
         }
-        "project-report" => app.open_window(Window::ProjectReport(reports::ProjectReportState { tab: arg.trim().parse().unwrap_or(0), ..Default::default() })),
+        "project-report" => app.open_window(Window::ProjectReport(reports::ProjectReportState {
+            tab: arg.trim().parse().unwrap_or(0),
+            ..Default::default()
+        })),
         "rainlib" => library::set_folder(arg),
         "lookup-open" => {
             let st = dialogs::storm::EventLookup::new(app.doc());
@@ -2393,13 +2679,26 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
         "idf" => {
             // Test hook: give a project without an IDF curve a sample one first.
             if app.doc().project.settings.idf.is_none() {
-                let events = vec![("2-Year".to_string(), 60.0, 10.0, 0.80), ("10-Year".to_string(), 90.0, 11.0, 0.80), ("100-Year".to_string(), 130.0, 12.0, 0.80)];
-                app.doc().project.settings.idf = Some(wavestorm_core::project::IdfCurve { name: "Sample IDF".into(), events, tables: Vec::new() });
+                let events = vec![
+                    ("2-Year".to_string(), 60.0, 10.0, 0.80),
+                    ("10-Year".to_string(), 90.0, 11.0, 0.80),
+                    ("100-Year".to_string(), 130.0, 12.0, 0.80),
+                ];
+                app.doc().project.settings.idf =
+                    Some(wavestorm_core::project::IdfCurve { name: "Sample IDF".into(), events, tables: Vec::new() });
             }
             app.open_window(Window::Storms(reports::CurveState::idf()));
         }
         "compare" => {
-            let sel: Vec<NodeId> = app.doc().project.nodes.iter().filter(|n| n.node_type() != NodeType::Text).map(|n| n.id).take(3).collect();
+            let sel: Vec<NodeId> = app
+                .doc()
+                .project
+                .nodes
+                .iter()
+                .filter(|n| n.node_type() != NodeType::Text)
+                .map(|n| n.id)
+                .take(3)
+                .collect();
             app.open_window(Window::Compare(reports::CompareState::new(sel)));
         }
         "profile" => {

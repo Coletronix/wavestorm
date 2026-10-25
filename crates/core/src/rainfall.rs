@@ -98,7 +98,13 @@ impl Storm {
     }
 
     /// Builds a storm from depth increments at an even step (no value at time zero).
-    pub fn from_increments(name: &str, comment: &str, duration: f64, increments: &[f64], smooth: bool) -> Option<Storm> {
+    pub fn from_increments(
+        name: &str,
+        comment: &str,
+        duration: f64,
+        increments: &[f64],
+        smooth: bool,
+    ) -> Option<Storm> {
         if increments.is_empty() || increments.iter().any(|v| *v < 0.0 || !v.is_finite()) {
             return None;
         }
@@ -115,7 +121,15 @@ impl Storm {
 
     /// "Chicago" storm from IDF coefficients: depth(t) = t * a / (b + t)^c for a nested event of
     /// duration t centred on `peak_time`.
-    pub fn chicago(name: &str, duration: f64, a: f64, b: f64, c: f64, peak_time: Option<f64>, step: f64) -> Option<Storm> {
+    pub fn chicago(
+        name: &str,
+        duration: f64,
+        a: f64,
+        b: f64,
+        c: f64,
+        peak_time: Option<f64>,
+        step: f64,
+    ) -> Option<Storm> {
         if duration <= 0.0 || step <= 0.0 || !(a.is_finite() && b.is_finite() && c.is_finite()) {
             return None;
         }
@@ -282,11 +296,17 @@ pub fn builtin_storms() -> Vec<Storm> {
         },
         Storm {
             tangents: TYPE_III_PEAK_TANGENTS.to_vec(),
-            ..nrcs("Type III 24-hr", "NRCS Type III, smoothed 0.1-hr mass curve (WinTR-55 v2)", &rainfall_data::TYPE_III)
+            ..nrcs(
+                "Type III 24-hr",
+                "NRCS Type III, smoothed 0.1-hr mass curve (WinTR-55 v2)",
+                &rainfall_data::TYPE_III,
+            )
         },
     ];
     for (base, hours) in [("Type II", 6.0), ("Type II", 12.0), ("Type III", 6.0), ("Type III", 12.0)] {
-        if let Some(src) = v.iter().find(|s| s.name.starts_with(base) && s.name.ends_with("24-hr") && s.name.len() == base.len() + 6) {
+        if let Some(src) =
+            v.iter().find(|s| s.name.starts_with(base) && s.name.ends_with("24-hr") && s.name.len() == base.len() + 6)
+        {
             let mut s = src.trimmed(hours);
             s.name = format!("{base} {}-hr", hours as u32);
             s.comment = format!("Central {} hours of the NRCS {base} 24-hour storm", hours as u32);
@@ -296,9 +316,21 @@ pub fn builtin_storms() -> Vec<Storm> {
     }
     for (name, table, comment) in [
         ("Type I 24-hr Tabular", &rainfall_data::TYPE_I, "Unsmoothed NRCS Type I table, for direct TR-20 comparisons"),
-        ("Type IA 24-hr Tabular", &rainfall_data::TYPE_IA, "Unsmoothed NRCS Type IA table, for direct TR-20 comparisons"),
-        ("Type II 24-hr Tabular", &rainfall_data::TYPE_II, "Unsmoothed NRCS Type II table, for direct TR-20 comparisons"),
-        ("Type III 24-hr Tabular", &rainfall_data::TYPE_III, "Unsmoothed NRCS Type III table, for direct TR-20 comparisons"),
+        (
+            "Type IA 24-hr Tabular",
+            &rainfall_data::TYPE_IA,
+            "Unsmoothed NRCS Type IA table, for direct TR-20 comparisons",
+        ),
+        (
+            "Type II 24-hr Tabular",
+            &rainfall_data::TYPE_II,
+            "Unsmoothed NRCS Type II table, for direct TR-20 comparisons",
+        ),
+        (
+            "Type III 24-hr Tabular",
+            &rainfall_data::TYPE_III,
+            "Unsmoothed NRCS Type III table, for direct TR-20 comparisons",
+        ),
     ] {
         let mut s = nrcs(name, comment, table);
         s.smooth = false;

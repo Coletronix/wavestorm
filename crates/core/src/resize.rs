@@ -53,12 +53,19 @@ pub struct ResizeSettings {
 
 impl Default for ResizeSettings {
     fn default() -> Self {
-        ResizeSettings { criterion: ResizeCriterion::Crown, sizes: STANDARD_INCHES.iter().map(|d| d / 12.0).collect(), allow_smaller: true }
+        ResizeSettings {
+            criterion: ResizeCriterion::Crown,
+            sizes: STANDARD_INCHES.iter().map(|d| d / 12.0).collect(),
+            allow_smaller: true,
+        }
     }
 }
 
 /// Common nominal diameters of round storm-drain pipe (inches).
-pub const STANDARD_INCHES: [f64; 24] = [12.0, 15.0, 18.0, 21.0, 24.0, 27.0, 30.0, 33.0, 36.0, 42.0, 48.0, 54.0, 60.0, 66.0, 72.0, 78.0, 84.0, 90.0, 96.0, 102.0, 108.0, 114.0, 120.0, 144.0];
+pub const STANDARD_INCHES: [f64; 24] = [
+    12.0, 15.0, 18.0, 21.0, 24.0, 27.0, 30.0, 33.0, 36.0, 42.0, 48.0, 54.0, 60.0, 66.0, 72.0, 78.0, 84.0, 90.0, 96.0,
+    102.0, 108.0, 114.0, 120.0, 144.0,
+];
 
 /// Whether a reach can be resized (round pipe).
 pub fn reach_resizable(section: &Section) -> bool {
@@ -128,7 +135,9 @@ fn meets(project: &Project, id: NodeId, r: &Results) -> bool {
                 .iter()
                 .filter(|dev| dev.auto_size)
                 .filter_map(|dev| match dev.kind {
-                    DeviceKind::Culvert { shape: PipeShape::Round, height, outlet_invert, .. } => Some(dev.invert.max(outlet_invert) + height),
+                    DeviceKind::Culvert { shape: PipeShape::Round, height, outlet_invert, .. } => {
+                        Some(dev.invert.max(outlet_invert) + height)
+                    }
                     _ => None,
                 })
                 .reduce(f64::min);
@@ -158,12 +167,14 @@ pub fn resize(project: &mut Project) -> Vec<Message> {
         return msgs;
     }
     let Some(event) = project.settings.event().cloned() else { return msgs };
-    let mut sizes: Vec<f64> = project.settings.resize.sizes.iter().copied().filter(|d| d.is_finite() && *d > 0.0).collect();
+    let mut sizes: Vec<f64> =
+        project.settings.resize.sizes.iter().copied().filter(|d| d.is_finite() && *d > 0.0).collect();
     sizes.sort_by(f64::total_cmp);
     sizes.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
     for id in targets {
         let Some(d0) = current_size(project, id) else { continue };
-        let candidates: Vec<f64> = sizes.iter().copied().filter(|d| project.settings.resize.allow_smaller || *d >= d0 - 1e-9).collect();
+        let candidates: Vec<f64> =
+            sizes.iter().copied().filter(|d| project.settings.resize.allow_smaller || *d >= d0 - 1e-9).collect();
         let Some(&largest) = candidates.last() else { continue };
         let mut trial = project.clone();
         let mut passes = |d: f64| {
@@ -178,16 +189,30 @@ pub fn resize(project: &mut Project) -> Vec<Message> {
             if candidates.get(mid).is_some_and(|d| passes(*d)) { hi = mid } else { lo = mid + 1 }
         }
         let label = project.node(id).map(|n| n.label()).unwrap_or_default();
-        let what = if matches!(project.node(id).map(|n| &n.data), Some(NodeData::Reach(_))) { "Pipe reach" } else { "Culvert outlet" };
+        let what = if matches!(project.node(id).map(|n| &n.data), Some(NodeData::Reach(_))) {
+            "Pipe reach"
+        } else {
+            "Culvert outlet"
+        };
         let (d, ok) = match candidates.get(lo) {
             Some(d) => (*d, true),
             None => (largest, false),
         };
         set_size(project, id, d);
         if !ok {
-            msgs.push(Message::new(59, Severity::Warning, Some(id), format!("{label} {what} resized to {} (largest size, still too small)", size_text(project, d))));
+            msgs.push(Message::new(
+                59,
+                Severity::Warning,
+                Some(id),
+                format!("{label} {what} resized to {} (largest size, still too small)", size_text(project, d)),
+            ));
         } else if (d - d0).abs() > 1e-9 {
-            msgs.push(Message::new(59, Severity::Hint, Some(id), format!("{label} {what} resized to {}", size_text(project, d))));
+            msgs.push(Message::new(
+                59,
+                Severity::Hint,
+                Some(id),
+                format!("{label} {what} resized to {}", size_text(project, d)),
+            ));
         }
     }
     msgs
@@ -245,7 +270,15 @@ mod tests {
 
     /// A subcatchment draining to a pipe reach marked for sizing.
     fn pipe_project() -> Project {
-        let reach = Reach { section: Section::circular(1.0), n: 0.013, length: 300.0, inlet_invert: 103.0, outlet_invert: 100.0, auto_size: true, ..Reach::default() };
+        let reach = Reach {
+            section: Section::circular(1.0),
+            n: 0.013,
+            length: 300.0,
+            inlet_invert: 103.0,
+            outlet_invert: 100.0,
+            auto_size: true,
+            ..Reach::default()
+        };
         project_with(NodeType::Reach, NodeData::Reach(reach))
     }
 
@@ -279,10 +312,29 @@ mod tests {
 
     #[test]
     fn culvert_keeps_pond_below_crown_or_flood_level() {
-        let culvert = DeviceKind::Culvert { shape: PipeShape::Round, width: 1.0, height: 1.0, length: 50.0, outlet_invert: 99.5, n: 0.013, ke: 0.5, cc: 0.9, fill: 0.0, entrance: String::new() };
+        let culvert = DeviceKind::Culvert {
+            shape: PipeShape::Round,
+            width: 1.0,
+            height: 1.0,
+            length: 50.0,
+            outlet_invert: 99.5,
+            n: 0.013,
+            ke: 0.5,
+            cc: 0.9,
+            fill: 0.0,
+            entrance: String::new(),
+        };
         let mut dev = OutletDevice::new("Culvert", 100.0, Routing::Primary, culvert);
         dev.auto_size = true;
-        let volume = StorageVolume::new("Basin", 100.0, VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations: vec![100.0, 112.0], values: vec![0.3 * AC, 0.6 * AC] });
+        let volume = StorageVolume::new(
+            "Basin",
+            100.0,
+            VolumeShape::Custom {
+                kind: CustomKind::AreaPrismatic,
+                elevations: vec![100.0, 112.0],
+                values: vec![0.3 * AC, 0.6 * AC],
+            },
+        );
         let pond = Pond { storage: PondStorage { volumes: vec![volume] }, devices: vec![dev], ..Pond::default() };
         let mut p = project_with(NodeType::Pond, NodeData::Pond(pond));
         let id = find(&p, "1P");

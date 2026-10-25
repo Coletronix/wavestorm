@@ -33,14 +33,28 @@ enum Shape {
     Normal,
     Minimized,
     /// Filling the diagram area; `prev` is the rectangle to restore.
-    Maximized { prev: Rect },
+    Maximized {
+        prev: Rect,
+    },
     /// Restoring to `prev` this frame.
-    Restore { prev: Rect },
+    Restore {
+        prev: Rect,
+    },
 }
 
 impl<'a> Win<'a> {
     pub fn new(title: impl Into<String>) -> Self {
-        Win { title: title.into(), id: None, open: None, size: None, width: None, min: None, resizable: false, centered: false, min_max: false }
+        Win {
+            title: title.into(),
+            id: None,
+            open: None,
+            size: None,
+            width: None,
+            min: None,
+            resizable: false,
+            centered: false,
+            min_max: false,
+        }
     }
     /// Report-style window: minimize and maximize boxes beside the close box.
     pub fn min_max(mut self) -> Self {
@@ -90,14 +104,31 @@ impl<'a> Win<'a> {
         let k = (id.value() % 7) as f32;
         let default_pos = area.min + vec2(30.0 + 26.0 * k, 20.0 + 22.0 * k);
         let frame = if t.glass {
-            egui::Frame::window(&ctx.global_style()).fill(t.face).corner_radius(14).inner_margin(egui::Margin { left: 8, right: 8, top: 4, bottom: 8 }).stroke(Stroke::NONE)
+            egui::Frame::window(&ctx.global_style())
+                .fill(t.face)
+                .corner_radius(14)
+                .inner_margin(egui::Margin { left: 8, right: 8, top: 4, bottom: 8 })
+                .stroke(Stroke::NONE)
         } else {
-            egui::Frame::window(&ctx.global_style()).fill(t.face).corner_radius(t.radius).inner_margin(egui::Margin { left: 4, right: 4, top: 2, bottom: 6 }).stroke(Stroke::new(1.0, t.dark))
+            egui::Frame::window(&ctx.global_style())
+                .fill(t.face)
+                .corner_radius(t.radius)
+                .inner_margin(egui::Margin { left: 4, right: 4, top: 2, bottom: 6 })
+                .stroke(Stroke::new(1.0, t.dark))
         };
         let shape_id = id.with("shape");
-        let shape = if self.min_max { ctx.data(|d| d.get_temp::<Shape>(shape_id)).unwrap_or(Shape::Normal) } else { Shape::Normal };
+        let shape = if self.min_max {
+            ctx.data(|d| d.get_temp::<Shape>(shape_id)).unwrap_or(Shape::Normal)
+        } else {
+            Shape::Normal
+        };
         let minimized = shape == Shape::Minimized;
-        let mut w = egui::Window::new(self.title.clone()).id(id).title_bar(false).frame(frame).resizable(self.resizable && !minimized).constrain_to(area.expand(2.0));
+        let mut w = egui::Window::new(self.title.clone())
+            .id(id)
+            .title_bar(false)
+            .frame(frame)
+            .resizable(self.resizable && !minimized)
+            .constrain_to(area.expand(2.0));
         w = if self.centered { w.anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)) } else { w.default_pos(default_pos) };
         if let Some(s) = self.size {
             w = w.default_size(s);
@@ -132,11 +163,15 @@ impl<'a> Win<'a> {
             let p = ctx.layer_painter(r.response.layer_id);
             let rect = r.response.rect;
             let sheen = Rect::from_min_size(rect.min, vec2(rect.width(), 40.0_f32.min(rect.height())));
-            let pts: Vec<egui::Pos2> = crate::glass::rounded(rect, 14.0).into_iter().map(|q| pos2(q.x, q.y.min(sheen.max.y))).collect();
+            let pts: Vec<egui::Pos2> =
+                crate::glass::rounded(rect, 14.0).into_iter().map(|q| pos2(q.x, q.y.min(sheen.max.y))).collect();
             crate::glass::gradient_fill(&p, &pts, crate::theme::white(0.05), crate::theme::white(0.0));
             crate::glass::bevel(&p, rect, 14.0, 0.4, 0.5);
             crate::glass::lip(&p, rect, 14.0, 4.0);
-            p.add(egui::Shape::Path(egui::epaint::PathShape::closed_line(crate::glass::rounded(rect, 14.0), crate::glass::iris_stroke(1.0, 0.6))));
+            p.add(egui::Shape::Path(egui::epaint::PathShape::closed_line(
+                crate::glass::rounded(rect, 14.0),
+                crate::glass::iris_stroke(1.0, 0.6),
+            )));
         }
         if self.min_max {
             let rect = r.as_ref().map(|r| r.response.rect);
@@ -171,7 +206,12 @@ struct CaptionButtons {
 }
 
 /// A caption box (close, minimize or maximize) at `center`; returns true when clicked.
-fn caption_box(ui: &mut Ui, center: egui::Pos2, key: &str, glyph: impl FnOnce(&egui::Painter, egui::Pos2, Stroke)) -> bool {
+fn caption_box(
+    ui: &mut Ui,
+    center: egui::Pos2,
+    key: &str,
+    glyph: impl FnOnce(&egui::Painter, egui::Pos2, Stroke),
+) -> bool {
     let t = Tokens::get(ui.ctx());
     let b = Rect::from_center_size(center, vec2(16.0, 14.0));
     let resp = ui.interact(b, ui.id().with(key), Sense::click());
@@ -186,7 +226,17 @@ fn caption_box(ui: &mut Ui, center: egui::Pos2, key: &str, glyph: impl FnOnce(&e
         return resp.clicked();
     }
     let hot = !t.bevel && resp.hovered();
-    p.rect_filled(b, 0.0, if hot && key == "close" { egui::Color32::from_rgb(220, 60, 60) } else if hot { t.light } else { t.face });
+    p.rect_filled(
+        b,
+        0.0,
+        if hot && key == "close" {
+            egui::Color32::from_rgb(220, 60, 60)
+        } else if hot {
+            t.light
+        } else {
+            t.face
+        },
+    );
     if t.bevel {
         crate::widgets::bevel(p, b, !resp.is_pointer_button_down_on(), &t);
     }
@@ -206,7 +256,13 @@ fn caption(ui: &mut Ui, title: &str, closable: bool, shape: Option<Shape>) -> Ca
         let c = rect.left_center() + vec2(8.0, 0.0);
         crate::glass::glow(p, c, 10.0, crate::glass::alpha(crate::glass::IRIS[2], 0.5));
         crate::glass::bead(p, c, 4.5, crate::glass::IRIS[0]);
-        p.with_clip_rect(rect.shrink2(vec2(22.0, 0.0))).text(pos2(rect.min.x + 22.0, rect.center().y), Align2::LEFT_CENTER, title, FontId::proportional(13.5), t.text);
+        p.with_clip_rect(rect.shrink2(vec2(22.0, 0.0))).text(
+            pos2(rect.min.x + 22.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            title,
+            FontId::proportional(13.5),
+            t.text,
+        );
         crate::glass::groove(p, rect.left_bottom() + vec2(0.0, 2.0), rect.right_bottom() + vec2(0.0, 2.0));
     } else {
         if t.bevel {
@@ -218,9 +274,19 @@ fn caption(ui: &mut Ui, title: &str, closable: bool, shape: Option<Shape>) -> Ca
         // A small water-drop emblem.
         let c = rect.left_center() + vec2(10.0, 0.0);
         p.circle_filled(c + vec2(0.0, 2.0), 4.5, egui::Color32::from_rgb(90, 170, 240));
-        p.add(egui::Shape::convex_polygon(vec![c + vec2(0.0, -6.0), c + vec2(4.2, 0.5), c + vec2(-4.2, 0.5)], egui::Color32::from_rgb(90, 170, 240), Stroke::NONE));
+        p.add(egui::Shape::convex_polygon(
+            vec![c + vec2(0.0, -6.0), c + vec2(4.2, 0.5), c + vec2(-4.2, 0.5)],
+            egui::Color32::from_rgb(90, 170, 240),
+            Stroke::NONE,
+        ));
         let text_color = if t.bevel { t.caption_text } else { t.text };
-        p.with_clip_rect(rect.shrink2(vec2(22.0, 0.0))).text(pos2(rect.min.x + 22.0, rect.center().y), Align2::LEFT_CENTER, title, FontId::proportional(13.0), text_color);
+        p.with_clip_rect(rect.shrink2(vec2(22.0, 0.0))).text(
+            pos2(rect.min.x + 22.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            title,
+            FontId::proportional(13.0),
+            text_color,
+        );
     }
     let mut out = CaptionButtons::default();
     if !closable {

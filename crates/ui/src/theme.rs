@@ -260,7 +260,8 @@ impl Tokens {
     }
 
     pub fn get(ctx: &Context) -> Tokens {
-        ctx.data(|d| d.get_temp::<Tokens>(egui::Id::new("wavestorm-tokens"))).unwrap_or_else(|| Tokens::for_kind(ThemeKind::Classic))
+        ctx.data(|d| d.get_temp::<Tokens>(egui::Id::new("wavestorm-tokens")))
+            .unwrap_or_else(|| Tokens::for_kind(ThemeKind::Classic))
     }
 
     /// Installs the tokens and the matching egui visuals.
@@ -279,7 +280,12 @@ impl Tokens {
         v.hyperlink_color = self.select;
         v.window_corner_radius = r;
         v.menu_corner_radius = r;
-        v.window_shadow = egui::epaint::Shadow { offset: [2, 2], blur: if self.bevel { 0 } else { 8 }, spread: 0, color: Color32::from_black_alpha(60) };
+        v.window_shadow = egui::epaint::Shadow {
+            offset: [2, 2],
+            blur: if self.bevel { 0 } else { 8 },
+            spread: 0,
+            color: Color32::from_black_alpha(60),
+        };
         v.popup_shadow = v.window_shadow;
         v.window_stroke = Stroke::new(1.0, self.dark);
         v.striped = false;
@@ -340,8 +346,10 @@ impl Tokens {
     fn glass_visuals(&self, v: &mut Visuals) {
         v.window_corner_radius = CornerRadius::same(14);
         v.menu_corner_radius = CornerRadius::same(10);
-        v.window_shadow = egui::epaint::Shadow { offset: [0, 14], blur: 36, spread: 0, color: Color32::from_black_alpha(150) };
-        v.popup_shadow = egui::epaint::Shadow { offset: [0, 8], blur: 22, spread: 0, color: Color32::from_black_alpha(140) };
+        v.window_shadow =
+            egui::epaint::Shadow { offset: [0, 14], blur: 36, spread: 0, color: Color32::from_black_alpha(150) };
+        v.popup_shadow =
+            egui::epaint::Shadow { offset: [0, 8], blur: 22, spread: 0, color: Color32::from_black_alpha(140) };
         v.window_stroke = Stroke::new(1.0, white(0.12));
         v.hyperlink_color = Color32::from_rgb(125, 211, 252);
         v.selection.bg_fill = rgba(124, 92, 255, 0.55);

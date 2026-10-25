@@ -11,17 +11,30 @@ fn main() {
             log::error!("no document");
             return;
         };
-        let Some(canvas) = document.get_element_by_id("wavestorm_canvas").and_then(|e| e.dyn_into::<web_sys::HtmlCanvasElement>().ok()) else {
+        let Some(canvas) = document
+            .get_element_by_id("wavestorm_canvas")
+            .and_then(|e| e.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+        else {
             log::error!("missing <canvas id=\"wavestorm_canvas\">");
             return;
         };
         // One queued frame instead of the default two, so the UI keeps up with the pointer.
-        let options = eframe::WebOptions { wgpu_options: eframe::WgpuConfiguration { surface: eframe::SurfaceConfig::LOW_LATENCY, ..Default::default() }, ..Default::default() };
-        let result = eframe::WebRunner::new().start(canvas, options, Box::new(|_cc| Ok(Box::new(wavestorm_ui::WaveStormApp::new())))).await;
+        let options = eframe::WebOptions {
+            wgpu_options: eframe::WgpuConfiguration {
+                surface: eframe::SurfaceConfig::LOW_LATENCY,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let result = eframe::WebRunner::new()
+            .start(canvas, options, Box::new(|_cc| Ok(Box::new(wavestorm_ui::WaveStormApp::new()))))
+            .await;
         if let Some(el) = document.get_element_by_id("wavestorm_loading") {
             match result {
                 Ok(()) => el.remove(),
-                Err(e) => el.set_inner_html(&format!("<p>WAVEStorm failed to start: {e:?}</p><p>A browser with WebGPU or WebGL2 is required.</p>")),
+                Err(e) => el.set_inner_html(&format!(
+                    "<p>WAVEStorm failed to start: {e:?}</p><p>A browser with WebGPU or WebGL2 is required.</p>"
+                )),
             }
         }
     });

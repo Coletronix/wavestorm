@@ -135,7 +135,14 @@ pub struct PeakWorksheet {
 
 /// TR-55 graphical peak discharge: qp = qu·Am·Q·Fp. `area_sf` in sq ft, `tc` in hours,
 /// `rainfall` (24-hour) in inches.
-pub fn graphical_peak(area_sf: f64, cn: f64, tc: f64, dist: Distribution, rainfall: f64, pond_pct: f64) -> PeakWorksheet {
+pub fn graphical_peak(
+    area_sf: f64,
+    cn: f64,
+    tc: f64,
+    dist: Distribution,
+    rainfall: f64,
+    pond_pct: f64,
+) -> PeakWorksheet {
     let area_sq_mi = area_sf / 27_878_400.0;
     let s = if cn > 0.0 { 1000.0 / cn - 10.0 } else { f64::INFINITY };
     let ia = 0.2 * s;
@@ -144,7 +151,21 @@ pub fn graphical_peak(area_sf: f64, cn: f64, tc: f64, dist: Distribution, rainfa
     let runoff = runoff_depth(rainfall, cn, 0.2);
     let fp = pond_factor(pond_pct);
     let out_of_range = !(0.1..=10.0).contains(&tc) || !(0.1..=0.5).contains(&ia_p);
-    PeakWorksheet { area_sq_mi, cn, tc, dist, pond_pct, rainfall, ia, ia_p, qu, runoff, fp, qp: qu * area_sq_mi * runoff * fp, out_of_range }
+    PeakWorksheet {
+        area_sq_mi,
+        cn,
+        tc,
+        dist,
+        pond_pct,
+        rainfall,
+        ia,
+        ia_p,
+        qu,
+        runoff,
+        fp,
+        qp: qu * area_sq_mi * runoff * fp,
+        out_of_range,
+    }
 }
 
 impl PeakWorksheet {
@@ -166,7 +187,10 @@ impl PeakWorksheet {
             format!("Peak discharge, qp = qu Am Q Fp = {:.2} cfs", self.qp),
         ];
         if self.out_of_range {
-            v.push("Note: Tc or Ia/P is outside the method's range (Tc 0.1-10 hr, Ia/P 0.1-0.5) and was limited to it.".into());
+            v.push(
+                "Note: Tc or Ia/P is outside the method's range (Tc 0.1-10 hr, Ia/P 0.1-0.5) and was limited to it."
+                    .into(),
+            );
         }
         v
     }
@@ -182,8 +206,15 @@ pub fn worksheet_report(area_sf: f64, cn: f64, tc: f64, events: &[crate::rainfal
     out.push(format!("Time of concentration, Tc = {tc:.2} hr"));
     out.push("Pond and swamp areas = 0.0 % of Am (Fp = 1.00)".into());
     out.push(String::new());
-    let sheets: Vec<(String, Option<PeakWorksheet>)> =
-        events.iter().map(|e| (e.name.clone(), Distribution::from_storm(&e.storm).map(|d| graphical_peak(area_sf, cn, tc, d, e.depth, 0.0)))).collect();
+    let sheets: Vec<(String, Option<PeakWorksheet>)> = events
+        .iter()
+        .map(|e| {
+            (
+                e.name.clone(),
+                Distribution::from_storm(&e.storm).map(|d| graphical_peak(area_sf, cn, tc, d, e.depth, 0.0)),
+            )
+        })
+        .collect();
     let row = |label: &str, f: &dyn Fn(&PeakWorksheet) -> String| {
         let mut s = format!("{label:<34}");
         for (_, w) in &sheets {
@@ -206,12 +237,17 @@ pub fn worksheet_report(area_sf: f64, cn: f64, tc: f64, events: &[crate::rainfal
     out.push(row("Peak discharge, qp, cfs", &|w| format!("{:.2}", w.qp)));
     out.push(String::new());
     if sheets.iter().any(|(_, w)| w.is_some_and(|w| w.out_of_range)) {
-        out.push("Note: Tc or Ia/P is outside the method's range (Tc 0.1-10 hr, Ia/P 0.1-0.5) and was limited to it.".into());
+        out.push(
+            "Note: Tc or Ia/P is outside the method's range (Tc 0.1-10 hr, Ia/P 0.1-0.5) and was limited to it.".into(),
+        );
     }
     if sheets.iter().any(|(_, w)| w.is_none()) {
         out.push("n/a: the graphical method applies only to the NRCS 24-hour type I, IA, II and III storms.".into());
     }
-    out.push("The graphical method is a check on peak discharge only; the hydrographs use the unit-hydrograph method.".into());
+    out.push(
+        "The graphical method is a check on peak discharge only; the hydrographs use the unit-hydrograph method."
+            .into(),
+    );
     out
 }
 

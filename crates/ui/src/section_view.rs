@@ -16,7 +16,15 @@ pub fn drawable(section: &Section) -> bool {
 
 /// Draws `section` fitted into `rect` (aspect ratio kept). `depth` is the water depth above the
 /// invert (None or zero draws a dry section). `stroke_w` is the outline width.
-pub fn draw(painter: &Painter, rect: Rect, section: &Section, depth: Option<f64>, ink: Color32, water: Color32, stroke_w: f32) {
+pub fn draw(
+    painter: &Painter,
+    rect: Rect,
+    section: &Section,
+    depth: Option<f64>,
+    ink: Color32,
+    water: Color32,
+    stroke_w: f32,
+) {
     if !drawable(section) {
         return;
     }
@@ -38,7 +46,11 @@ pub fn draw(painter: &Painter, rect: Rect, section: &Section, depth: Option<f64>
             let (mut left, mut right) = (Vec::new(), Vec::new());
             for i in 0..=n {
                 let y = full * i as f64 / n as f64;
-                let w = if i == n { section.props(y * 0.999).top_width.max(section.props(y).top_width) } else { section.props(y).top_width };
+                let w = if i == n {
+                    section.props(y * 0.999).top_width.max(section.props(y).top_width)
+                } else {
+                    section.props(y).top_width
+                };
                 left.push((-w / 2.0, y));
                 right.push((w / 2.0, y));
             }
@@ -81,7 +93,11 @@ pub fn draw(painter: &Painter, rect: Rect, section: &Section, depth: Option<f64>
                         // The segment crosses the water level.
                         let t = (wl - a.1) / (b.1 - a.1);
                         let xc = a.0 + t * (b.0 - a.0);
-                        poly = if a.1 < wl { vec![to((a.0, wl)), to((xc, wl)), to(a)] } else { vec![to((xc, wl)), to((b.0, wl)), to(b)] };
+                        poly = if a.1 < wl {
+                            vec![to((a.0, wl)), to((xc, wl)), to(a)]
+                        } else {
+                            vec![to((xc, wl)), to((b.0, wl)), to(b)]
+                        };
                     } else {
                         poly.push(to(b));
                         poly.push(to(a));

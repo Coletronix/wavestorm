@@ -80,9 +80,9 @@ impl Section {
     /// Bank-full (or pipe-full) depth.
     pub fn full_depth(&self) -> f64 {
         match self {
-            Section::Rectangular { depth, .. } | Section::Trapezoidal { depth, .. } | Section::Parabolic { depth, .. } => {
-                depth.max(0.0)
-            }
+            Section::Rectangular { depth, .. }
+            | Section::Trapezoidal { depth, .. }
+            | Section::Parabolic { depth, .. } => depth.max(0.0),
             Section::Pipe { height, fill, .. } => (height - fill).max(0.0),
             Section::AreaPerimeter { .. } => 1.0,
             Section::Custom { points } => {
@@ -92,7 +92,11 @@ impl Section {
                 (left.min(right) - min).max(0.0)
             }
             Section::Rating { points, bank_full } => {
-                if *bank_full > 0.0 { *bank_full } else { points.iter().map(|p| p.depth).fold(0.0, f64::max) }
+                if *bank_full > 0.0 {
+                    *bank_full
+                } else {
+                    points.iter().map(|p| p.depth).fold(0.0, f64::max)
+                }
             }
         }
     }
@@ -101,9 +105,11 @@ impl Section {
     pub fn props(&self, y: f64) -> SectionProps {
         let y = y.max(0.0);
         match self {
-            Section::Rectangular { width, .. } => {
-                SectionProps { area: width * y, perimeter: if y > 0.0 { width + 2.0 * y } else { 0.0 }, top_width: *width }
-            }
+            Section::Rectangular { width, .. } => SectionProps {
+                area: width * y,
+                perimeter: if y > 0.0 { width + 2.0 * y } else { 0.0 },
+                top_width: *width,
+            },
             Section::Trapezoidal { bottom, z_left, z_right, .. } => {
                 let area = y * (bottom + 0.5 * (z_left + z_right) * y);
                 let perim = if y > 0.0 {
@@ -118,7 +124,11 @@ impl Section {
             Section::AreaPerimeter { area, perimeter } => {
                 // Scales linearly with depth up to the entered values at depth 1.
                 let f = y.min(1.0);
-                SectionProps { area: area * f, perimeter: perimeter * f, top_width: if *area > 0.0 { *area } else { 0.0 } }
+                SectionProps {
+                    area: area * f,
+                    perimeter: perimeter * f,
+                    top_width: if *area > 0.0 { *area } else { 0.0 },
+                }
             }
             Section::Custom { points } => custom_props(points, y),
             Section::Rating { points, .. } => {
@@ -214,7 +224,8 @@ pub fn manning(area: f64, perimeter: f64, n: f64, s: f64) -> f64 {
 /// runs linearly from zero at zero depth; above the last row the last segment is extended
 /// (never decreasing). Rows need not be sorted.
 fn rating_lookup(points: &[RatingPoint], y: f64, value: impl Fn(&RatingPoint) -> f64) -> f64 {
-    let mut rows: Vec<(f64, f64)> = points.iter().filter(|p| p.depth.is_finite() && value(p).is_finite()).map(|p| (p.depth, value(p))).collect();
+    let mut rows: Vec<(f64, f64)> =
+        points.iter().filter(|p| p.depth.is_finite() && value(p).is_finite()).map(|p| (p.depth, value(p))).collect();
     rows.sort_by(|a, b| a.0.total_cmp(&b.0));
     if y <= 0.0 || rows.is_empty() {
         return 0.0;
@@ -222,7 +233,9 @@ fn rating_lookup(points: &[RatingPoint], y: f64, value: impl Fn(&RatingPoint) ->
     if rows[0].0 > 0.0 {
         rows.insert(0, (0.0, 0.0));
     }
-    let interp = |a: (f64, f64), b: (f64, f64), x: f64| if b.0 > a.0 { a.1 + (b.1 - a.1) * (x - a.0) / (b.0 - a.0) } else { b.1 };
+    let interp = |a: (f64, f64), b: (f64, f64), x: f64| {
+        if b.0 > a.0 { a.1 + (b.1 - a.1) * (x - a.0) / (b.0 - a.0) } else { b.1 }
+    };
     for w in rows.windows(2) {
         if y <= w[1].0 {
             return interp(w[0], w[1], y).max(0.0);
@@ -341,10 +354,13 @@ fn custom_props(points: &[XsPoint], y: f64) -> SectionProps {
 fn custom_manning_q(points: &[XsPoint], y: f64, s: f64) -> f64 {
     let Some(min) = points.iter().map(|p| p.elev).reduce(f64::min) else { return 0.0 };
     let wse = min + y;
-    points.windows(2).map(|w| {
-        let p = segment_wet(w[0], w[1], wse);
-        manning(p.area, p.perimeter, w[0].n, s)
-    }).sum()
+    points
+        .windows(2)
+        .map(|w| {
+            let p = segment_wet(w[0], w[1], wse);
+            manning(p.area, p.perimeter, w[0].n, s)
+        })
+        .sum()
 }
 
 fn segment_wet(a: XsPoint, b: XsPoint, wse: f64) -> SectionProps {
@@ -371,7 +387,10 @@ mod tests {
     fn rating_section_interpolates_and_extends() {
         // Depth, discharge, end area (a TR-20 style table, invert at 188 ft).
         let rows = [(0.0, 0.0, 0.0), (2.7, 20.071, 8.203), (5.29, 85.823, 24.671), (7.78, 247.063, 70.625)];
-        let s = Section::Rating { points: rows.iter().map(|&(depth, flow, area)| RatingPoint { depth, flow, area }).collect(), bank_full: 5.29 };
+        let s = Section::Rating {
+            points: rows.iter().map(|&(depth, flow, area)| RatingPoint { depth, flow, area }).collect(),
+            bank_full: 5.29,
+        };
         assert_eq!(s.full_depth(), 5.29);
         assert!((s.manning_q(5.29, 0.0, 0.0) - 85.823).abs() < 1e-9);
         let mid = s.manning_q(4.0, 0.03, 0.01);

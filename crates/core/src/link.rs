@@ -19,7 +19,11 @@ pub struct ManualHydrograph {
 
 impl ManualHydrograph {
     pub fn series_for(&self, event: &str) -> &[f64] {
-        self.per_event.iter().find(|(name, _)| name.eq_ignore_ascii_case(event)).map(|(_, v)| v.as_slice()).unwrap_or(&self.flows)
+        self.per_event
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(event))
+            .map(|(_, v)| v.as_slice())
+            .unwrap_or(&self.flows)
     }
 }
 
@@ -31,7 +35,12 @@ pub enum LinkSource {
     Inflows,
     Manual(ManualHydrograph),
     /// Imported time/flow table (e.g. from CSV); times in hours, flows in cfs, multi-event by name.
-    Table { name: String, times: Vec<f64>, columns: Vec<(String, Vec<f64>)>, selected: Option<String> },
+    Table {
+        name: String,
+        times: Vec<f64>,
+        columns: Vec<(String, Vec<f64>)>,
+        selected: Option<String>,
+    },
 }
 
 /// Adjustments applied to the link outflow; the remainder becomes the secondary outflow.
@@ -55,7 +64,16 @@ pub struct LinkAdjust {
 
 impl Default for LinkAdjust {
     fn default() -> Self {
-        LinkAdjust { threshold: None, limit: None, multiplier: 1.0, time_multiplier: 1.0, time_lag: 0.0, start_time: None, end_time: None, slice_volume: None }
+        LinkAdjust {
+            threshold: None,
+            limit: None,
+            multiplier: 1.0,
+            time_multiplier: 1.0,
+            time_lag: 0.0,
+            start_time: None,
+            end_time: None,
+            slice_volume: None,
+        }
     }
 }
 
@@ -68,7 +86,12 @@ pub enum LinkElevation {
     /// (time h, elevation ft) pairs.
     Table(Vec<(f64, f64)>),
     /// Mean, amplitude (half range), period (h), phase (h).
-    Tidal { mean: f64, amplitude: f64, period: f64, phase: f64 },
+    Tidal {
+        mean: f64,
+        amplitude: f64,
+        period: f64,
+        phase: f64,
+    },
 }
 
 impl LinkElevation {
@@ -224,13 +247,17 @@ pub fn parse_csv(text: &str) -> Result<CsvColumns, String> {
     }
     let time_scale = {
         let h = heads[0].to_ascii_lowercase();
-        if h.contains("min") { 1.0 / 60.0 } else if h.contains("sec") { 1.0 / 3600.0 } else { 1.0 }
+        if h.contains("min") {
+            1.0 / 60.0
+        } else if h.contains("sec") {
+            1.0 / 3600.0
+        } else {
+            1.0
+        }
     };
-    let flow_scale: Vec<f64> = heads[1..].iter().map(|h| if h.to_ascii_lowercase().contains("cms") { 35.314_666_7 } else { 1.0 }).collect();
-    let names: Vec<String> = heads[1..]
-        .iter()
-        .map(|h| h.split('(').next().unwrap_or(h).trim().to_string())
-        .collect();
+    let flow_scale: Vec<f64> =
+        heads[1..].iter().map(|h| if h.to_ascii_lowercase().contains("cms") { 35.314_666_7 } else { 1.0 }).collect();
+    let names: Vec<String> = heads[1..].iter().map(|h| h.split('(').next().unwrap_or(h).trim().to_string()).collect();
     let mut times = Vec::new();
     let mut cols: Vec<Vec<f64>> = vec![Vec::new(); names.len()];
     for line in lines {
@@ -286,7 +313,10 @@ mod tests {
             source: LinkSource::Manual(ManualHydrograph {
                 t0: 10.0,
                 dt: 0.5,
-                flows: vec![0.0, 0.0, 0.2, 0.5, 0.9, 1.4, 1.8, 1.9, 1.8, 1.6, 1.4, 1.2, 0.9, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0],
+                flows: vec![
+                    0.0, 0.0, 0.2, 0.5, 0.9, 1.4, 1.8, 1.9, 1.8, 1.6, 1.4, 1.2, 0.9, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1,
+                    0.0,
+                ],
                 per_event: vec![],
             }),
             adjust: LinkAdjust { threshold: Some(1.2), ..Default::default() },

@@ -15,10 +15,20 @@ pub struct StageTable {
 
 impl StageTable {
     /// Tabulates `storage(e)` and `outflow(e)` between `bottom` and `top` in `n` steps.
-    pub fn build(bottom: f64, top: f64, n: usize, storage: impl Fn(f64) -> f64, outflow: impl Fn(f64) -> f64) -> StageTable {
+    pub fn build(
+        bottom: f64,
+        top: f64,
+        n: usize,
+        storage: impl Fn(f64) -> f64,
+        outflow: impl Fn(f64) -> f64,
+    ) -> StageTable {
         let n = n.clamp(2, 200_000);
         let top = if top > bottom { top } else { bottom + 1.0 };
-        let mut t = StageTable { elev: Vec::with_capacity(n + 1), storage: Vec::with_capacity(n + 1), outflow: Vec::with_capacity(n + 1) };
+        let mut t = StageTable {
+            elev: Vec::with_capacity(n + 1),
+            storage: Vec::with_capacity(n + 1),
+            outflow: Vec::with_capacity(n + 1),
+        };
         let mut last_s = 0.0f64;
         let mut last_o = 0.0f64;
         for i in 0..=n {
@@ -154,7 +164,9 @@ pub fn level_pool(
         let (i1, i2) = (inflow.q[i - 1].max(0.0), inflow.q[i].max(0.0));
         let base = s + 0.5 * (i1 + i2) * dt_s - 0.5 * o * dt_s;
         // f(e2) = S(e2) + O(e2)·Δt/2 − base is increasing in e2; bracket and bisect.
-        let f = |e2: f64, outflow: &mut dyn FnMut(f64, usize, bool) -> f64| table.storage_at(e2) + 0.5 * outflow(e2, i, false).max(0.0) * dt_s - base;
+        let f = |e2: f64, outflow: &mut dyn FnMut(f64, usize, bool) -> f64| {
+            table.storage_at(e2) + 0.5 * outflow(e2, i, false).max(0.0) * dt_s - base
+        };
         let lo0 = table.bottom();
         let (mut lo, mut hi) = (lo0, e.max(lo0));
         let mut guard = 0;
@@ -167,7 +179,11 @@ pub fn level_pool(
         }
         for _ in 0..60 {
             let mid = 0.5 * (lo + hi);
-            if f(mid, outflow) < 0.0 { lo = mid } else { hi = mid }
+            if f(mid, outflow) < 0.0 {
+                lo = mid
+            } else {
+                hi = mid
+            }
             if hi - lo < 1e-7 {
                 break;
             }
@@ -291,7 +307,13 @@ pub fn detention_time(inflow: &Hydrograph, outflow: &Hydrograph, initial_storage
     } else {
         None
     };
-    DetentionTime { center_of_mass, com_in: com_in.map(|t| t * 60.0), com_out: com_out.map(|t| t * 60.0), plug_flow, plug_volume }
+    DetentionTime {
+        center_of_mass,
+        com_in: com_in.map(|t| t * 60.0),
+        com_out: com_out.map(|t| t * 60.0),
+        plug_flow,
+        plug_volume,
+    }
 }
 
 /// Pond sizing estimate: (peak outflow, storage needed) pairs from routing `inflow` through
@@ -358,11 +380,42 @@ mod tests {
         // Parabolic 10' x 2' channel, n=0.040, L=5,500', S=0.0047 '/'. Inflow tabulated at 0.5 h
         // in the reference report; outflow and storage compared where the curve is smooth.
         let tab_in = [
-            (10.0, 0.0), (11.5, 0.0), (12.0, 3.18), (12.5, 24.89), (13.0, 18.55), (13.5, 17.03), (14.0, 15.96), (14.5, 14.93),
-            (15.0, 14.17), (15.5, 13.48), (16.0, 12.97), (16.5, 12.53), (17.0, 12.19), (17.5, 11.86), (18.0, 11.52), (18.5, 11.15),
-            (19.0, 10.78), (19.5, 10.35), (20.0, 9.73), (20.5, 9.12), (21.0, 8.09), (21.5, 6.97), (22.0, 6.19), (22.5, 5.60),
-            (23.0, 5.25), (23.5, 5.04), (24.0, 4.90), (24.5, 3.74), (25.0, 2.17), (25.5, 1.32), (26.0, 0.84), (27.0, 0.39),
-            (28.0, 0.21), (30.0, 0.09), (35.0, 0.02), (40.0, 0.01),
+            (10.0, 0.0),
+            (11.5, 0.0),
+            (12.0, 3.18),
+            (12.5, 24.89),
+            (13.0, 18.55),
+            (13.5, 17.03),
+            (14.0, 15.96),
+            (14.5, 14.93),
+            (15.0, 14.17),
+            (15.5, 13.48),
+            (16.0, 12.97),
+            (16.5, 12.53),
+            (17.0, 12.19),
+            (17.5, 11.86),
+            (18.0, 11.52),
+            (18.5, 11.15),
+            (19.0, 10.78),
+            (19.5, 10.35),
+            (20.0, 9.73),
+            (20.5, 9.12),
+            (21.0, 8.09),
+            (21.5, 6.97),
+            (22.0, 6.19),
+            (22.5, 5.60),
+            (23.0, 5.25),
+            (23.5, 5.04),
+            (24.0, 4.90),
+            (24.5, 3.74),
+            (25.0, 2.17),
+            (25.5, 1.32),
+            (26.0, 0.84),
+            (27.0, 0.39),
+            (28.0, 0.21),
+            (30.0, 0.09),
+            (35.0, 0.02),
+            (40.0, 0.01),
         ];
         let coarse = |t: f64| {
             let i = tab_in.partition_point(|p| p.0 <= t).clamp(1, tab_in.len() - 1);
@@ -372,7 +425,13 @@ mod tests {
         let inflow = Hydrograph { t0: 10.0, dt: 0.1, q: (0..301).map(|i| coarse(10.0 + i as f64 * 0.1)).collect() };
         let section = Section::Parabolic { width: 10.0, depth: 2.0 };
         let (n, s, len) = (0.040, 0.0047, 5500.0);
-        let table = StageTable::build(48.0, 52.0, 4000, |e| section.props(e - 48.0).area * len, |e| section.manning_q(e - 48.0, n, s));
+        let table = StageTable::build(
+            48.0,
+            52.0,
+            4000,
+            |e| section.props(e - 48.0).area * len,
+            |e| section.manning_q(e - 48.0, n, s),
+        );
         let r = level_pool(&table, &inflow, 48.0, &mut |e, _, _| table.outflow_at(e));
         // Storage indication part: storage 34,880 cf at 16.0 h, 22,368 at 22.0 h.
         let at = |t: f64| ((t - 10.0) / 0.1).round() as usize;

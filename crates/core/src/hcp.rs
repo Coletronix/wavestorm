@@ -16,7 +16,7 @@ use crate::outlets::{self, DeviceKind, OpeningShape, OutletDevice, Plane, Routin
 use crate::project::*;
 use crate::rainfall::{DurationMode, RainEvent};
 use crate::storage::{CustomKind, StorageVolume, VolumeShape};
-use crate::tc::{TcKind, TcSegment, SHALLOW_SURFACES, SHEET_SURFACES};
+use crate::tc::{SHALLOW_SURFACES, SHEET_SURFACES, TcKind, TcSegment};
 use crate::units::UnitSystem;
 use std::collections::HashMap;
 
@@ -101,7 +101,7 @@ struct Rec {
 
 impl Rec {
     fn new(s: &RawSection) -> Rec {
-        Rec { e:s.entries.iter().map(|(k, v)| (k.clone(), v.clone(), false)).collect() }
+        Rec { e: s.entries.iter().map(|(k, v)| (k.clone(), v.clone(), false)).collect() }
     }
     fn get(&self, key: &str) -> Option<&str> {
         self.e.iter().find(|(k, _, t)| !*t && k.eq_ignore_ascii_case(key)).map(|(_, v, _)| v.as_str())
@@ -164,8 +164,9 @@ pub fn decode_bytes(bytes: &[u8]) -> String {
 
 fn cp1252_char(b: u8) -> char {
     const HIGH: [u16; 32] = [
-        0x20AC, 0x81, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8D, 0x017D, 0x8F, 0x90, 0x2018,
-        0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x9D, 0x017E, 0x0178,
+        0x20AC, 0x81, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8D,
+        0x017D, 0x8F, 0x90, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A,
+        0x0153, 0x9D, 0x017E, 0x0178,
     ];
     if (0x80..0xA0).contains(&b) {
         char::from_u32(u32::from(HIGH.get(usize::from(b - 0x80)).copied().unwrap_or(u16::from(b)))).unwrap_or('?')
@@ -257,7 +258,8 @@ pub fn import(text: &str) -> Result<(Project, Vec<String>), String> {
         };
     }
     if let Some(v) = head.take("PondMethod") {
-        project.settings.pond_method = if v.to_ascii_lowercase().contains("dyn") { PondMethod::DynStorInd } else { PondMethod::StorInd };
+        project.settings.pond_method =
+            if v.to_ascii_lowercase().contains("dyn") { PondMethod::DynStorInd } else { PondMethod::StorInd };
     }
     if let Some(v) = head.take("UH") {
         project.settings.uh = v;
@@ -302,7 +304,11 @@ pub fn import(text: &str) -> Result<(Project, Vec<String>), String> {
             if k.eq_ignore_ascii_case("Pollutants") {
                 pollutants = v.split_whitespace().map(str::to_string).collect();
             } else {
-                let vals: Vec<f64> = v.split_whitespace().filter_map(|t| t.parse::<f64>().ok()).map(|x| r10(x / MG_L_TO_LB_FT3)).collect();
+                let vals: Vec<f64> = v
+                    .split_whitespace()
+                    .filter_map(|t| t.parse::<f64>().ok())
+                    .map(|x| r10(x / MG_L_TO_LB_FT3))
+                    .collect();
                 if vals.len() != v.split_whitespace().count() {
                     warnings.push(format!("Land use \"{k}\" has non-numeric values"));
                 }
@@ -332,7 +338,8 @@ pub fn import(text: &str) -> Result<(Project, Vec<String>), String> {
             Some(st) => {
                 if (ev.duration - st.duration).abs() > 1e-6 {
                     ev.duration_mode = DurationMode::Rescale;
-                    warnings.push(format!("Event {name}: duration {} h differs from the storm's; rescaled", ev.duration));
+                    warnings
+                        .push(format!("Event {name}: duration {} h differs from the storm's; rescaled", ev.duration));
                 }
             }
             None => warnings.push(format!("Event {name}: storm \"{storm}\" is not available")),
@@ -386,7 +393,9 @@ pub fn import(text: &str) -> Result<(Project, Vec<String>), String> {
 fn split_number(raw: &str, nt: NodeType) -> String {
     let t = raw.trim();
     match t.chars().last() {
-        Some(c) if c.is_ascii_alphabetic() && c.to_ascii_uppercase().to_string() == nt.letter() => t[..t.len() - c.len_utf8()].to_string(),
+        Some(c) if c.is_ascii_alphabetic() && c.to_ascii_uppercase().to_string() == nt.letter() => {
+            t[..t.len() - c.len_utf8()].to_string()
+        }
         _ => t.to_string(),
     }
 }
@@ -411,7 +420,12 @@ fn node_type_from(type_name: Option<&str>, number: &str) -> Option<NodeType> {
     }
 }
 
-fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<String>) -> Option<(Node, Vec<String>, String)> {
+fn import_node(
+    raw: &RawNode,
+    id: NodeId,
+    p2_default: f64,
+    warnings: &mut Vec<String>,
+) -> Option<(Node, Vec<String>, String)> {
     let mut head = Rec::new(&raw.head);
     let number_raw = head.take("Number").unwrap_or_default();
     let type_name = head.take("Type");
@@ -434,7 +448,13 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
     let mut foreign: Vec<ForeignEntry> = Vec::new();
     let mut used = vec![false; raw.children.len()];
     let child_idx = |used: &mut Vec<bool>, kind: &str| -> Vec<usize> {
-        let ix: Vec<usize> = raw.children.iter().enumerate().filter(|(_, c)| c.name.eq_ignore_ascii_case(kind)).map(|(i, _)| i).collect();
+        let ix: Vec<usize> = raw
+            .children
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.name.eq_ignore_ascii_case(kind))
+            .map(|(i, _)| i)
+            .collect();
         for &i in &ix {
             if let Some(u) = used.get_mut(i) {
                 *u = true;
@@ -445,7 +465,8 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
 
     let data = match nt {
         NodeType::Subcat => {
-            let mut sc = Subcatchment { large_units: head.flag("LargeAreas").unwrap_or(true), ..Subcatchment::default() };
+            let mut sc =
+                Subcatchment { large_units: head.flag("LargeAreas").unwrap_or(true), ..Subcatchment::default() };
             sc.uh = head.take("UH");
             for (k, i) in child_idx(&mut used, "AREA").into_iter().enumerate() {
                 let Some(c) = raw.children.get(i) else { continue };
@@ -470,7 +491,10 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
                         sc.tc.push(TcSegment::new(kind, description));
                     }
                     None => {
-                        warnings.push(format!("Node {label}: Tc method {:?} is not supported; kept unchanged with no travel time", r.get("Method").unwrap_or("")));
+                        warnings.push(format!(
+                            "Node {label}: Tc method {:?} is not supported; kept unchanged with no travel time",
+                            r.get("Method").unwrap_or("")
+                        ));
                         r.keep(&mut foreign, &scope);
                         sc.tc.push(TcSegment::new(TcKind::Direct { minutes: 0.0, length: 0.0, velocity: 0.0 }, ""));
                     }
@@ -578,14 +602,20 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
                         "conic" => CustomKind::AreaConic,
                         "" | "prismatic" => CustomKind::AreaPrismatic,
                         other => {
-                            warnings.push(format!("Node {label}: storage shape \"{other}\" treated as prismatic stage data"));
+                            warnings.push(format!(
+                                "Node {label}: storage shape \"{other}\" treated as prismatic stage data"
+                            ));
                             r.e.push(("Shape".into(), shape.clone(), false));
                             CustomKind::AreaPrismatic
                         }
                     };
                     let desc = r.take("Desc").unwrap_or_default();
                     r.keep(&mut foreign, &format!("STORAGE:{vol_no}"));
-                    let vol = StorageVolume::new(&desc, 0.0, VolumeShape::Custom { kind, elevations: Vec::new(), values: Vec::new() });
+                    let vol = StorageVolume::new(
+                        &desc,
+                        0.0,
+                        VolumeShape::Custom { kind, elevations: Vec::new(), values: Vec::new() },
+                    );
                     volume = Some((vol, Vec::new(), Vec::new(), vol_no, 0));
                     vol_no += 1;
                     stage_in_vol = 0;
@@ -594,7 +624,15 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
                         *u = true;
                     }
                     if volume.is_none() {
-                        let vol = StorageVolume::new("", 0.0, VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations: Vec::new(), values: Vec::new() });
+                        let vol = StorageVolume::new(
+                            "",
+                            0.0,
+                            VolumeShape::Custom {
+                                kind: CustomKind::AreaPrismatic,
+                                elevations: Vec::new(),
+                                values: Vec::new(),
+                            },
+                        );
                         volume = Some((vol, Vec::new(), Vec::new(), vol_no, 0));
                         vol_no += 1;
                         stage_in_vol = 0;
@@ -624,10 +662,18 @@ fn import_node(raw: &RawNode, id: NodeId, p2_default: f64, warnings: &mut Vec<St
                         pond.devices.push(d);
                     }
                     None => {
-                        warnings.push(format!("Node {label}: outlet device type {:?} is not supported; kept unchanged", r.get("Type").unwrap_or("")));
+                        warnings.push(format!(
+                            "Node {label}: outlet device type {:?} is not supported; kept unchanged",
+                            r.get("Type").unwrap_or("")
+                        ));
                         let routing = r.get("Routing").and_then(parse_routing).unwrap_or_default();
                         r.keep(&mut foreign, &scope);
-                        pond.devices.push(OutletDevice::new("", 0.0, routing, DeviceKind::ConstantFlow { flow: 0.0, phase_in: 0.0 }));
+                        pond.devices.push(OutletDevice::new(
+                            "",
+                            0.0,
+                            routing,
+                            DeviceKind::ConstantFlow { flow: 0.0, phase_in: 0.0 },
+                        ));
                     }
                 }
             }
@@ -694,7 +740,8 @@ fn surface_lookup(table: &[(&str, f64)], name: &str) -> Option<f64> {
 /// Reads one `[TC]` record. Returns `None` (leaving the record untouched) for unknown methods.
 fn tc_from(r: &mut Rec, area_sf: f64, p2_default: f64) -> Option<TcKind> {
     let method = r.get("Method")?.trim().to_ascii_lowercase();
-    let known = matches!(method.as_str(), "sheet" | "shallow" | "channel" | "trap" | "parabol" | "pipe" | "lag" | "direct");
+    let known =
+        matches!(method.as_str(), "sheet" | "shallow" | "channel" | "trap" | "parabol" | "pipe" | "lag" | "direct");
     if !known {
         return None;
     }
@@ -784,7 +831,10 @@ fn device_from(r: &mut Rec) -> Option<OutletDevice> {
         "orifice" => {
             let shape = match r.num("Diam") {
                 Some(d) => OpeningShape::Circular { diameter: d },
-                None => OpeningShape::Rectangular { width: r.num("Width").unwrap_or(0.0), height: r.num("Height").unwrap_or(0.0) },
+                None => OpeningShape::Rectangular {
+                    width: r.num("Width").unwrap_or(0.0),
+                    height: r.num("Height").unwrap_or(0.0),
+                },
             };
             let plane = match r.take("Plane").unwrap_or_default().to_ascii_lowercase().as_str() {
                 "horiz" | "horizontal" => Plane::Horizontal,
@@ -801,10 +851,18 @@ fn device_from(r: &mut Rec) -> Option<OutletDevice> {
                 grate: None,
             }
         }
-        "bcrweir" => {
-            DeviceKind::BroadCrestedWeir { length: r.num("Length").unwrap_or(0.0), breadth: r.num("Breadth").unwrap_or(0.0), side_z: 0.0, rise: None }
-        }
-        _ => DeviceKind::VeeTrapWeir { notch_angle: r.num("Angle").unwrap_or(90.0), crest_length: 0.0, cv: r.num("C").unwrap_or(2.5), rise: None },
+        "bcrweir" => DeviceKind::BroadCrestedWeir {
+            length: r.num("Length").unwrap_or(0.0),
+            breadth: r.num("Breadth").unwrap_or(0.0),
+            side_z: 0.0,
+            rise: None,
+        },
+        _ => DeviceKind::VeeTrapWeir {
+            notch_angle: r.num("Angle").unwrap_or(90.0),
+            crest_length: 0.0,
+            cv: r.num("C").unwrap_or(2.5),
+            rise: None,
+        },
     };
     let mut d = OutletDevice::new(&desc, invert, routing, kind);
     d.multiplier = 1.0;
@@ -1051,10 +1109,12 @@ fn export_reach_stages(o: &mut Out, r: &Reach, f: &[ForeignEntry]) {
         Section::Pipe { shape: PipeShape::Round, fill, .. } if *fill <= 0.0 => return,
         s => {
             let full = s.full_depth();
-            (0..=10).map(|i| {
-                let d = full * f64::from(i) / 10.0;
-                (d, s.props(d).area)
-            }).collect()
+            (0..=10)
+                .map(|i| {
+                    let d = full * f64::from(i) / 10.0;
+                    (d, s.props(d).area)
+                })
+                .collect()
         }
     };
     for (k, (d, a)) in tabulated.iter().enumerate() {
@@ -1168,7 +1228,11 @@ fn export_volume(o: &mut Out, v: &StorageVolume, f: &[ForeignEntry], k: usize) {
     o.section("STORAGE");
     let scale = (v.voids_pct / 100.0) * v.multiplier;
     let (conic, table): (bool, Vec<(f64, f64)>) = match &v.shape {
-        VolumeShape::Custom { kind: kind @ (CustomKind::AreaPrismatic | CustomKind::AreaConic), elevations, values } => {
+        VolumeShape::Custom {
+            kind: kind @ (CustomKind::AreaPrismatic | CustomKind::AreaConic),
+            elevations,
+            values,
+        } => {
             (*kind == CustomKind::AreaConic, elevations.iter().copied().zip(values.iter().map(|a| a * scale)).collect())
         }
         shape => {
@@ -1520,7 +1584,16 @@ mod tests {
                 let _ = import(t);
             }
         }
-        let junk = ["", "[", "]", "[]", "=", "[NODE]\n[NODE]\n[AREA]", "[x]\nNumber=\nType=Pond\n[NODE]\nXYPos=\nOutflow=", "\u{0}\u{1}[a]=="];
+        let junk = [
+            "",
+            "[",
+            "]",
+            "[]",
+            "=",
+            "[NODE]\n[NODE]\n[AREA]",
+            "[x]\nNumber=\nType=Pond\n[NODE]\nXYPos=\nOutflow=",
+            "\u{0}\u{1}[a]==",
+        ];
         for j in junk {
             let _ = import(j);
         }
@@ -1558,7 +1631,8 @@ mod tests {
         // Linked worktrees keep the gitignored folder in the main checkout.
         let mut dir = Some(root);
         while let Some(d) = dir {
-            if let Some(main) = d.ancestors().find(|a| a.file_name().is_some_and(|n| n == ".claude")).and_then(|a| a.parent())
+            if let Some(main) =
+                d.ancestors().find(|a| a.file_name().is_some_and(|n| n == ".claude")).and_then(|a| a.parent())
                 && let Ok(b) = std::fs::read(main.join(name))
             {
                 return Some(b);
@@ -1598,7 +1672,15 @@ mod tests {
         let id = p.by_label("2R").unwrap().id;
         let nr = r.node(id).unwrap();
         let (pi, po) = (nr.peak_in(), nr.peak_out());
-        eprintln!("2R inflow {:.2} cfs @ {:.2} h, outflow {:.2} cfs @ {:.2} h, area {:.3} ac, imp {:.2}%", pi.value, pi.time, po.value, po.time, nr.inflow_area / 43560.0, 100.0 * nr.impervious_area / nr.inflow_area);
+        eprintln!(
+            "2R inflow {:.2} cfs @ {:.2} h, outflow {:.2} cfs @ {:.2} h, area {:.3} ac, imp {:.2}%",
+            pi.value,
+            pi.time,
+            po.value,
+            po.time,
+            nr.inflow_area / 43560.0,
+            100.0 * nr.impervious_area / nr.inflow_area
+        );
         // Published: inflow 20.88 cfs @ 12.23 h, outflow 19.99 cfs @ 12.30 h. Measured gaps:
         // inflow -0.4 % / +0.03 h, outflow +1.8 % (our reach attenuates 2 %, the published 4 %).
         assert!((pi.value / 20.88 - 1.0).abs() < 0.015 && (pi.time - 12.23).abs() < 0.06, "inflow {pi:?}");

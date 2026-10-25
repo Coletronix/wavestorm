@@ -214,13 +214,23 @@ impl Field {
         let mut stone = StorageVolume::new(
             &format!("{:.2}'W x {:.2}'L x {:.2}'H Field", l.base_width, l.base_length, l.height),
             self.invert,
-            VolumeShape::Prismatoid { width: l.base_width, length: l.base_length, height: l.height, z: self.side_z.max(0.0) },
+            VolumeShape::Prismatoid {
+                width: l.base_width,
+                length: l.base_length,
+                height: l.height,
+                z: self.side_z.max(0.0),
+            },
         );
         stone.voids_pct = self.voids_pct.clamp(0.0, 100.0);
         let m = &self.model;
         let inv = self.invert + base.max(0.0);
-        let (elevations, values): (Vec<f64>, Vec<f64>) = m.profile.iter().map(|(h, w)| (inv + h, w * m.length.max(0.0))).unzip();
-        let mut chambers = StorageVolume::new(&format!("{} x {} Inside #1", m.name, l.count), inv, VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations, values });
+        let (elevations, values): (Vec<f64>, Vec<f64>) =
+            m.profile.iter().map(|(h, w)| (inv + h, w * m.length.max(0.0))).unzip();
+        let mut chambers = StorageVolume::new(
+            &format!("{} x {} Inside #1", m.name, l.count),
+            inv,
+            VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations, values },
+        );
         chambers.multiplier = l.count;
         chambers.embedded_in = Some(0);
         vec![stone, chambers]
@@ -242,10 +252,27 @@ impl Field {
                 m.length,
                 m.volume()
             ),
-            format!("Overall Size= {:.1}\"W x {:.1}\"H x {:.2}'L with {:.2}' Overlap", m.outside_width * 12.0, m.outside_height * 12.0, m.overall_length, m.overlap),
+            format!(
+                "Overall Size= {:.1}\"W x {:.1}\"H x {:.2}'L with {:.2}' Overlap",
+                m.outside_width * 12.0,
+                m.outside_height * 12.0,
+                m.overall_length,
+                m.overlap
+            ),
             String::new(),
-            format!("{} Wide + {} Spacing = {} C-C", inch(m.outside_width), inch(spacing), inch(m.outside_width + spacing)),
-            format!("{} Chambers/Row x {:.2}' Long + {} End Stone x 2 = {:.2}' Base Length", self.per_row.max(1), m.length, inch(end), l.base_length),
+            format!(
+                "{} Wide + {} Spacing = {} C-C",
+                inch(m.outside_width),
+                inch(spacing),
+                inch(m.outside_width + spacing)
+            ),
+            format!(
+                "{} Chambers/Row x {:.2}' Long + {} End Stone x 2 = {:.2}' Base Length",
+                self.per_row.max(1),
+                m.length,
+                inch(end),
+                l.base_length
+            ),
             format!(
                 "{} Rows x {} Wide + {} Spacing x {} + {} Side Stone x 2 = {:.2}' Base Width",
                 self.rows.max(1),
@@ -255,7 +282,13 @@ impl Field {
                 inch(side),
                 l.base_width
             ),
-            format!("{} Base + {} Chamber Height + {} Cover = {:.2}' Field Height", inch(base), inch(m.outside_height), inch(cover), l.height),
+            format!(
+                "{} Base + {} Chamber Height + {} Cover = {:.2}' Field Height",
+                inch(base),
+                inch(m.outside_height),
+                inch(cover),
+                l.height
+            ),
             String::new(),
             format!("{} Chambers x {:.1} cf = {:.1} cf Chamber Storage", l.count, m.volume(), l.chamber_storage),
             format!(
@@ -267,7 +300,11 @@ impl Field {
                 l.stone_storage
             ),
             String::new(),
-            format!("Stone + Chamber Storage = {:.1} cf = {:.3} af", l.stone_storage + l.chamber_storage, (l.stone_storage + l.chamber_storage) / 43_560.0),
+            format!(
+                "Stone + Chamber Storage = {:.1} cf = {:.3} af",
+                l.stone_storage + l.chamber_storage,
+                (l.stone_storage + l.chamber_storage) / 43_560.0
+            ),
         ];
         if self.show_costs {
             let c = &self.costs;
@@ -276,7 +313,12 @@ impl Field {
             let mut total = l.count * c.chamber + exc_cy * c.excavation + stone_cy * c.stone;
             out.push(String::new());
             out.push(format!("{} Chambers @ $ {:.2} /ea = $ {:.2}", l.count, c.chamber, l.count * c.chamber));
-            out.push(format!("{:.1} cy Field Excavation @ $ {:.2} /cy = $ {:.2}", exc_cy, c.excavation, exc_cy * c.excavation));
+            out.push(format!(
+                "{:.1} cy Field Excavation @ $ {:.2} /cy = $ {:.2}",
+                exc_cy,
+                c.excavation,
+                exc_cy * c.excavation
+            ));
             out.push(format!("{:.1} cy Stone @ $ {:.2} /cy = $ {:.2}", stone_cy, c.stone, stone_cy * c.stone));
             for (q, d, p) in &c.extras {
                 out.push(format!("{q} {d} @ $ {p:.2} = $ {:.2}", q * p));
@@ -309,7 +351,18 @@ mod tests {
         // Rescale the profile so one chamber holds 51.6 cf (7.38 sf x 7.00').
         let k = 51.6 / m.volume();
         m.profile.iter_mut().for_each(|p| p.1 *= k);
-        let f = Field { model: m, rows: 10, per_row: 10, typical: false, row_spacing: 0.5, side_stone: 1.0, end_stone: 1.0, cover: 0.5, base: 0.5, ..Default::default() };
+        let f = Field {
+            model: m,
+            rows: 10,
+            per_row: 10,
+            typical: false,
+            row_spacing: 0.5,
+            side_stone: 1.0,
+            end_stone: 1.0,
+            cover: 0.5,
+            base: 0.5,
+            ..Default::default()
+        };
         let l = f.layout();
         assert!((l.base_length - 72.0).abs() < 1e-9);
         assert!((l.base_width - 49.83).abs() < 0.01, "{}", l.base_width);
@@ -335,7 +388,11 @@ mod tests {
 
     #[test]
     fn costs_total() {
-        let f = Field { show_costs: true, costs: Costs { chamber: 100.0, excavation: 5.0, stone: 15.0, extras: vec![(2.0, "Header".into(), 50.0)] }, ..Default::default() };
+        let f = Field {
+            show_costs: true,
+            costs: Costs { chamber: 100.0, excavation: 5.0, stone: 15.0, extras: vec![(2.0, "Header".into(), 50.0)] },
+            ..Default::default()
+        };
         let r = f.report();
         assert!(r.last().is_some_and(|l| l.starts_with("Total Cost")));
     }

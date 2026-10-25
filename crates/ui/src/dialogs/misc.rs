@@ -35,10 +35,22 @@ pub fn units(ctx: &egui::Context, doc: &mut Doc, st: &mut UnitsState) -> bool {
         widgets::check(ui, &mut st.draft.large, "Large units (acres & acre-feet / hectares & megalitres)");
         widgets::check(ui, &mut st.draft.low_flow, "Low-flow precision (extra decimal places)");
         widgets::group(ui, "Custom Decimal Places", |ui| {
-            let opts: Vec<(Option<u8>, String)> = std::iter::once((None, "Auto".to_string())).chain((0..=5u8).map(|d| (Some(d), d.to_string()))).collect();
+            let opts: Vec<(Option<u8>, String)> = std::iter::once((None, "Auto".to_string()))
+                .chain((0..=5u8).map(|d| (Some(d), d.to_string())))
+                .collect();
             let d = &mut st.draft.decimals;
             egui::Grid::new("units-dp").num_columns(4).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
-                for (i, (label, v)) in [("Area", &mut d.area), ("Volume", &mut d.volume), ("Flow", &mut d.flow), ("Rainfall", &mut d.rain), ("Elevation", &mut d.elevation), ("Length", &mut d.length)].into_iter().enumerate() {
+                for (i, (label, v)) in [
+                    ("Area", &mut d.area),
+                    ("Volume", &mut d.volume),
+                    ("Flow", &mut d.flow),
+                    ("Rainfall", &mut d.rain),
+                    ("Elevation", &mut d.elevation),
+                    ("Length", &mut d.length),
+                ]
+                .into_iter()
+                .enumerate()
+                {
                     ui.label(label);
                     widgets::combo(ui, &format!("dp-{label}"), v, &opts, 70.0);
                     if i % 2 == 1 {
@@ -48,7 +60,15 @@ pub fn units(ctx: &egui::Context, doc: &mut Doc, st: &mut UnitsState) -> bool {
             });
         });
         let draft = st.draft;
-        ui.label(RichText::new(format!("Areas in {}, volumes in {}, flows in {}", draft.area_heading(), draft.volume_heading(), draft.flow_label())).color(Tokens::get(ui.ctx()).text_dim));
+        ui.label(
+            RichText::new(format!(
+                "Areas in {}, volumes in {}, flows in {}",
+                draft.area_heading(),
+                draft.volume_heading(),
+                draft.flow_label()
+            ))
+            .color(Tokens::get(ui.ctx()).text_dim),
+        );
         match ok_cancel_apply(ui, false, "start") {
             Buttons::Ok | Buttons::Apply => {
                 doc.edit("Units", |p| p.units = draft);
@@ -75,8 +95,28 @@ pub fn diagram(ctx: &egui::Context, doc: &mut Doc, st: &mut DiagramState) -> boo
     let mut keep = true;
     crate::frame::Win::new("Diagram Settings").collapsible(false).resizable(false).show(ctx, |ui| {
         ui.horizontal(|ui| {
-            conv_field(ui, "sym", "Symbol Size:", "units", &mut st.draft.symbol_size, |x| x, |x| x.clamp(8.0, 400.0), 0, 120.0);
-            conv_field(ui, "grid", "Grid Spacing:", "units", &mut st.draft.grid, |x| x, |x| x.clamp(2.0, 1000.0), 0, 120.0);
+            conv_field(
+                ui,
+                "sym",
+                "Symbol Size:",
+                "units",
+                &mut st.draft.symbol_size,
+                |x| x,
+                |x| x.clamp(8.0, 400.0),
+                0,
+                120.0,
+            );
+            conv_field(
+                ui,
+                "grid",
+                "Grid Spacing:",
+                "units",
+                &mut st.draft.grid,
+                |x| x,
+                |x| x.clamp(2.0, 1000.0),
+                0,
+                120.0,
+            );
         });
         widgets::check(ui, &mut st.draft.show_grid, "Show grid");
         widgets::check(ui, &mut st.draft.snap_to_grid, "Snap to grid");
@@ -205,25 +245,28 @@ impl NotesState {
 
 pub fn notes(ctx: &egui::Context, doc: &mut Doc, st: &mut NotesState) -> bool {
     let mut keep = true;
-    crate::frame::Win::new("Project Notes").collapsible(false).resizable(true).default_size(vec2(520.0, 380.0)).show(ctx, |ui| {
-        widgets::text_field(ui, "Project Title:", &mut st.title, 380.0);
-        widgets::text_field(ui, "Prepared by:", &mut st.prepared_by, 380.0);
-        ui.label("Notes:");
-        ui.add_sized(vec2(ui.available_width(), 220.0), egui::TextEdit::multiline(&mut st.notes));
-        match ok_cancel_apply(ui, false, "start") {
-            Buttons::Ok | Buttons::Apply => {
-                let (t, pb, n) = (st.title.clone(), st.prepared_by.clone(), st.notes.clone());
-                doc.edit("Project Notes", |p| {
-                    p.title = t.clone();
-                    p.prepared_by = pb.clone();
-                    p.notes = n.clone();
-                });
-                keep = false;
+    crate::frame::Win::new("Project Notes").collapsible(false).resizable(true).default_size(vec2(520.0, 380.0)).show(
+        ctx,
+        |ui| {
+            widgets::text_field(ui, "Project Title:", &mut st.title, 380.0);
+            widgets::text_field(ui, "Prepared by:", &mut st.prepared_by, 380.0);
+            ui.label("Notes:");
+            ui.add_sized(vec2(ui.available_width(), 220.0), egui::TextEdit::multiline(&mut st.notes));
+            match ok_cancel_apply(ui, false, "start") {
+                Buttons::Ok | Buttons::Apply => {
+                    let (t, pb, n) = (st.title.clone(), st.prepared_by.clone(), st.notes.clone());
+                    doc.edit("Project Notes", |p| {
+                        p.title = t.clone();
+                        p.prepared_by = pb.clone();
+                        p.notes = n.clone();
+                    });
+                    keep = false;
+                }
+                Buttons::Cancel => keep = false,
+                Buttons::None => {}
             }
-            Buttons::Cancel => keep = false,
-            Buttons::None => {}
-        }
-    });
+        },
+    );
     keep
 }
 
@@ -283,10 +326,23 @@ pub fn calibrate(ctx: &egui::Context, doc: &mut Doc, st: &mut CalibrateState) ->
         };
         let units_dist = ((b - a).length()) as f64;
         ui.label(format!("Distance between the points on the diagram: {units_dist:.1} units"));
-        conv_field(ui, "dist", "Real distance between the points:", u.len_label(), &mut st.distance, |x| u.len(x), |x| u.len_in(x), 2, 260.0);
+        conv_field(
+            ui,
+            "dist",
+            "Real distance between the points:",
+            u.len_label(),
+            &mut st.distance,
+            |x| u.len(x),
+            |x| u.len_in(x),
+            2,
+            260.0,
+        );
         if units_dist > 0.0 && st.distance > 0.0 {
             let fpu = st.distance / units_dist;
-            ui.label(format!("Scale: 1 diagram unit = {}", u.fmt_len(fpu).replace("'", &format!(" {}", if u.metric() { "" } else { "ft" }))));
+            ui.label(format!(
+                "Scale: 1 diagram unit = {}",
+                u.fmt_len(fpu).replace("'", &format!(" {}", if u.metric() { "" } else { "ft" }))
+            ));
         }
         match ok_cancel_apply(ui, false, "background") {
             Buttons::Ok | Buttons::Apply => {
@@ -324,7 +380,17 @@ pub fn underlay(ctx: &egui::Context, doc: &mut Doc, st: &mut UnderlayState, acti
         let pages = crate::underlay::page_count(&draft.bytes);
         if pages > 1 {
             let mut page = (draft.page + 1) as f64;
-            if conv_field(ui, "page", "PDF Page:", &format!("of {pages}"), &mut page, |x| x, |x| x.clamp(1.0, pages as f64), 0, 120.0) {
+            if conv_field(
+                ui,
+                "page",
+                "PDF Page:",
+                &format!("of {pages}"),
+                &mut page,
+                |x| x,
+                |x| x.clamp(1.0, pages as f64),
+                0,
+                120.0,
+            ) {
                 draft.page = (page.round() as usize).clamp(1, pages) - 1;
             }
         }
@@ -339,7 +405,9 @@ pub fn underlay(ctx: &egui::Context, doc: &mut Doc, st: &mut UnderlayState, acti
         widgets::check(ui, &mut draft.locked, "Lock position and size");
         match draft.feet_per_unit {
             Some(f) => ui.label(format!("Calibrated: 1 diagram unit = {:.4} {}", u.len(f), u.len_label())),
-            None => ui.colored_label(Tokens::get(ui.ctx()).warning, "Not calibrated: traced areas assume 1 unit = 1 ft."),
+            None => {
+                ui.colored_label(Tokens::get(ui.ctx()).warning, "Not calibrated: traced areas assume 1 unit = 1 ft.")
+            }
         };
         let _ = st;
         if draft != ul {
@@ -361,7 +429,10 @@ pub fn underlay(ctx: &egui::Context, doc: &mut Doc, st: &mut UnderlayState, acti
         }
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            if widgets::button(ui, "Move / Resize...", 120.0).on_hover_text("Drag the background on the diagram to move it, or a corner to resize it").clicked() {
+            if widgets::button(ui, "Move / Resize...", 120.0)
+                .on_hover_text("Drag the background on the diagram to move it, or a corner to resize it")
+                .clicked()
+            {
                 actions.push(WindowAction::PlaceUnderlay);
                 keep = false;
             }
@@ -380,43 +451,46 @@ pub struct UndoState {
 
 pub fn undo_history(ctx: &egui::Context, doc: &mut Doc, st: &mut UndoState) -> bool {
     let mut open = true;
-    crate::frame::Win::new("Undo History").open(&mut open).resizable(true).default_size(vec2(380.0, 340.0)).show(ctx, |ui| {
-        egui::Grid::new("undo").striped(true).spacing(vec2(16.0, 2.0)).show(ui, |ui| {
-            ui.label(RichText::new("#").strong());
-            ui.label(RichText::new("Category").strong());
-            ui.label(RichText::new("Activity").strong());
-            ui.end_row();
-            let mut k = 1;
-            for e in doc.undo.iter().rev() {
-                if ui.selectable_label(st.selected == Some(k), format!("{k}")).clicked() {
-                    st.selected = Some(k);
+    crate::frame::Win::new("Undo History").open(&mut open).resizable(true).default_size(vec2(380.0, 340.0)).show(
+        ctx,
+        |ui| {
+            egui::Grid::new("undo").striped(true).spacing(vec2(16.0, 2.0)).show(ui, |ui| {
+                ui.label(RichText::new("#").strong());
+                ui.label(RichText::new("Category").strong());
+                ui.label(RichText::new("Activity").strong());
+                ui.end_row();
+                let mut k = 1;
+                for e in doc.undo.iter().rev() {
+                    if ui.selectable_label(st.selected == Some(k), format!("{k}")).clicked() {
+                        st.selected = Some(k);
+                    }
+                    ui.label("Undo");
+                    ui.label(&e.label);
+                    ui.end_row();
+                    k += 1;
                 }
-                ui.label("Undo");
-                ui.label(&e.label);
-                ui.end_row();
-                k += 1;
-            }
-            for e in doc.redo.iter().rev() {
-                ui.label(format!("{k}"));
-                ui.label("Redo");
-                ui.label(&e.label);
-                ui.end_row();
-                k += 1;
-            }
-        });
-        ui.horizontal(|ui| {
-            if widgets::button_enabled(ui, "Undo", 70.0, !doc.undo.is_empty()).clicked() {
-                doc.undo();
-            }
-            if widgets::button_enabled(ui, "Redo", 70.0, !doc.redo.is_empty()).clicked() {
-                doc.redo();
-            }
-            let mut max = doc.max_undo as f64;
-            if conv_field(ui, "max", "Max. Undo Steps:", "", &mut max, |x| x, |x| x.clamp(1.0, 1000.0), 0, 120.0) {
-                doc.max_undo = max.round().clamp(1.0, 1000.0) as usize;
-            }
-        });
-    });
+                for e in doc.redo.iter().rev() {
+                    ui.label(format!("{k}"));
+                    ui.label("Redo");
+                    ui.label(&e.label);
+                    ui.end_row();
+                    k += 1;
+                }
+            });
+            ui.horizontal(|ui| {
+                if widgets::button_enabled(ui, "Undo", 70.0, !doc.undo.is_empty()).clicked() {
+                    doc.undo();
+                }
+                if widgets::button_enabled(ui, "Redo", 70.0, !doc.redo.is_empty()).clicked() {
+                    doc.redo();
+                }
+                let mut max = doc.max_undo as f64;
+                if conv_field(ui, "max", "Max. Undo Steps:", "", &mut max, |x| x, |x| x.clamp(1.0, 1000.0), 0, 120.0) {
+                    doc.max_undo = max.round().clamp(1.0, 1000.0) as usize;
+                }
+            });
+        },
+    );
     open
 }
 
@@ -468,7 +542,9 @@ pub fn print(ctx: &egui::Context, st: &mut PrintState) -> (bool, Option<wavestor
             widgets::check(ui, &mut st.opts.tables, "Tabular hydrographs");
         });
         widgets::text_field(ui, "Date printed:", &mut st.opts.date, 160.0);
-        ui.label(RichText::new("The report is saved as a PDF you can print or share.").color(Tokens::get(ui.ctx()).text_dim));
+        ui.label(
+            RichText::new("The report is saved as a PDF you can print or share.").color(Tokens::get(ui.ctx()).text_dim),
+        );
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if widgets::button(ui, "Print to PDF...", 110.0).clicked() {
@@ -493,7 +569,12 @@ pub struct LandUseState {
 
 impl LandUseState {
     pub fn new(p: &Project) -> Self {
-        LandUseState { draft: p.land_use.clone(), tab: 1, new_pollutant: String::new(), depth: p.land_use.annual_rainfall.unwrap_or(42.0) }
+        LandUseState {
+            draft: p.land_use.clone(),
+            tab: 1,
+            new_pollutant: String::new(),
+            depth: p.land_use.annual_rainfall.unwrap_or(42.0),
+        }
     }
 }
 
@@ -532,9 +613,22 @@ pub fn land_use(ctx: &egui::Context, doc: &mut Doc, st: &mut LandUseState) -> bo
                 ui.add_space(4.0);
                 if let Some(p) = &mut d.annual_rainfall {
                     conv_field(ui, "p", "Rainfall Depth:", "inches", p, |x| x, |x| x.max(0.0), 2, 140.0);
-                    conv_field(ui, "pj", "Correction Factor:", "", &mut d.correction, |x| x, |x| x.clamp(0.0, 1.0), 3, 140.0);
+                    conv_field(
+                        ui,
+                        "pj",
+                        "Correction Factor:",
+                        "",
+                        &mut d.correction,
+                        |x| x,
+                        |x| x.clamp(0.0, 1.0),
+                        3,
+                        140.0,
+                    );
                 } else {
-                    ui.label(RichText::new("Loads use the runoff of the calculated event.").color(Tokens::get(ui.ctx()).text_dim));
+                    ui.label(
+                        RichText::new("Loads use the runoff of the calculated event.")
+                            .color(Tokens::get(ui.ctx()).text_dim),
+                    );
                 }
                 ui.add_space(4.0);
                 if widgets::button_enabled(ui, "Remove Land-Use data...", 160.0, !d.uses.is_empty()).clicked() {

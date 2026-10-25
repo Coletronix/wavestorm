@@ -36,13 +36,43 @@ pub struct CurveState {
 
 impl CurveState {
     pub fn storms() -> Self {
-        CurveState { kind: CurveKind::Storm, checked: vec!["Type II 24-hr".into()], view: ChartView::default(), intensity: false, current_depth: false, event_depths: false, inc: 0.1, tab: 0, fresh: false }
+        CurveState {
+            kind: CurveKind::Storm,
+            checked: vec!["Type II 24-hr".into()],
+            view: ChartView::default(),
+            intensity: false,
+            current_depth: false,
+            event_depths: false,
+            inc: 0.1,
+            tab: 0,
+            fresh: false,
+        }
     }
     pub fn uhs() -> Self {
-        CurveState { kind: CurveKind::Uh, checked: vec!["SCS".into(), "Gamma-284".into()], view: ChartView::default(), intensity: true, current_depth: false, event_depths: false, inc: 0.1, tab: 0, fresh: false }
+        CurveState {
+            kind: CurveKind::Uh,
+            checked: vec!["SCS".into(), "Gamma-284".into()],
+            view: ChartView::default(),
+            intensity: true,
+            current_depth: false,
+            event_depths: false,
+            inc: 0.1,
+            tab: 0,
+            fresh: false,
+        }
     }
     pub fn idf() -> Self {
-        CurveState { kind: CurveKind::Idf, checked: Vec::new(), view: ChartView::default(), intensity: true, current_depth: false, event_depths: false, inc: 5.0, tab: 0, fresh: true }
+        CurveState {
+            kind: CurveKind::Idf,
+            checked: Vec::new(),
+            view: ChartView::default(),
+            intensity: true,
+            current_depth: false,
+            event_depths: false,
+            inc: 5.0,
+            tab: 0,
+            fresh: true,
+        }
     }
 }
 
@@ -81,7 +111,11 @@ fn grouped(names: &[String]) -> Vec<(Option<String>, Vec<String>)> {
 }
 
 fn storm_value(s: &Storm, t: f64, intensity: bool, h: f64, scale: f64) -> f64 {
-    if intensity { (s.fraction_at(t + h / 2.0) - s.fraction_at(t - h / 2.0)) / h * scale } else { s.fraction_at(t) * scale }
+    if intensity {
+        (s.fraction_at(t + h / 2.0) - s.fraction_at(t - h / 2.0)) / h * scale
+    } else {
+        s.fraction_at(t) * scale
+    }
 }
 
 /// Cumulative fraction of the unit hydrograph's area up to `x` (in Tp).
@@ -129,7 +163,11 @@ fn build(doc: &Doc, st: &CurveState, table_xs: Option<&dyn Fn(f64) -> Vec<f64>>)
                         let using: Vec<_> = events.iter().filter(|e| e.storm == s.name).collect();
                         let pick = if using.is_empty() { events.iter().collect() } else { using };
                         let single = st.checked.len() == 1;
-                        pick.iter().map(|e| (if single { e.name.clone() } else { format!("{} {}", name, e.name) }, u.rain(e.depth))).collect()
+                        pick.iter()
+                            .map(|e| {
+                                (if single { e.name.clone() } else { format!("{} {}", name, e.name) }, u.rain(e.depth))
+                            })
+                            .collect()
                     } else {
                         vec![(name.clone(), if st.current_depth { current } else { 1.0 })]
                     };
@@ -139,7 +177,15 @@ fn build(doc: &Doc, st: &CurveState, table_xs: Option<&dyn Fn(f64) -> Vec<f64>>)
                     };
                     let h = if table_xs.is_some() { st.inc.max(1e-3) } else { s.duration / 400.0 };
                     if description.is_empty() {
-                        description = vec![s.name.clone(), s.comment.clone(), format!("{} {} Points", s.fractions.len(), if st.intensity { "Intensity" } else { "Depth" })];
+                        description = vec![
+                            s.name.clone(),
+                            s.comment.clone(),
+                            format!(
+                                "{} {} Points",
+                                s.fractions.len(),
+                                if st.intensity { "Intensity" } else { "Depth" }
+                            ),
+                        ];
                     }
                     for (label, scale) in scales {
                         let ys = xs.iter().map(|x| storm_value(&s, *x, st.intensity, h, scale)).collect();
@@ -167,16 +213,24 @@ fn build(doc: &Doc, st: &CurveState, table_xs: Option<&dyn Fn(f64) -> Vec<f64>>)
                         Some(f) => f(end),
                         None => (0..=200).map(|j| j as f64 * h.base().min(8.0) / 200.0).collect(),
                     };
-                    let ys = xs.iter().map(|x| if st.intensity { h.ordinate(*x) * k } else { uh_cum(&h, *x) }).collect();
+                    let ys =
+                        xs.iter().map(|x| if st.intensity { h.ordinate(*x) * k } else { uh_cum(&h, *x) }).collect();
                     if description.is_empty() {
                         description = vec![h.name.clone(), h.comment.clone()];
                     }
-                    series.push(Series { name: name.clone(), color: COLORS[(i + 2) % COLORS.len()], x: xs, y: ys, peak_label: None });
+                    series.push(Series {
+                        name: name.clone(),
+                        color: COLORS[(i + 2) % COLORS.len()],
+                        x: xs,
+                        y: ys,
+                        peak_label: None,
+                    });
                 }
             }
             title = format!("Unit Hydrograph {} vs. Time", if st.intensity { "Intensity" } else { "Depth" });
             x_label = "Relative Time (Tp)".to_string();
-            y_label = if st.intensity { "Relative Intensity (K)".to_string() } else { "Cumulative Fraction".to_string() };
+            y_label =
+                if st.intensity { "Relative Intensity (K)".to_string() } else { "Cumulative Fraction".to_string() };
         }
         CurveKind::Idf => {
             if let Some(c) = &doc.project.settings.idf {
@@ -188,11 +242,20 @@ fn build(doc: &Doc, st: &CurveState, table_xs: Option<&dyn Fn(f64) -> Vec<f64>>)
                     };
                     let ys: Vec<f64> = xs.iter().map(|x| c.intensity(name, *x).unwrap_or(0.0)).collect();
                     if ys.iter().any(|y| *y > 0.0) {
-                        series.push(Series { name: name.clone(), color: COLORS[(i + 3) % COLORS.len()], x: xs, y: ys, peak_label: None });
+                        series.push(Series {
+                            name: name.clone(),
+                            color: COLORS[(i + 3) % COLORS.len()],
+                            x: xs,
+                            y: ys,
+                            peak_label: None,
+                        });
                     }
                 }
             }
-            title = format!("{} Intensity vs. Duration", doc.project.settings.idf.as_ref().map(|c| c.name.as_str()).unwrap_or("IDF"));
+            title = format!(
+                "{} Intensity vs. Duration",
+                doc.project.settings.idf.as_ref().map(|c| c.name.as_str()).unwrap_or("IDF")
+            );
             x_label = "Rainfall Duration (minutes)".to_string();
             y_label = "Rainfall Intensity (in/hr)".to_string();
         }
@@ -293,88 +356,111 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, acti
         st.fresh = false;
         st.checked = names.iter().take(6).cloned().collect();
     }
-    crate::frame::Win::new(title).open(&mut open).default_size(vec2(720.0, 460.0)).resizable(true).min_max().show(ctx, |ui| {
-        // Header: radios, time increment, description of the first checked curve.
-        let built_desc = build(doc, st, None).description;
-        ui.horizontal_top(|ui| {
-            if st.kind != CurveKind::Idf {
-                ui.vertical(|ui| {
-                    if widgets::radio(ui, !st.intensity, "Depth").clicked() {
-                        st.intensity = false;
-                    }
-                    if widgets::radio(ui, st.intensity, "Intensity").clicked() {
-                        st.intensity = true;
-                    }
-                });
-            }
-            ui.vertical(|ui| {
-                let unit = match st.kind {
-                    CurveKind::Storm => "(hours)",
-                    CurveKind::Uh => "(Tp)",
-                    CurveKind::Idf => "(minutes)",
-                };
-                ui.label(format!("Time Increment {unit}"));
-                widgets::num_box(ui, ui.id().with("inc"), &mut st.inc, 2, 90.0, Some(if st.kind == CurveKind::Idf { 1.0 } else { 0.05 }));
-                st.inc = if st.inc.is_finite() { st.inc.max(0.01) } else { 0.1 };
-            });
-            if st.kind == CurveKind::Storm {
-                ui.vertical(|ui| {
-                    if widgets::radio(ui, !st.current_depth && !st.event_depths, "Dimensionless").clicked() {
-                        (st.current_depth, st.event_depths) = (false, false);
-                    }
-                    if widgets::radio(ui, st.current_depth, "Current Depth").clicked() {
-                        (st.current_depth, st.event_depths) = (true, false);
-                    }
-                    if widgets::radio(ui, st.event_depths, "Event Depth(s)").clicked() {
-                        (st.current_depth, st.event_depths) = (false, true);
-                    }
-                });
-            }
-            ui.vertical(|ui| {
-                for (i, l) in built_desc.iter().enumerate() {
-                    if !l.is_empty() {
-                        let rt = RichText::new(l.as_str());
-                        ui.label(if i == 0 { rt.strong() } else { rt });
-                    }
+    crate::frame::Win::new(title).open(&mut open).default_size(vec2(720.0, 460.0)).resizable(true).min_max().show(
+        ctx,
+        |ui| {
+            // Header: radios, time increment, description of the first checked curve.
+            let built_desc = build(doc, st, None).description;
+            ui.horizontal_top(|ui| {
+                if st.kind != CurveKind::Idf {
+                    ui.vertical(|ui| {
+                        if widgets::radio(ui, !st.intensity, "Depth").clicked() {
+                            st.intensity = false;
+                        }
+                        if widgets::radio(ui, st.intensity, "Intensity").clicked() {
+                            st.intensity = true;
+                        }
+                    });
                 }
+                ui.vertical(|ui| {
+                    let unit = match st.kind {
+                        CurveKind::Storm => "(hours)",
+                        CurveKind::Uh => "(Tp)",
+                        CurveKind::Idf => "(minutes)",
+                    };
+                    ui.label(format!("Time Increment {unit}"));
+                    widgets::num_box(
+                        ui,
+                        ui.id().with("inc"),
+                        &mut st.inc,
+                        2,
+                        90.0,
+                        Some(if st.kind == CurveKind::Idf { 1.0 } else { 0.05 }),
+                    );
+                    st.inc = if st.inc.is_finite() { st.inc.max(0.01) } else { 0.1 };
+                });
+                if st.kind == CurveKind::Storm {
+                    ui.vertical(|ui| {
+                        if widgets::radio(ui, !st.current_depth && !st.event_depths, "Dimensionless").clicked() {
+                            (st.current_depth, st.event_depths) = (false, false);
+                        }
+                        if widgets::radio(ui, st.current_depth, "Current Depth").clicked() {
+                            (st.current_depth, st.event_depths) = (true, false);
+                        }
+                        if widgets::radio(ui, st.event_depths, "Event Depth(s)").clicked() {
+                            (st.current_depth, st.event_depths) = (false, true);
+                        }
+                    });
+                }
+                ui.vertical(|ui| {
+                    for (i, l) in built_desc.iter().enumerate() {
+                        if !l.is_empty() {
+                            let rt = RichText::new(l.as_str());
+                            ui.label(if i == 0 { rt.strong() } else { rt });
+                        }
+                    }
+                });
             });
-        });
-        ui.add_space(2.0);
-        let avail = ui.available_size();
-        let col_key = ui.id().with("curves-col");
-        let body_w = widgets::body_width(ui, col_key, 210.0);
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                let size = vec2(body_w, (avail.y - 26.0).max(160.0));
-                ui.set_width(size.x);
-                widgets::tabs(ui, &["Graph", "Table"], &mut st.tab);
-                if st.tab == 1 {
-                    let (heads, cols) = table(doc, st);
-                    if cols.is_empty() {
-                        ui.label("Check one or more curves.");
+            ui.add_space(2.0);
+            let avail = ui.available_size();
+            let col_key = ui.id().with("curves-col");
+            let body_w = widgets::body_width(ui, col_key, 210.0);
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    let size = vec2(body_w, (avail.y - 26.0).max(160.0));
+                    ui.set_width(size.x);
+                    widgets::tabs(ui, &["Graph", "Table"], &mut st.tab);
+                    if st.tab == 1 {
+                        let (heads, cols) = table(doc, st);
+                        if cols.is_empty() {
+                            ui.label("Check one or more curves.");
+                        } else {
+                            let _ = data_table(ui, &heads, &cols, size.y, false);
+                        }
                     } else {
-                        let _ = data_table(ui, &heads, &cols, size.y, false);
+                        let b = build(doc, st, None);
+                        let spec = ChartSpec {
+                            title: &b.title,
+                            subtitle: "",
+                            x_label: &b.x_label,
+                            y_label: &b.y_label,
+                            series: &b.series,
+                            summary: &[],
+                            three_d: false,
+                            log_x: st.kind == CurveKind::Idf,
+                            marks: &[],
+                        };
+                        chart::chart(ui, &spec, &mut st.view, size);
                     }
-                } else {
-                    let b = build(doc, st, None);
-                    let spec = ChartSpec { title: &b.title, subtitle: "", x_label: &b.x_label, y_label: &b.y_label, series: &b.series, summary: &[], three_d: false, log_x: st.kind == CurveKind::Idf, marks: &[] };
-                    chart::chart(ui, &spec, &mut st.view, size);
-                }
-            });
-            let col = ui.vertical(|ui| {
-                ui.set_width(200.0);
-                let h = (avail.y - 66.0).max(100.0);
-                egui::ScrollArea::vertical().max_height(h).min_scrolled_height(h).auto_shrink([false, false]).show(ui, |ui| {
-                    if names.is_empty() {
-                        ui.label("No IDF curve in this project. Use Edit to create one.");
-                    }
-                    curve_tree(ui, st, &names);
                 });
-                buttons(ui, doc, st, actions, &mut ok);
+                let col = ui.vertical(|ui| {
+                    ui.set_width(200.0);
+                    let h = (avail.y - 66.0).max(100.0);
+                    egui::ScrollArea::vertical().max_height(h).min_scrolled_height(h).auto_shrink([false, false]).show(
+                        ui,
+                        |ui| {
+                            if names.is_empty() {
+                                ui.label("No IDF curve in this project. Use Edit to create one.");
+                            }
+                            curve_tree(ui, st, &names);
+                        },
+                    );
+                    buttons(ui, doc, st, actions, &mut ok);
+                });
+                widgets::remember_column(ui, col_key, col.response.rect);
             });
-            widgets::remember_column(ui, col_key, col.response.rect);
-        });
-    });
+        },
+    );
     open && !ok
 }
 
@@ -383,12 +469,17 @@ fn buttons(ui: &mut Ui, doc: &Doc, st: &mut CurveState, actions: &mut Vec<Window
     ui.horizontal(|ui| {
         let more = widgets::button(ui, if st.kind == CurveKind::Storm { "More Storms" } else { "More..." }, 96.0);
         egui::Popup::menu(&more).show(|ui| {
-            if ui.button("Import Files...").on_hover_text("Add rainfall files (.hcr, .huh, .idf, *-Rain.txt) to the rainfall library").clicked() {
+            if ui
+                .button("Import Files...")
+                .on_hover_text("Add rainfall files (.hcr, .huh, .idf, *-Rain.txt) to the rainfall library")
+                .clicked()
+            {
                 actions.push(WindowAction::PickFile(crate::platform::Purpose::RainLib));
                 ui.close();
             }
             if st.kind == CurveKind::Storm && ui.button("New Custom Storm...").clicked() {
-                actions.push(WindowAction::OpenWindow(Window::StormEdit(crate::dialogs::storm::StormEditor::default())));
+                actions
+                    .push(WindowAction::OpenWindow(Window::StormEdit(crate::dialogs::storm::StormEditor::default())));
                 ui.close();
             }
         });

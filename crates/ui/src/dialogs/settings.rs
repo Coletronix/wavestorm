@@ -9,8 +9,8 @@ use crate::windows::{Window, WindowAction};
 use egui::{RichText, Ui, vec2};
 use wavestorm_core::cn::CnWeighting;
 use wavestorm_core::project::{CalcSettings, NodeData, PondMethod, Project, ReachMethod, RunoffMethod};
-use wavestorm_core::resize::{ResizeCriterion, ResizeSettings};
 use wavestorm_core::rainfall::{Amc, DurationMode, RainEvent};
+use wavestorm_core::resize::{ResizeCriterion, ResizeSettings};
 use wavestorm_core::units::Units;
 
 pub struct SettingsState {
@@ -26,7 +26,14 @@ pub struct SettingsState {
 
 impl SettingsState {
     pub fn new(p: &Project) -> Self {
-        SettingsState { draft: p.settings.clone(), tab: 1, sort: 0, name: String::new(), name_src: String::new(), sizes_text: None }
+        SettingsState {
+            draft: p.settings.clone(),
+            tab: 1,
+            sort: 0,
+            name: String::new(),
+            name_src: String::new(),
+            sizes_text: None,
+        }
     }
 }
 
@@ -35,37 +42,46 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut SettingsState, actions:
     let mut apply = false;
     let units = doc.project.units;
     let storms: Vec<String> = crate::library::storm_names(&doc.project);
-    crate::frame::Win::new("Calculation Settings").id(egui::Id::new("calc-settings")).collapsible(false).resizable(false).default_width(560.0).show(ctx, |ui| {
-        widgets::tabs(ui, &["General", "Rainfall", "Time Span", "Reports", "Unit Hydro", "Advanced", "Resize"], &mut st.tab);
-        widgets::tab_body(ui, |ui| {
-            ui.set_min_size(vec2(530.0, 280.0));
-            match st.tab {
-                0 => general(ui, &mut st.draft),
-                1 => rainfall(ui, st, &units, &storms, doc, actions),
-                2 => time_span(ui, &mut st.draft),
-                3 => reports_tab(ui, &mut st.draft),
-                4 => uh_tab(ui, &mut st.draft, &doc.project, actions),
-                5 => advanced(ui, &mut st.draft),
-                _ => resize_tab(ui, &mut st.draft, &mut st.sizes_text, &units, &doc.project),
+    crate::frame::Win::new("Calculation Settings")
+        .id(egui::Id::new("calc-settings"))
+        .collapsible(false)
+        .resizable(false)
+        .default_width(560.0)
+        .show(ctx, |ui| {
+            widgets::tabs(
+                ui,
+                &["General", "Rainfall", "Time Span", "Reports", "Unit Hydro", "Advanced", "Resize"],
+                &mut st.tab,
+            );
+            widgets::tab_body(ui, |ui| {
+                ui.set_min_size(vec2(530.0, 280.0));
+                match st.tab {
+                    0 => general(ui, &mut st.draft),
+                    1 => rainfall(ui, st, &units, &storms, doc, actions),
+                    2 => time_span(ui, &mut st.draft),
+                    3 => reports_tab(ui, &mut st.draft),
+                    4 => uh_tab(ui, &mut st.draft, &doc.project, actions),
+                    5 => advanced(ui, &mut st.draft),
+                    _ => resize_tab(ui, &mut st.draft, &mut st.sizes_text, &units, &doc.project),
+                }
+            });
+            let help = match st.tab {
+                1 => "rainfall",
+                2 | 3 => "start",
+                4 | 0 => "runoff",
+                6 => "resize",
+                _ => "cn",
+            };
+            match ok_cancel_apply(ui, true, help) {
+                Buttons::Ok => {
+                    apply = true;
+                    keep = false;
+                }
+                Buttons::Apply => apply = true,
+                Buttons::Cancel => keep = false,
+                Buttons::None => {}
             }
         });
-        let help = match st.tab {
-            1 => "rainfall",
-            2 | 3 => "start",
-            4 | 0 => "runoff",
-            6 => "resize",
-            _ => "cn",
-        };
-        match ok_cancel_apply(ui, true, help) {
-            Buttons::Ok => {
-                apply = true;
-                keep = false;
-            }
-            Buttons::Apply => apply = true,
-            Buttons::Cancel => keep = false,
-            Buttons::None => {}
-        }
-    });
     if apply {
         let mut draft = st.draft.clone();
         if draft.events.is_empty() {
@@ -106,7 +122,14 @@ fn general(ui: &mut Ui, s: &mut CalcSettings) {
     });
 }
 
-fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], doc: &Doc, actions: &mut Vec<WindowAction>) {
+fn rainfall(
+    ui: &mut Ui,
+    st: &mut SettingsState,
+    u: &Units,
+    storms: &[String],
+    doc: &Doc,
+    actions: &mut Vec<WindowAction>,
+) {
     let s = &mut st.draft;
     if s.events.is_empty() {
         s.events.push(RainEvent::new("Custom", "Type II 24-hr", 3.0));
@@ -131,12 +154,16 @@ fn rainfall(ui: &mut Ui, st: &mut SettingsState, u: &Units, storms: &[String], d
                 cs.checked = vec![e.storm.clone()];
                 actions.push(WindowAction::OpenWindow(Window::Storms(cs)));
             }
-            if widgets::button(ui, "More Storms", 96.0).on_hover_text("Create a custom rainfall distribution").clicked() {
-                actions.push(WindowAction::OpenWindow(Window::StormEdit(crate::dialogs::storm::StormEditor::default())));
+            if widgets::button(ui, "More Storms", 96.0).on_hover_text("Create a custom rainfall distribution").clicked()
+            {
+                actions
+                    .push(WindowAction::OpenWindow(Window::StormEdit(crate::dialogs::storm::StormEditor::default())));
             }
         });
     });
-    let comment = crate::library::find_storm(&doc.project, &e.storm).map(|s| s.comment).unwrap_or_else(|| "(storm not found)".into());
+    let comment = crate::library::find_storm(&doc.project, &e.storm)
+        .map(|s| s.comment)
+        .unwrap_or_else(|| "(storm not found)".into());
     ui.label(RichText::new(comment).color(t.text_dim));
     ui.add_space(2.0);
     ui.horizontal(|ui| {
@@ -284,7 +311,17 @@ fn time_span(ui: &mut Ui, s: &mut CalcSettings) {
 }
 
 fn reports_tab(ui: &mut Ui, s: &mut CalcSettings) {
-    conv_field(ui, "step", "Tabular report step (0 = automatic shrink):", "hours", &mut s.table_step, |x| x, |x| x.max(0.0), 2, 280.0);
+    conv_field(
+        ui,
+        "step",
+        "Tabular report step (0 = automatic shrink):",
+        "hours",
+        &mut s.table_step,
+        |x| x,
+        |x| x.max(0.0),
+        2,
+        280.0,
+    );
     ui.add_space(6.0);
     widgets::check(ui, &mut s.report_impervious, "Report pervious and impervious areas");
 }
@@ -292,7 +329,9 @@ fn reports_tab(ui: &mut Ui, s: &mut CalcSettings) {
 fn uh_tab(ui: &mut Ui, s: &mut CalcSettings, project: &Project, actions: &mut Vec<WindowAction>) {
     let opts: Vec<(String, String)> = crate::library::uh_names(project)
         .into_iter()
-        .filter_map(|n| crate::library::find_uh(project, &n).map(|u| (n, format!("{}  (PF {:.0})", u.name, u.peak_factor()))))
+        .filter_map(|n| {
+            crate::library::find_uh(project, &n).map(|u| (n, format!("{}  (PF {:.0})", u.name, u.peak_factor())))
+        })
         .collect();
     ui.horizontal(|ui| {
         widgets::combo_field(ui, "uh", "Unit Hydrograph:", &mut s.uh, &opts, 240.0);
@@ -324,15 +363,30 @@ fn resize_tab(ui: &mut Ui, s: &mut CalcSettings, sizes_text: &mut Option<String>
     widgets::check(ui, &mut s.resize.allow_smaller, "Allow sizes smaller than the one entered");
     ui.add_space(4.0);
     // The size list is edited as text in the display's small length unit (inches or cm).
-    let text = sizes_text.get_or_insert_with(|| s.resize.sizes.iter().map(|d| format!("{}", (u.small_len(*d) * 100.0).round() / 100.0)).collect::<Vec<_>>().join(" "));
+    let text = sizes_text.get_or_insert_with(|| {
+        s.resize
+            .sizes
+            .iter()
+            .map(|d| format!("{}", (u.small_len(*d) * 100.0).round() / 100.0))
+            .collect::<Vec<_>>()
+            .join(" ")
+    });
     ui.label(format!("Available diameters ({}), separated by spaces:", u.small_len_label()));
     if ui.add(egui::TextEdit::multiline(text).desired_rows(2).desired_width(500.0)).changed() {
-        let parsed: Vec<f64> = text.split([' ', ',', ';', '\n', '\t']).filter_map(|w| w.trim().parse::<f64>().ok()).filter(|v| v.is_finite() && *v > 0.0).map(|v| u.small_len_in(v)).collect();
+        let parsed: Vec<f64> = text
+            .split([' ', ',', ';', '\n', '\t'])
+            .filter_map(|w| w.trim().parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .map(|v| u.small_len_in(v))
+            .collect();
         if !parsed.is_empty() {
             s.resize.sizes = parsed;
         }
     }
-    if widgets::button(ui, "Standard Sizes", 120.0).on_hover_text("Common round storm-drain diameters, 12\" to 144\"").clicked() {
+    if widgets::button(ui, "Standard Sizes", 120.0)
+        .on_hover_text("Common round storm-drain diameters, 12\" to 144\"")
+        .clicked()
+    {
         s.resize.sizes = ResizeSettings::default().sizes;
         *sizes_text = None;
     }
@@ -343,13 +397,27 @@ fn resize_tab(ui: &mut Ui, s: &mut CalcSettings, sizes_text: &mut Option<String>
     });
     let names: Vec<String> = marked.map(|n| n.label()).collect();
     ui.add_space(4.0);
-    let line = if names.is_empty() { "No pipes or culverts are marked for automatic sizing.".to_string() } else { format!("Marked for sizing: {}", names.join(", ")) };
+    let line = if names.is_empty() {
+        "No pipes or culverts are marked for automatic sizing.".to_string()
+    } else {
+        format!("Marked for sizing: {}", names.join(", "))
+    };
     ui.label(RichText::new(line).color(t.text_dim));
 }
 
 fn advanced(ui: &mut Ui, s: &mut CalcSettings) {
     ui.horizontal(|ui| {
-        conv_field(ui, "ia", "Initial Abstraction Ratio Ia/S:", "", &mut s.ia_ratio, |x| x, |x| x.clamp(0.0, 1.0), 3, 200.0);
+        conv_field(
+            ui,
+            "ia",
+            "Initial Abstraction Ratio Ia/S:",
+            "",
+            &mut s.ia_ratio,
+            |x| x,
+            |x| x.clamp(0.0, 1.0),
+            3,
+            200.0,
+        );
         opt_field(ui, "mintc", "Minimum Tc:", "min", &mut s.min_tc, |x| x, |x| x.max(0.0), 1, 110.0);
     });
     widgets::group(ui, "Curve Number Weighting", |ui| {

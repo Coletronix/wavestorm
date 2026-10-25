@@ -194,31 +194,39 @@ impl HelpState {
 
 pub fn show(ctx: &egui::Context, st: &mut HelpState) -> bool {
     let mut open = true;
-    crate::frame::Win::new("WAVEStorm Help").open(&mut open).resizable(true).default_size(vec2(720.0, 460.0)).show(ctx, |ui| {
-        let t = Tokens::get(ui.ctx());
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                ui.set_width(210.0);
-                for (i, topic) in TOPICS.iter().enumerate() {
-                    if ui.selectable_label(st.topic == i, topic.title).clicked() {
-                        st.topic = i;
+    crate::frame::Win::new("WAVEStorm Help").open(&mut open).resizable(true).default_size(vec2(720.0, 460.0)).show(
+        ctx,
+        |ui| {
+            let t = Tokens::get(ui.ctx());
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(210.0);
+                    for (i, topic) in TOPICS.iter().enumerate() {
+                        if ui.selectable_label(st.topic == i, topic.title).clicked() {
+                            st.topic = i;
+                        }
                     }
-                }
-            });
-            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), ui.available_height().max(300.0)), egui::Sense::hover());
-            widgets::sunken(ui.painter(), rect, t.field, &t);
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(10.0)).layout(egui::Layout::top_down(egui::Align::Min)));
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(&mut child, |ui| {
-                if let Some(topic) = TOPICS.get(st.topic) {
-                    ui.label(RichText::new(topic.title).size(17.0).strong());
-                    ui.add_space(6.0);
-                    for para in topic.body.split("\n\n") {
-                        ui.add(egui::Label::new(para).wrap());
+                });
+                let (rect, _) = ui.allocate_exact_size(
+                    vec2(ui.available_width(), ui.available_height().max(300.0)),
+                    egui::Sense::hover(),
+                );
+                widgets::sunken(ui.painter(), rect, t.field, &t);
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new().max_rect(rect.shrink(10.0)).layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(&mut child, |ui| {
+                    if let Some(topic) = TOPICS.get(st.topic) {
+                        ui.label(RichText::new(topic.title).size(17.0).strong());
                         ui.add_space(6.0);
+                        for para in topic.body.split("\n\n") {
+                            ui.add(egui::Label::new(para).wrap());
+                            ui.add_space(6.0);
+                        }
                     }
-                }
+                });
             });
-        });
-    });
+        },
+    );
     open
 }

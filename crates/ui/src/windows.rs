@@ -61,9 +61,16 @@ pub enum WindowAction {
     SetPrefs(crate::prefs::Prefs),
     PickFile(crate::platform::Purpose),
     /// Save bytes to a file the user chooses (download in the browser).
-    SaveFile { name: String, bytes: Vec<u8>, ext: &'static str },
+    SaveFile {
+        name: String,
+        bytes: Vec<u8>,
+        ext: &'static str,
+    },
     /// Replace the project's rainfall events, or add/update them by name.
-    SetEvents { events: Vec<wavestorm_core::rainfall::RainEvent>, replace: bool },
+    SetEvents {
+        events: Vec<wavestorm_core::rainfall::RainEvent>,
+        replace: bool,
+    },
     /// Start drawing subcatchment `n`'s Tc flow path on the diagram.
     DrawTcPath(NodeId),
     /// Start tracing subcatchment `n`'s outline (new or replacing the old one).

@@ -80,12 +80,14 @@ pub fn restore(json: &str, read: impl Fn(&str) -> Option<Vec<u8>>) -> (Vec<Doc>,
                 d.hcp = e.hcp;
                 d
             }),
-            (None, Some(path)) => read(path).and_then(|bytes| crate::project_from_bytes(path, bytes).ok()).map(|(p, hcp, _)| {
-                let mut d = Doc::new(p, Some(path.clone()));
-                d.dirty = false;
-                d.hcp = hcp;
-                d
-            }),
+            (None, Some(path)) => {
+                read(path).and_then(|bytes| crate::project_from_bytes(path, bytes).ok()).map(|(p, hcp, _)| {
+                    let mut d = Doc::new(p, Some(path.clone()));
+                    d.dirty = false;
+                    d.hcp = hcp;
+                    d
+                })
+            }
             (None, None) => None,
         };
         if let Some(d) = doc {
@@ -132,7 +134,8 @@ impl Recovery {
     /// to leave something out.
     pub fn update(&mut self, ctx: &egui::Context, docs: &[Doc], active: usize) -> Option<String> {
         let now = ctx.input(|i| i.time);
-        let sig: Vec<(u64, bool, Option<String>)> = docs.iter().map(|d| (d.calc_serial, d.dirty, d.path.clone())).collect();
+        let sig: Vec<(u64, bool, Option<String>)> =
+            docs.iter().map(|d| (d.calc_serial, d.dirty, d.path.clone())).collect();
         if sig != self.signature || active != self.active {
             self.signature = sig;
             self.active = active;
@@ -166,7 +169,10 @@ fn write(docs: &[Doc], active: usize) -> Option<String> {
         return None;
     }
     match snapshot(docs, active, true).map(|t| store::try_write(KEY, &t)) {
-        Some(Ok(())) => Some("Unsaved changes are kept for recovery without their background image (too large for local storage).".into()),
+        Some(Ok(())) => Some(
+            "Unsaved changes are kept for recovery without their background image (too large for local storage)."
+                .into(),
+        ),
         _ => Some("Could not keep a recovery copy of unsaved changes (local storage is full or unavailable).".into()),
     }
 }
@@ -196,15 +202,25 @@ mod tests {
         let (back, active) = restore(&json, files);
         // The missing file is skipped; the saved file is read from disk (clean); the changed and
         // untitled projects come from their kept contents.
-        let titles: Vec<(&str, bool, Option<&str>)> = back.iter().map(|d| (d.project.title.as_str(), d.dirty, d.path.as_deref())).collect();
-        assert_eq!(titles, [("Brookside Commons", false, Some("/p/a.waves")), ("Changed", true, Some("/p/b.waves")), ("Untitled", false, None)]);
+        let titles: Vec<(&str, bool, Option<&str>)> =
+            back.iter().map(|d| (d.project.title.as_str(), d.dirty, d.path.as_deref())).collect();
+        assert_eq!(
+            titles,
+            [
+                ("Brookside Commons", false, Some("/p/a.waves")),
+                ("Changed", true, Some("/p/b.waves")),
+                ("Untitled", false, None)
+            ]
+        );
         assert_eq!(active, 1, "the front tab follows its project");
         assert_eq!(restore("not json", files).0.len(), 0);
     }
 
     #[test]
     fn reads_the_old_recovery_record() {
-        let old = r#"{"projects":[{"path":null,"hcp":false,"project":"#.to_string() + &serde_json::to_string(&crate::samples::sample_project().to_json().unwrap()).unwrap() + "}]}";
+        let old = r#"{"projects":[{"path":null,"hcp":false,"project":"#.to_string()
+            + &serde_json::to_string(&crate::samples::sample_project().to_json().unwrap()).unwrap()
+            + "}]}";
         let (docs, _) = restore(&old, |_| None);
         assert_eq!(docs.len(), 1);
         assert!(docs[0].dirty, "0.3.0 kept only unsaved work");

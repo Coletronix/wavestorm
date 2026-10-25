@@ -111,11 +111,21 @@ impl Platform {
                 if many {
                     for file in dialog.pick_files().await.unwrap_or_default() {
                         let bytes = file.read().await;
-                        inbox.lock().unwrap_or_else(PoisonError::into_inner).push(Incoming { purpose, name: file.file_name(), path: None, bytes });
+                        inbox.lock().unwrap_or_else(PoisonError::into_inner).push(Incoming {
+                            purpose,
+                            name: file.file_name(),
+                            path: None,
+                            bytes,
+                        });
                     }
                 } else if let Some(file) = dialog.pick_file().await {
                     let bytes = file.read().await;
-                    inbox.lock().unwrap_or_else(PoisonError::into_inner).push(Incoming { purpose, name: file.file_name(), path: None, bytes });
+                    inbox.lock().unwrap_or_else(PoisonError::into_inner).push(Incoming {
+                        purpose,
+                        name: file.file_name(),
+                        path: None,
+                        bytes,
+                    });
                 }
             });
         }
@@ -186,7 +196,11 @@ fn download(name: &str, bytes: &[u8]) -> Result<(), String> {
     parts.push(&array.buffer());
     let blob = web_sys::Blob::new_with_buffer_source_sequence(&parts).map_err(err)?;
     let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(err)?;
-    let a = document.create_element("a").map_err(err)?.dyn_into::<web_sys::HtmlAnchorElement>().map_err(|_| "anchor".to_string())?;
+    let a = document
+        .create_element("a")
+        .map_err(err)?
+        .dyn_into::<web_sys::HtmlAnchorElement>()
+        .map_err(|_| "anchor".to_string())?;
     a.set_href(&url);
     a.set_download(name);
     a.click();
@@ -300,7 +314,9 @@ pub mod recent {
             return v;
         }
         // Earlier desktop lists were plain paths.
-        serde_json::from_str::<Vec<String>>(&text).map(|v| v.into_iter().map(|p| Entry { name: file_name(&p), path: Some(p), data: None }).collect()).unwrap_or_default()
+        serde_json::from_str::<Vec<String>>(&text)
+            .map(|v| v.into_iter().map(|p| Entry { name: file_name(&p), path: Some(p), data: None }).collect())
+            .unwrap_or_default()
     }
 
     /// Records an opened or saved project: by its path when it has one (desktop); in the
@@ -315,7 +331,9 @@ pub mod recent {
             None => return,
         };
         let mut v = list();
-        v.retain(|e| if entry.path.is_some() { e.path != entry.path } else { e.path.is_some() || e.name != entry.name });
+        v.retain(
+            |e| if entry.path.is_some() { e.path != entry.path } else { e.path.is_some() || e.name != entry.name },
+        );
         v.insert(0, entry);
         v.truncate(if cfg!(target_arch = "wasm32") { MAX_WEB } else { MAX_DESKTOP });
         save(v);

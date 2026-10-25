@@ -37,7 +37,12 @@ pub fn rasterize(bytes: &[u8], page: usize, dpi: f32) -> Result<Raster, String> 
         if longest > MAX_SIDE as f32 {
             scale *= MAX_SIDE as f32 / longest;
         }
-        let settings = hayro::RenderSettings { x_scale: scale, y_scale: scale, bg_color: hayro::vello_cpu::color::palette::css::WHITE, ..Default::default() };
+        let settings = hayro::RenderSettings {
+            x_scale: scale,
+            y_scale: scale,
+            bg_color: hayro::vello_cpu::color::palette::css::WHITE,
+            ..Default::default()
+        };
         let cache = hayro::RenderCache::new();
         let pix = hayro::render(p, &cache, &hayro::hayro_interpret::InterpreterSettings::default(), &settings);
         let png = pix.into_png().map_err(|e| format!("Cannot render PDF page: {e:?}"))?;
@@ -55,13 +60,19 @@ fn decode_image(bytes: &[u8]) -> Result<Raster, String> {
 
 /// The visible background as a raster for printing (longest side at most 1600 px, opacity
 /// applied against white), or `None` when there is none.
-pub fn print_background(project: &wavestorm_core::project::Project) -> Option<wavestorm_core::printing::PrintBackground> {
+pub fn print_background(
+    project: &wavestorm_core::project::Project,
+) -> Option<wavestorm_core::printing::PrintBackground> {
     let u = project.diagram.underlay.as_ref().filter(|u| u.visible)?;
     // The same raster the diagram texture is made from, so `scale` applies to its pixels.
     let r = rasterize(&u.bytes, u.page, 150.0).ok()?;
     let size = [r.width as f64 * u.scale, r.height as f64 * u.scale];
     let img = image::RgbaImage::from_raw(r.width, r.height, r.rgba)?;
-    let img = if r.width.max(r.height) > 1600 { image::DynamicImage::ImageRgba8(img).thumbnail(1600, 1600).to_rgba8() } else { img };
+    let img = if r.width.max(r.height) > 1600 {
+        image::DynamicImage::ImageRgba8(img).thumbnail(1600, 1600).to_rgba8()
+    } else {
+        img
+    };
     let alpha = u.opacity.clamp(0.05, 1.0);
     let mut rgb = Vec::with_capacity(img.width() as usize * img.height() as usize * 3);
     for p in img.pixels() {
@@ -89,7 +100,9 @@ mod tests {
     fn decodes_png_and_rejects_garbage() {
         let mut png = Vec::new();
         let img = image::RgbaImage::from_pixel(3, 2, image::Rgba([10, 20, 30, 255]));
-        image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
         let r = rasterize(&png, 0, 96.0).unwrap();
         assert_eq!((r.width, r.height), (3, 2));
         assert!(rasterize(b"not an image", 0, 96.0).is_err());

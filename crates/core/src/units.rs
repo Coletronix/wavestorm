@@ -269,8 +269,12 @@ mod tests {
     #[test]
     fn custom_decimals_override_automatic_ones() {
         let mut u = Units::default();
-        assert_eq!((u.fmt_flow(12.3456), u.fmt_elev(100.0), u.fmt_rain(4.3)), ("12.35 cfs".into(), "100.00'".into(), "4.30\"".into()));
-        u.decimals = Decimals { flow: Some(1), elevation: Some(3), rain: Some(1), volume: Some(0), ..Decimals::default() };
+        assert_eq!(
+            (u.fmt_flow(12.3456), u.fmt_elev(100.0), u.fmt_rain(4.3)),
+            ("12.35 cfs".into(), "100.00'".into(), "4.30\"".into())
+        );
+        u.decimals =
+            Decimals { flow: Some(1), elevation: Some(3), rain: Some(1), volume: Some(0), ..Decimals::default() };
         assert_eq!(u.fmt_flow(12.3456), "12.3 cfs");
         assert_eq!(u.fmt_elev(100.0), "100.000'");
         assert_eq!(u.fmt_rain(4.3), "4.3\"");

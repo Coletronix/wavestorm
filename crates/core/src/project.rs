@@ -615,11 +615,19 @@ impl Project {
     }
 
     pub fn storm(&self, name: &str) -> Option<Storm> {
-        self.storms.iter().find(|s| s.name == name).cloned().or_else(|| crate::rainfall::builtin_storms().into_iter().find(|s| s.name == name))
+        self.storms
+            .iter()
+            .find(|s| s.name == name)
+            .cloned()
+            .or_else(|| crate::rainfall::builtin_storms().into_iter().find(|s| s.name == name))
     }
 
     pub fn unit_hydrograph(&self, name: &str) -> Option<UnitHydrograph> {
-        self.uhs.iter().find(|u| u.name == name).cloned().or_else(|| crate::uh::builtin_uhs().into_iter().find(|u| u.name == name))
+        self.uhs
+            .iter()
+            .find(|u| u.name == name)
+            .cloned()
+            .or_else(|| crate::uh::builtin_uhs().into_iter().find(|u| u.name == name))
     }
 
     pub fn to_json(&self) -> Result<String, String> {

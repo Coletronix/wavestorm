@@ -59,7 +59,8 @@ struct Builder {
 /// them apart from the integer output options further right. Without that pattern the next
 /// two fields are taken as input and output.
 fn hydrograph_slots(raw: &str, fields: &[String], after_id: usize) -> Option<(u32, Option<u32>, u32, usize)> {
-    let spans: Vec<(usize, &str)> = raw.split_whitespace().map(|t| (t.as_ptr() as usize - raw.as_ptr() as usize, t)).collect();
+    let spans: Vec<(usize, &str)> =
+        raw.split_whitespace().map(|t| (t.as_ptr() as usize - raw.as_ptr() as usize, t)).collect();
     // Align `fields` (a suffix of the card's tokens) with the spans.
     let offset = spans.len().checked_sub(fields.len())?;
     let at = |k: usize| spans.get(offset + k).copied();
@@ -68,7 +69,9 @@ fn hydrograph_slots(raw: &str, fields: &[String], after_id: usize) -> Option<(u3
     if !one_digit(t0) {
         return None;
     }
-    let slot = |col: usize| (after_id..fields.len()).find_map(|k| at(k).filter(|(p, t)| *p == col && one_digit(t)).map(|(_, t)| (k, t)));
+    let slot = |col: usize| {
+        (after_id..fields.len()).find_map(|k| at(k).filter(|(p, t)| *p == col && one_digit(t)).map(|(_, t)| (k, t)))
+    };
     if let Some((k_out, out)) = slot(s0 + 4) {
         let second = slot(s0 + 2).and_then(|(_, t)| int(t));
         return Some((int(t0)?, second, int(out)?, k_out + 1));
@@ -135,7 +138,12 @@ pub fn import(text: &str) -> Result<Import, String> {
             continue;
         }
         if kw == "ENDJOB" {
-            if text.lines().skip_while(|l| l.trim_end() != line).skip(1).any(|l| l.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("JOB"))) {
+            if text
+                .lines()
+                .skip_while(|l| l.trim_end() != line)
+                .skip(1)
+                .any(|l| l.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("JOB")))
+            {
                 b.notes.push("Only the first TR-20 job in the file was imported.".into());
             }
             break;
@@ -199,7 +207,9 @@ pub fn import(text: &str) -> Result<Import, String> {
         }
     }
     if !recognised && controls.is_empty() {
-        return Err("This does not look like a TR-20 input file (no JOB, tables or RUNOFF/REACH/RESVOR statements).".into());
+        return Err(
+            "This does not look like a TR-20 input file (no JOB, tables or RUNOFF/REACH/RESVOR statements).".into()
+        );
     }
     if let Some(t) = titles.first() {
         b.project.title = t.clone();
@@ -232,7 +242,13 @@ fn rain_storm(n: u32, t: &Table) -> Option<Storm> {
         return None;
     }
     let duration = dt * (values.len() - 1) as f64;
-    Storm::from_mass_points(&format!("TR-20 Rain Table {n}"), "Imported from a TR-20 RAINFL table", duration, &values, false)
+    Storm::from_mass_points(
+        &format!("TR-20 Rain Table {n}"),
+        "Imported from a TR-20 RAINFL table",
+        duration,
+        &values,
+        false,
+    )
 }
 
 impl Builder {
@@ -262,7 +278,8 @@ impl Builder {
             _ => false,
         };
         if !connected {
-            self.notes.push(format!("{op}: the hydrograph from {label} is used twice; only its first use is connected."));
+            self.notes
+                .push(format!("{op}: the hydrograph from {label} is used twice; only its first use is connected."));
         }
         self.registers.remove(&register);
     }
@@ -292,10 +309,15 @@ impl Builder {
             "RUNOFF" => {
                 let (Some(xs), Some(out)) = (ints(0), ints(1)) else { return self.bad(kw, f) };
                 let nums: Vec<f64> = f[2..].iter().filter_map(|s| num(s)).collect();
-                let (Some(&area), Some(&cn), Some(&tc)) = (nums.first(), nums.get(1), nums.get(2)) else { return self.bad(kw, f) };
+                let (Some(&area), Some(&cn), Some(&tc)) = (nums.first(), nums.get(1), nums.get(2)) else {
+                    return self.bad(kw, f);
+                };
                 let data = NodeData::Subcat(Subcatchment {
                     areas: vec![SubArea::new(area * SQFT_PER_SQMI, cn, &format!("TR-20 RUNOFF, CN {cn}"))],
-                    tc: vec![TcSegment::new(TcKind::Direct { minutes: tc * 60.0, length: 0.0, velocity: 0.0 }, "TR-20 Tc")],
+                    tc: vec![TcSegment::new(
+                        TcKind::Direct { minutes: tc * 60.0, length: 0.0, velocity: 0.0 },
+                        "TR-20 Tc",
+                    )],
                     uh: None,
                     large_units: true,
                 });
@@ -303,12 +325,15 @@ impl Builder {
                 self.registers.insert(out, Source { node: id, route: 0 });
             }
             "REACH" => {
-                let (Some(xs), Some((inp, second, out, next))) = (ints(0), hydrograph_slots(raw, f, 1)) else { return self.bad(kw, f) };
+                let (Some(xs), Some((inp, second, out, next))) = (ints(0), hydrograph_slots(raw, f, 1)) else {
+                    return self.bad(kw, f);
+                };
                 let length = f.get(next).and_then(|s| num(s)).unwrap_or(0.0);
                 let reach = match self.xsectn.get(&xs) {
                     Some(t) => rating_reach(t, length),
                     None => {
-                        self.notes.push(format!("REACH {xs:03}: no XSECTN {xs:03} table; describe this reach by hand."));
+                        self.notes
+                            .push(format!("REACH {xs:03}: no XSECTN {xs:03} table; describe this reach by hand."));
                         Reach { length, ..Reach::default() }
                     }
                 };
@@ -317,14 +342,17 @@ impl Builder {
                 self.registers.insert(out, Source { node: id, route: 0 });
             }
             "RESVOR" => {
-                let (Some(st), Some((inp, second, out, next))) = (ints(0), hydrograph_slots(raw, f, 1)) else { return self.bad(kw, f) };
+                let (Some(st), Some((inp, second, out, next))) = (ints(0), hydrograph_slots(raw, f, 1)) else {
+                    return self.bad(kw, f);
+                };
                 // The starting elevation, when given, is the first value with a decimal point
                 // (the trailing fields are integer output options).
                 let start = f.get(next..).unwrap_or(&[]).iter().find(|s| s.contains('.')).and_then(|s| num(s));
                 let pond = match self.structs.get(&st) {
                     Some(t) => struct_pond(t, start, &mut self.notes, st),
                     None => {
-                        self.notes.push(format!("RESVOR {st:02}: no STRUCT {st:02} table; describe this pond by hand."));
+                        self.notes
+                            .push(format!("RESVOR {st:02}: no STRUCT {st:02} table; describe this pond by hand."));
                         Pond::default()
                     }
                 };
@@ -333,7 +361,9 @@ impl Builder {
                 self.registers.insert(out, Source { node: id, route: 0 });
             }
             "ADDHYD" => {
-                let (Some(xs), Some(a), Some(c), Some(out)) = (ints(0), ints(1), ints(2), ints(3)) else { return self.bad(kw, f) };
+                let (Some(xs), Some(a), Some(c), Some(out)) = (ints(0), ints(1), ints(2), ints(3)) else {
+                    return self.bad(kw, f);
+                };
                 let id = self.add(NodeType::Link, format!("XSECTN {xs:03}"), NodeData::Link(Link::default()));
                 self.feed(a, id, kw);
                 self.feed(c, id, kw);
@@ -372,7 +402,12 @@ impl Builder {
         }
         let name = "TR-20 DIMHYD".to_string();
         let t: Vec<f64> = (0..q.len()).map(|i| i as f64 * step).collect();
-        self.project.uhs.push(UnitHydrograph { name: name.clone(), comment: "Imported from a TR-20 DIMHYD table".into(), t, q });
+        self.project.uhs.push(UnitHydrograph {
+            name: name.clone(),
+            comment: "Imported from a TR-20 DIMHYD table".into(),
+            t,
+            q,
+        });
         self.project.settings.uh = name;
         self.notes.push("DIMHYD: imported as the project's unit hydrograph \"TR-20 DIMHYD\" (time step taken as a fraction of Tp; please check).".into());
     }
@@ -408,12 +443,16 @@ impl Builder {
                 (Some(s), _) => s.name.clone(),
                 (None, Some(name)) => {
                     if table != 2 {
-                        self.notes.push(format!("COMPUT storm {storm_no}: TR-20 rain table {table} taken as {name}; please verify."));
+                        self.notes.push(format!(
+                            "COMPUT storm {storm_no}: TR-20 rain table {table} taken as {name}; please verify."
+                        ));
                     }
                     name.to_string()
                 }
                 (None, None) => {
-                    self.notes.push(format!("COMPUT storm {storm_no}: rain table {table} is not defined; Type II 24-hr used."));
+                    self.notes.push(format!(
+                        "COMPUT storm {storm_no}: rain table {table} is not defined; Type II 24-hr used."
+                    ));
                     "Type II 24-hr".to_string()
                 }
             };
@@ -439,7 +478,8 @@ impl Builder {
         self.project.settings.current_event = 0;
         self.project.settings.span_start = if start.is_finite() { start } else { 0.0 };
         // TR-20 runs a fixed number of steps; allow at least 400 steps and the storm plus 6 h.
-        self.project.settings.span_end = self.project.settings.span_start + (400.0 * dt).max(end - self.project.settings.span_start + 6.0);
+        self.project.settings.span_end =
+            self.project.settings.span_start + (400.0 * dt).max(end - self.project.settings.span_start + 6.0);
     }
 
     /// Lays the network out as a tree drawn from its outlet(s) on the right: each node one column
@@ -448,7 +488,12 @@ impl Builder {
     fn layout(&mut self) {
         const DX: f64 = 150.0;
         const DY: f64 = 110.0;
-        let outlets: Vec<NodeId> = self.order.iter().copied().filter(|id| self.project.node(*id).is_some_and(|n| n.outflows.iter().all(Option::is_none))).collect();
+        let outlets: Vec<NodeId> = self
+            .order
+            .iter()
+            .copied()
+            .filter(|id| self.project.node(*id).is_some_and(|n| n.outflows.iter().all(Option::is_none)))
+            .collect();
         let mut placed: BTreeMap<NodeId, (usize, f64)> = BTreeMap::new();
         let mut next_row = 0.0;
         // Iterative post-order walk: (node, depth, children expanded?).
@@ -458,13 +503,15 @@ impl Builder {
                 if placed.contains_key(&id) {
                     continue;
                 }
-                let ups: Vec<NodeId> = self.project.inflows(id).into_iter().map(|(u, _)| u).filter(|u| !placed.contains_key(u)).collect();
+                let ups: Vec<NodeId> =
+                    self.project.inflows(id).into_iter().map(|(u, _)| u).filter(|u| !placed.contains_key(u)).collect();
                 if !expanded && !ups.is_empty() && depth < 10_000 {
                     stack.push((id, depth, true));
                     stack.extend(ups.into_iter().rev().map(|u| (u, depth + 1, false)));
                     continue;
                 }
-                let rows: Vec<f64> = self.project.inflows(id).iter().filter_map(|(u, _)| placed.get(u)).map(|p| p.1).collect();
+                let rows: Vec<f64> =
+                    self.project.inflows(id).iter().filter_map(|(u, _)| placed.get(u)).map(|p| p.1).collect();
                 let row = if rows.is_empty() {
                     next_row += 1.0;
                     next_row - 1.0
@@ -489,17 +536,29 @@ impl Builder {
 }
 
 fn rating_reach(t: &Table, length: f64) -> Reach {
-    let rows: Vec<(f64, f64, f64)> = t.rows.iter().filter_map(|r| Some((*r.first()?, *r.get(1)?, *r.get(2)?))).collect();
+    let rows: Vec<(f64, f64, f64)> =
+        t.rows.iter().filter_map(|r| Some((*r.first()?, *r.get(1)?, *r.get(2)?))).collect();
     let invert = rows.iter().map(|r| r.0).fold(f64::INFINITY, f64::min);
     let invert = if invert.is_finite() { invert } else { 0.0 };
-    let points: Vec<RatingPoint> = rows.iter().map(|&(e, q, a)| RatingPoint { depth: e - invert, flow: q, area: a }).collect();
+    let points: Vec<RatingPoint> =
+        rows.iter().map(|&(e, q, a)| RatingPoint { depth: e - invert, flow: q, area: a }).collect();
     // Header: number, drainage area, bank-full elevation.
     let bank_full = t.header.get(2).and_then(|s| num(s)).map_or(0.0, |e| (e - invert).max(0.0));
-    Reach { section: Section::Rating { points, bank_full }, n: 0.0, length, inlet_invert: invert, outlet_invert: invert, exfiltration: 0.0, flood_depth: None, auto_size: false }
+    Reach {
+        section: Section::Rating { points, bank_full },
+        n: 0.0,
+        length,
+        inlet_invert: invert,
+        outlet_invert: invert,
+        exfiltration: 0.0,
+        flood_depth: None,
+        auto_size: false,
+    }
 }
 
 fn struct_pond(t: &Table, start: Option<f64>, notes: &mut Vec<String>, st: u32) -> Pond {
-    let mut rows: Vec<(f64, f64, f64)> = t.rows.iter().filter_map(|r| Some((*r.first()?, *r.get(1)?, *r.get(2)?))).collect();
+    let mut rows: Vec<(f64, f64, f64)> =
+        t.rows.iter().filter_map(|r| Some((*r.first()?, *r.get(1)?, *r.get(2)?))).collect();
     rows.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut start = start;
     // Storage must start from zero: insert a zero-storage stage one foot lower and start there.
@@ -514,7 +573,11 @@ fn struct_pond(t: &Table, start: Option<f64>, notes: &mut Vec<String>, st: u32) 
     let volume = StorageVolume::new(
         "TR-20 stage-storage",
         bottom,
-        VolumeShape::Custom { kind: CustomKind::CumulativeStorage, elevations: rows.iter().map(|r| r.0).collect(), values: rows.iter().map(|r| r.2 * SQFT_PER_ACRE).collect() },
+        VolumeShape::Custom {
+            kind: CustomKind::CumulativeStorage,
+            elevations: rows.iter().map(|r| r.0).collect(),
+            values: rows.iter().map(|r| r.2 * SQFT_PER_ACRE).collect(),
+        },
     );
     let device = OutletDevice::new(
         "TR-20 stage-discharge",
@@ -522,7 +585,12 @@ fn struct_pond(t: &Table, start: Option<f64>, notes: &mut Vec<String>, st: u32) 
         Routing::Primary,
         DeviceKind::Special { table: rows.iter().map(|r| (r.0, r.1)).collect(), head_based: false, extrapolate: false },
     );
-    Pond { storage: PondStorage { volumes: vec![volume] }, devices: vec![device], start_elevation: start, ..Pond::default() }
+    Pond {
+        storage: PondStorage { volumes: vec![volume] },
+        devices: vec![device],
+        start_elevation: start,
+        ..Pond::default()
+    }
 }
 
 #[cfg(test)]
@@ -585,7 +653,12 @@ TITLE
         let outlets: Vec<&Node> = p.nodes.iter().filter(|n| n.outflows[0].is_none()).collect();
         assert_eq!(outlets.len(), 1, "{:?}", imp.notes);
         assert_eq!(outlets[0].name, "XSECTN 010");
-        assert!(p.nodes.iter().filter(|n| n.node_type() == NodeType::Reach).all(|n| matches!(&n.data, NodeData::Reach(r) if r.is_described())));
+        assert!(
+            p.nodes
+                .iter()
+                .filter(|n| n.node_type() == NodeType::Reach)
+                .all(|n| matches!(&n.data, NodeData::Reach(r) if r.is_described()))
+        );
     }
 
     #[test]
@@ -620,7 +693,8 @@ JOB TR-20
 ";
         let imp = import(deck).unwrap();
         let p = &imp.project;
-        let evs: Vec<(&str, &str, f64)> = p.settings.events.iter().map(|e| (e.name.as_str(), e.storm.as_str(), e.depth)).collect();
+        let evs: Vec<(&str, &str, f64)> =
+            p.settings.events.iter().map(|e| (e.name.as_str(), e.storm.as_str(), e.depth)).collect();
         // Table 5 is undefined (falls back to Type II with a note); table 3 maps to Type IA.
         assert_eq!(evs, vec![("Storm 2", "Type II 24-hr", 3.19), ("Storm 10", "Type IA 24-hr", 4.91)]);
         assert!(imp.notes.iter().any(|n| n.contains("rain table 5")));

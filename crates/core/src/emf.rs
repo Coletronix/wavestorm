@@ -5,7 +5,7 @@
 //! 100000 x 100000 pixels over 1000 x 1000 mm), so MM_TEXT coordinates equal the frame units and
 //! no window/viewport records are needed. All records are little-endian and 4-byte aligned.
 
-use crate::pdf::{text_width, Align, Font, Op, Page, Rgb, Stroke};
+use crate::pdf::{Align, Font, Op, Page, Rgb, Stroke, text_width};
 
 const EMR_HEADER: u32 = 1;
 const EMR_POLYGON: u32 = 3;
@@ -47,11 +47,7 @@ const TA_CENTER: u32 = 6;
 const TA_BASELINE: u32 = 24;
 
 fn u(v: f32) -> i32 {
-    if v.is_finite() {
-        (v * UNITS_PER_PT).round().clamp(-1.0e9, 1.0e9) as i32
-    } else {
-        0
-    }
+    if v.is_finite() { (v * UNITS_PER_PT).round().clamp(-1.0e9, 1.0e9) as i32 } else { 0 }
 }
 
 fn colorref(c: Rgb) -> u32 {
@@ -454,13 +450,27 @@ impl State {
 /// Serialises `page` as an EMF file.
 pub fn page_to_emf(page: &Page) -> Vec<u8> {
     let (fw, fh) = (u(page.width).max(1), u(page.height).max(1));
-    let mut s = State { w: Writer::default(), pen: None, brush: None, font: None, text_color: None, text_align: None, dash: None, alpha: 1.0, bounds: [i32::MAX, i32::MAX, i32::MIN, i32::MIN] };
+    let mut s = State {
+        w: Writer::default(),
+        pen: None,
+        brush: None,
+        font: None,
+        text_color: None,
+        text_align: None,
+        dash: None,
+        alpha: 1.0,
+        bounds: [i32::MAX, i32::MAX, i32::MIN, i32::MIN],
+    };
     s.w.rec(EMR_SETBKMODE, &1u32.to_le_bytes()); // TRANSPARENT
     s.w.rec(EMR_SETPOLYFILLMODE, &1u32.to_le_bytes()); // ALTERNATE
     for op in page.ops() {
         match op {
-            Op::Text { x, y, size, font, align, color, text } => s.text(*x, *y, *size, *font, *align, *color, text, false),
-            Op::TextVertical { x, y, size, font, color, text } => s.text(*x, *y, *size, *font, Align::Center, *color, text, true),
+            Op::Text { x, y, size, font, align, color, text } => {
+                s.text(*x, *y, *size, *font, *align, *color, text, false)
+            }
+            Op::TextVertical { x, y, size, font, color, text } => {
+                s.text(*x, *y, *size, *font, Align::Center, *color, text, true)
+            }
             Op::Line { x1, y1, x2, y2, width, color } => {
                 s.set_pen(Some((*width, *color)));
                 // Dashes are emulated with explicit segments (built-in dashed pens only work for
@@ -489,7 +499,9 @@ pub fn page_to_emf(page: &Page) -> Vec<u8> {
             }
             Op::Polygon { pts, fill, stroke } => s.shape(EMR_POLYGON, pts, *fill, *stroke),
             Op::Rect { x, y, w, h, fill, stroke } => s.boxed(EMR_RECTANGLE, *x, *y, x + w, y + h, *fill, *stroke),
-            Op::Circle { cx, cy, r, fill, stroke } => s.boxed(EMR_ELLIPSE, cx - r, cy - r, cx + r, cy + r, *fill, *stroke),
+            Op::Circle { cx, cy, r, fill, stroke } => {
+                s.boxed(EMR_ELLIPSE, cx - r, cy - r, cx + r, cy + r, *fill, *stroke)
+            }
             Op::Image { x, y, w, h, px_w, px_h, rgb } => s.image(u(*x), u(*y), u(*w), u(*h), *px_w, *px_h, rgb),
         }
     }
@@ -642,7 +654,8 @@ mod tests {
         let off = rd(&b, at + 48) as usize;
         let off_dx = rd(&b, at + 72) as usize;
         assert_eq!(n, 7);
-        let chars: Vec<u16> = (0..n).map(|i| u16::from_le_bytes([b[at + off + 2 * i], b[at + off + 2 * i + 1]])).collect();
+        let chars: Vec<u16> =
+            (0..n).map(|i| u16::from_le_bytes([b[at + off + 2 * i], b[at + off + 2 * i + 1]])).collect();
         assert_eq!(String::from_utf16(&chars).unwrap(), "Left m\u{b2}");
         assert_eq!(size, off_dx + 4 * n);
         // Reference point of the first text: (10 pt, 20 pt).

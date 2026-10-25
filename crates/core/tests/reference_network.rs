@@ -97,7 +97,12 @@ fn network() -> (Project, NodeId, NodeId) {
                     grate: None,
                 },
             ),
-            OutletDevice::new("Spillway", 53.6, Routing::Secondary, DeviceKind::BroadCrestedWeir { length: 5.0, breadth: 2.5, side_z: 0.0, rise: None }),
+            OutletDevice::new(
+                "Spillway",
+                53.6,
+                Routing::Secondary,
+                DeviceKind::BroadCrestedWeir { length: 5.0, breadth: 2.5, side_z: 0.0, rise: None },
+            ),
         ],
         start_elevation: None,
         flood_elevation: Some(55.0),
@@ -149,5 +154,3 @@ fn reference_detention_pond() {
     close("1P center of mass", d.detention.center_of_mass.unwrap(), 98.7, 0.05);
     close("1P plug flow", d.detention.plug_flow.unwrap(), 105.7, 0.08);
 }
-
-
