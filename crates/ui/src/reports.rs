@@ -108,7 +108,7 @@ pub(crate) const COLORS: [Color32; 6] = [
 ];
 
 fn hydro_series(project: &Project, node: &Node, r: &NodeResult) -> Vec<Series> {
-    let u = &project.units;
+    let u = &node.units(&project.units);
     let mk = |name: &str, h: &wavestorm_core::hydrograph::Hydrograph, c: Color32| Series {
         name: name.into(),
         color: c,
@@ -135,7 +135,7 @@ fn hydro_series(project: &Project, node: &Node, r: &NodeResult) -> Vec<Series> {
 }
 
 fn summary_lines(project: &Project, node: &Node, r: &NodeResult, event_heading: &str) -> Vec<String> {
-    let u = &project.units;
+    let u = &node.units(&project.units);
     let f = |h: &wavestorm_core::hydrograph::Hydrograph| {
         format!("{} {}", group(u.flow(h.peak().value), u.flow_dp()), u.flow_label())
     };
@@ -586,7 +586,7 @@ fn body(ui: &mut Ui, doc: &mut Doc, node: &Node, st: &mut ReportState, size: egu
 }
 
 fn rating_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &mut ReportState, size: egui::Vec2) {
-    let u = &project.units;
+    let u = &node.units(&project.units);
     let mut series = Vec::new();
     let mut marks = Vec::new();
     let mut heads = vec![format!("Elevation ({})", if u.metric() { "m" } else { "feet" })];
@@ -737,7 +737,7 @@ fn rating_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &
 }
 
 fn sizing_tab(ui: &mut Ui, project: &Project, node: &Node, r: &NodeResult, st: &mut ReportState, size: egui::Vec2) {
-    let u = &project.units;
+    let u = &node.units(&project.units);
     let curve = wavestorm_core::routing::pond_sizing(&r.inflow);
     if curve.is_empty() {
         ui.label("No inflow: the sizing estimate needs an inflow hydrograph.");
@@ -854,7 +854,7 @@ fn report_table_with(
 }
 
 fn events_tab(ui: &mut Ui, project: &Project, node: &Node, all: &[wavestorm_core::calc::Results], size: egui::Vec2) {
-    let u = &project.units;
+    let u = &node.units(&project.units);
     let h = |a: &str, b: String| (a.to_string(), format!("({b})"));
     let elev_unit = if u.metric() { "meters" } else { "feet" }.to_string();
     let is_sub = node.node_type() == NodeType::Subcat;

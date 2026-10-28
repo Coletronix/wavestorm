@@ -51,7 +51,7 @@ pub fn node_messages(results: &Results, id: NodeId) -> Vec<String> {
 
 /// The summary report for a node.
 pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<String> {
-    let u = &project.units;
+    let u = &node.units(&project.units);
     let s = &project.settings;
     let mut out = vec![node.title(), String::new()];
     out.extend(node_messages(results, node.id));
@@ -187,7 +187,7 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
             }
         }
         (NodeData::Reach(reach), Detail::Reach(d)) => {
-            reach_header(&mut out, project, r, &results.event);
+            reach_header(&mut out, project, u, r, &results.event);
             out.push(format!("{}, {span}", format_args!("Routing by {} method", s.reach_method.label())));
             out.push(format!(
                 "Max. Velocity= {:.2} {}, Min. Travel Time= {:.1} min",
@@ -249,7 +249,7 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
             ));
         }
         (NodeData::Pond(pond), Detail::Pond(d)) => {
-            reach_header(&mut out, project, r, &results.event);
+            reach_header(&mut out, project, u, r, &results.event);
             for (k, name) in OUT_NAMES.iter().enumerate() {
                 if (r.routes[k].has_flow() || (k == 0 && pond.devices.iter().any(|_| true)))
                     && pond
@@ -412,7 +412,7 @@ pub fn node_summary(project: &Project, results: &Results, node: &Node) -> Vec<St
             }
         }
         (NodeData::Link(_), Detail::Link(desc)) => {
-            reach_header(&mut out, project, r, &results.event);
+            reach_header(&mut out, project, u, r, &results.event);
             if r.routes[1].has_flow() {
                 out.push(peak_line("Primary", u, &r.routes[0]));
                 out.push(peak_line("Secondary", u, &r.routes[1]));
@@ -473,8 +473,7 @@ fn device_tree(
     }
 }
 
-fn reach_header(out: &mut Vec<String>, project: &Project, r: &NodeResult, event: &str) {
-    let u = &project.units;
+fn reach_header(out: &mut Vec<String>, project: &Project, u: &Units, r: &NodeResult, event: &str) {
     if r.inflow_area > 0.0 {
         let depth = r.inflow.volume_cf() / r.inflow_area * 12.0;
         let imp = if project.settings.report_impervious && r.impervious_area > 0.0 {
@@ -983,7 +982,7 @@ pub fn hydrograph_table(
     shrink: bool,
     inflows: bool,
 ) -> (Vec<String>, Vec<Vec<f64>>) {
-    let u = &project.units;
+    let u = &node.units(&project.units);
     let Some(r) = results.node(node.id) else { return (Vec::new(), Vec::new()) };
     let n = r.outflow.len();
     let step = if shrink { table_step(results.dt, n, project.settings.table_step, 60) } else { 1 };
@@ -1058,7 +1057,7 @@ pub fn hydrograph_table(
 
 /// Multi-event summary rows for a node: (event, inflow, outflow, primary, secondary, elevation, storage).
 pub fn events_table(project: &Project, all: &[Results], id: NodeId) -> Vec<[String; 7]> {
-    let u = &project.units;
+    let u = &project.node(id).map_or(project.units, |n| n.units(&project.units));
     let mut rows = Vec::new();
     for r in all {
         let Some(n) = r.node(id) else { continue };
@@ -1154,6 +1153,17 @@ mod tests {
         assert_eq!(heads.len(), cols.len());
         assert!(!area_listing(&p).is_empty());
         assert!(soil_listing(&p).iter().any(|l| l.contains("HSG C")));
+        assert!(s.iter().any(|l| l.contains("Area (ac)") || l.contains("10.000")), "acres by default");
+
+        // Unchecking the subcatchment's "Large units" box reports its areas in square feet.
+        if let Some(NodeData::Subcat(sc)) = p.node_mut(id).map(|n| &mut n.data) {
+            sc.large_units = false;
+        }
+        let node = p.node(id).unwrap();
+        let s = node_summary(&p, &r, node);
+        assert!(s.iter().any(|l| l.contains("Area (sf)")), "{s:#?}");
+        assert!(s.iter().any(|l| l.contains("435,600") && l.contains("Weighted Average")), "{s:#?}");
+        assert!(!s.iter().any(|l| l.contains("(ac)")));
     }
 
     #[test]

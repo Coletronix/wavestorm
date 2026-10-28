@@ -300,6 +300,17 @@ impl Node {
     pub fn label(&self) -> String {
         format!("{}{}", self.number, self.node_type().letter())
     }
+    /// The display units for this node's own values: the project's units, with large areas and
+    /// volumes (acres, acre-feet) only when the node's "Large units" box is also checked.
+    pub fn units(&self, project: &Units) -> Units {
+        let large = match &self.data {
+            NodeData::Subcat(sc) => sc.large_units,
+            NodeData::Pond(p) => p.large_units,
+            _ => true,
+        };
+        Units { large: project.large && large, ..*project }
+    }
+
     /// "Subcatchment 1S: Name"
     pub fn title(&self) -> String {
         if self.name.is_empty() {

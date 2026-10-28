@@ -680,7 +680,7 @@ fn node_chart(page: &mut Page, project: &Project, results: &Results, node: &Node
             }
         }
     }
-    let u = &project.units;
+    let u = &node.units(&project.units);
     let mut summary = Vec::new();
     if let Detail::Subcat(d) = &r.detail {
         summary.push(format!("Runoff={}", u.fmt_flow(r.outflow.peak().value)));
