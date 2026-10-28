@@ -3674,7 +3674,7 @@ dependencies = [
 
 [[package]]
 name = "wavestorm"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "eframe",
  "wavestorm-ui",
@@ -3682,7 +3682,7 @@ dependencies = [
 
 [[package]]
 name = "wavestorm-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3691,7 +3691,7 @@ dependencies = [
 
 [[package]]
 name = "wavestorm-ui"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3712,7 +3712,7 @@ dependencies = [
 
 [[package]]
 name = "wavestorm-web"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "eframe",
  "log",
