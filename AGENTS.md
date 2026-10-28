@@ -416,10 +416,10 @@ Semantic versioning: the single source of truth is `version` in the workspace `C
 - There is no changelog file (removed 2026-10-25, user request): the git history is the
   changelog, so write commit subjects that read well as release-note lines (they are listed
   verbatim). Commits titled "Release v…" are left out of the notes.
-- Release cadence (user, 2026-10-23): there are no real users yet, so cut a **minor** release
-  at the end of each substantial batch of work (a feature set, a redesign, a rename) without
-  waiting to be asked; patch releases for fix-only batches. Mention the new tag in the
-  hand-off.
+- Release cadence (user, 2026-10-27, replaces the earlier "release without being asked"
+  rule): **only bump the version and tag a release when the user says to.** Otherwise commit
+  work normally and leave the version alone; when asked, pick patch or minor by the rules
+  below and mention the new tag in the hand-off.
 - To release: bump the workspace version (patch = fixes, minor = features or file-format
   additions, major = breaking project-file changes; while 0.x, breaking changes may go in a
   minor), run `cargo test`, clippy and the wasm check, commit "Release vX.Y.Z", then
