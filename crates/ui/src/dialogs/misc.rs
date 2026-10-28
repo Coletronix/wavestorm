@@ -403,6 +403,17 @@ pub fn pond_estimate(
         let len = u.len_label();
         conv_field(
             ui,
+            "pe-top",
+            "Top Elevation:",
+            len,
+            &mut st.est.top,
+            |x| u.len(x),
+            |x| u.len_in(x),
+            u.elev_dp(),
+            260.0,
+        );
+        conv_field(
+            ui,
             "pe-depth",
             "Approximate Depth:",
             len,
@@ -413,27 +424,20 @@ pub fn pond_estimate(
             260.0,
         );
         conv_field(ui, "pe-z", "Side Slope:", "H:1V", &mut st.est.z, |x| x, |x| x.max(0.0), 2, 260.0);
-        conv_field(
-            ui,
-            "pe-bottom",
-            "Bottom Elevation:",
-            len,
-            &mut st.est.bottom,
-            |x| u.len(x),
-            |x| u.len_in(x),
-            u.elev_dp(),
-            260.0,
-        );
         ui.add_space(4.0);
         let volume = drawing::pond_storage(&st.points, fpu, &st.est);
         match &volume {
             Ok(v) => {
-                let top = st.est.bottom + st.est.depth;
-                ui.label(format!("Bottom area: {}", u.fmt_area(v.surface_area(st.est.bottom).unwrap_or(0.0))));
+                let (top, bottom) = (st.est.top, st.est.bottom());
+                ui.label(format!(
+                    "Bottom elevation: {}    Bottom area: {}",
+                    u.fmt_elev(bottom),
+                    u.fmt_area(v.surface_area(bottom).unwrap_or(0.0))
+                ));
                 ui.label(format!(
                     "Storage: {} from {} to {} (prismatic stage-area data)",
                     u.fmt_volume(v.gross(top)),
-                    u.fmt_elev(st.est.bottom),
+                    u.fmt_elev(bottom),
                     u.fmt_elev(top)
                 ));
             }

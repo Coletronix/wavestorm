@@ -431,17 +431,24 @@ pub fn sync_node(n: &mut Node, fpu: f64) {
 pub const POND_ESTIMATE: &str = "Pond estimate";
 
 /// Pond estimator inputs: the drawn outline is the top of the pond, the sides slope inward
-/// at `z` horizontal to 1 vertical down to a flat bottom `depth` below, at elevation `bottom`.
+/// at `z` horizontal to 1 vertical down to a flat bottom `depth` below the top elevation `top`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PondEstimate {
     pub depth: f64,
     pub z: f64,
-    pub bottom: f64,
+    pub top: f64,
 }
 
 impl Default for PondEstimate {
     fn default() -> Self {
-        PondEstimate { depth: 4.0, z: 3.0, bottom: 100.0 }
+        PondEstimate { depth: 4.0, z: 3.0, top: 104.0 }
+    }
+}
+
+impl PondEstimate {
+    /// Elevation of the flat bottom.
+    pub fn bottom(&self) -> f64 {
+        self.top - self.depth
     }
 }
 
@@ -498,16 +505,17 @@ pub fn pond_max_depth(outline: &[Pt], fpu: f64, z: f64) -> Option<f64> {
 /// by the average-end-area (prismatic) formula. The offset is exact for convex outlines until
 /// an edge vanishes, and an estimate for others.
 pub fn pond_storage(outline: &[Pt], fpu: f64, est: &PondEstimate) -> Result<StorageVolume, String> {
-    let PondEstimate { depth, z, bottom } = *est;
+    let PondEstimate { depth, z, top } = *est;
     if !(depth.is_finite() && depth > 0.0) {
         return Err("Enter a depth greater than zero.".into());
     }
     if !(z.is_finite() && z >= 0.0) {
         return Err("Enter a side slope of zero (vertical) or more.".into());
     }
-    if !bottom.is_finite() {
-        return Err("Enter the bottom elevation.".into());
+    if !top.is_finite() {
+        return Err("Enter the top elevation.".into());
     }
+    let bottom = est.bottom();
     let (a, p, k) = inset_terms(outline);
     let (a, p) = (a * fpu * fpu, p * fpu);
     if a <= 0.0 {
@@ -777,7 +785,8 @@ mod tests {
     #[test]
     fn pond_estimate_matches_prismatoid() {
         // A 100 x 60 ft top, 4 ft deep at 3:1: the bottom is 76 x 36 ft, as a prismatoid.
-        let est = PondEstimate { depth: 4.0, z: 3.0, bottom: 100.0 };
+        let est = PondEstimate { depth: 4.0, z: 3.0, top: 104.0 };
+        assert_eq!(est.bottom(), 100.0);
         let top = rect(0.0, 0.0, 50.0, 30.0); // 2 ft per unit
         let v = pond_storage(&top, 2.0, &est).unwrap();
         let VolumeShape::Custom { kind, elevations, values } = &v.shape else { panic!() };
@@ -807,7 +816,7 @@ mod tests {
     fn pond_estimate_handles_concave_outlines() {
         // An L of two 10-wide arms (area 300): inset by 1 the arms are 8 wide, 18 and 10 long.
         let l = vec![[0.0, 0.0], [20.0, 0.0], [20.0, 10.0], [10.0, 10.0], [10.0, 20.0], [0.0, 20.0]];
-        let v = pond_storage(&l, 1.0, &PondEstimate { depth: 1.0, z: 1.0, bottom: 0.0 }).unwrap();
+        let v = pond_storage(&l, 1.0, &PondEstimate { depth: 1.0, z: 1.0, top: 1.0 }).unwrap();
         let VolumeShape::Custom { values, .. } = &v.shape else { panic!() };
         assert!((values[0] - (18.0 * 8.0 + 8.0 * 10.0)).abs() < 1e-9, "{values:?}");
         assert!((pond_max_depth(&l, 1.0, 1.0).unwrap() - 5.0).abs() < 1e-9);

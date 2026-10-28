@@ -345,7 +345,8 @@ Keep this section updated at the end of every session.
   colour. Test: `tests/underlay.rs::draw_subareas_edit_and_place_background`.
 - Pond estimator (2026-10-27, user request): `Tool::Pond` / `Cmd::Pond` (dock, settings column,
   Diagram menu; script `pond` or `pond:x0,y0,x1,y1` to open the dialog on a rectangle) traces
-  the pond's top; `dialogs::misc::pond_estimate` asks depth, side slope z and bottom elevation,
+  the pond's top; `dialogs::misc::pond_estimate` asks top elevation, depth and side slope z
+  (bottom = top − depth, `PondEstimate::bottom`),
   then creates a pond at the centroid with `Node::outline` = footprint (drawn/printed in the pond
   colour), `Pond::estimate`, and one `CustomKind::AreaPrismatic` volume described
   `drawing::POND_ESTIMATE`. `drawing::pond_storage`: inward mitred offset area

@@ -142,8 +142,8 @@ A subcatchment is created at the centre of the outline with the measured area; e
 outlines, so neighbouring subcatchments can share boundaries. An existing subcatchment can be given an outline, or a new one, with Draw / Redraw Outline \
 (right-click menu or the Area tab).\n\n\
 Pond estimator: choose Pond Estimator (Diagram menu or the pond-section button) and click the corners of the top of the pond, then close the outline. \
-Enter its approximate depth, the side slope (horizontal to 1 vertical; 0 for vertical walls) and the bottom elevation. The dialog shows the bottom \
-area and the storage, and how deep the pond could be before its sloping sides meet. OK creates a pond at the centre of the outline whose storage is \
+Enter the elevation of its top, its approximate depth below that, and the side slope (horizontal to 1 vertical; 0 for vertical walls). The dialog \
+shows the bottom elevation (top less depth), the bottom area and the storage, and how deep the pond could be before its sloping sides meet. OK creates a pond at the centre of the outline whose storage is \
 \"Pond estimate\": surface areas of the outline offset inward along the side slope, about every half foot from the bottom to the top, stored by the \
 prismatic (average-end-area) formula. The offset is exact for convex outlines and an estimate for others. The pond's edit dialog opens on its Storage \
 tab; add its outlets next. Its footprint stays on the diagram; editing its points, or recalibrating the background, re-estimates that storage.\n\n\
