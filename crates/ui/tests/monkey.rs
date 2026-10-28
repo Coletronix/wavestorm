@@ -199,7 +199,7 @@ fn glass_palette_and_dock_work() {
     // its second Trace, which becomes the active tool.
     let zoom = h.state_mut().doc().view.zoom;
     let mut found = false;
-    for x in (360..920).step_by(6) {
+    for x in (300..920).step_by(6) {
         press(&mut h, pos2(x as f32, 728.0), PointerButton::Primary, Modifiers::NONE);
         h.run_steps(1);
         if h.state_mut().tool.name() == "Trace Subcatchment" {

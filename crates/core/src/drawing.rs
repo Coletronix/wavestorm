@@ -6,6 +6,8 @@
 
 use crate::cn::SubArea;
 use crate::project::{Node, NodeData, Project, Subcatchment};
+use crate::storage::{CustomKind, StorageVolume, VolumeShape};
+use serde::{Deserialize, Serialize};
 
 /// A point in diagram units.
 pub type Pt = [f64; 2];
@@ -400,17 +402,134 @@ pub fn sync_tc_lengths(sc: &mut Subcatchment, path: &[Pt], fpu: f64) {
     }
 }
 
-/// Re-measures a node's drawings: drawn sub-areas and the remainder, and Tc segments from the
-/// drawn path.
+/// Re-measures a node's drawings: drawn sub-areas and the remainder, Tc segments from the
+/// drawn path, and an estimated pond's storage from its footprint.
 pub fn sync_node(n: &mut Node, fpu: f64) {
     let outline = n.outline.clone();
     let path = n.tc_path.clone();
-    if let NodeData::Subcat(sc) = &mut n.data {
-        sync_subareas(sc, outline.as_deref(), fpu);
-        if let Some(p) = &path {
-            sync_tc_lengths(sc, p, fpu);
+    match &mut n.data {
+        NodeData::Subcat(sc) => {
+            sync_subareas(sc, outline.as_deref(), fpu);
+            if let Some(p) = &path {
+                sync_tc_lengths(sc, p, fpu);
+            }
+        }
+        NodeData::Pond(pond) => {
+            if let (Some(o), Some(est)) = (&outline, pond.estimate)
+                && let Ok(v) = pond_storage(o, fpu, &est)
+                && let Some(slot) = pond.storage.volumes.iter_mut().find(|v| v.description == POND_ESTIMATE)
+            {
+                *slot = v;
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Description of the storage volume the pond estimator writes (and later re-estimates when
+/// the footprint or the calibration changes).
+pub const POND_ESTIMATE: &str = "Pond estimate";
+
+/// Pond estimator inputs: the drawn outline is the top of the pond, the sides slope inward
+/// at `z` horizontal to 1 vertical down to a flat bottom `depth` below, at elevation `bottom`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PondEstimate {
+    pub depth: f64,
+    pub z: f64,
+    pub bottom: f64,
+}
+
+impl Default for PondEstimate {
+    fn default() -> Self {
+        PondEstimate { depth: 4.0, z: 3.0, bottom: 100.0 }
+    }
+}
+
+/// Area `a`, perimeter `p` and corner sum `k` of a polygon (diagram units), such that the
+/// polygon offset inward by `r` (mitred corners) has area `a - p·r + k·r²`. `k` is the sum of
+/// tan(φ/2) over the turning angles φ (positive at convex corners, negative at re-entrant
+/// ones): 4 for a rectangle, giving (W − 2r)(L − 2r).
+fn inset_terms(outline: &[Pt]) -> (f64, f64, f64) {
+    let mut pts: Vec<Pt> = Vec::with_capacity(outline.len());
+    for q in outline {
+        if pts.last().is_none_or(|l| dist(*l, *q) > 1e-9) {
+            pts.push(*q);
         }
     }
+    while pts.len() > 1 && pts.first().zip(pts.last()).is_some_and(|(a, b)| dist(*a, *b) <= 1e-9) {
+        pts.pop();
+    }
+    let n = pts.len();
+    if n < 3 {
+        return (0.0, 0.0, 0.0);
+    }
+    let signed: f64 = (0..n).map(|i| cross(pts[i], pts[(i + 1) % n])).sum();
+    let orient = if signed < 0.0 { -1.0 } else { 1.0 };
+    let mut perimeter = 0.0;
+    let mut k = 0.0;
+    for i in 0..n {
+        let (a, b, c) = (pts[(i + n - 1) % n], pts[i], pts[(i + 1) % n]);
+        perimeter += dist(b, c);
+        let (e1, e2) = (sub(b, a), sub(c, b));
+        let phi = orient * cross(e1, e2).atan2(e1[0] * e2[0] + e1[1] * e2[1]);
+        // A near-reversal (a spike) would blow up the mitre; it adds next to no area.
+        k += (phi / 2.0).clamp(-1.5, 1.5).tan();
+    }
+    (polygon_area(&pts), perimeter, k)
+}
+
+/// The deepest flat-bottomed pond `outline` can hold with `z`:1 side slopes (ft), where the
+/// sloping sides meet; `None` for vertical sides or a shape without area.
+pub fn pond_max_depth(outline: &[Pt], fpu: f64, z: f64) -> Option<f64> {
+    let (a, p, k) = inset_terms(outline);
+    let (a, p) = (a * fpu * fpu, p * fpu);
+    if a <= 0.0 || p <= 0.0 || z <= 0.0 {
+        return None;
+    }
+    // Smallest positive root of k·r² − p·r + a = 0 (the stable form also covers k ≤ 0); with
+    // no real root the inset shrinks to its least area where the perimeter vanishes.
+    let disc = p * p - 4.0 * k * a;
+    let r = if disc >= 0.0 { 2.0 * a / (p + disc.sqrt()) } else { p / (2.0 * k) };
+    Some(r / z)
+}
+
+/// Stage-area storage for a pond whose top is the drawn `outline`: surface areas of the
+/// inward-offset outline at stages about every half foot from the bottom to the top, stored
+/// by the average-end-area (prismatic) formula. The offset is exact for convex outlines until
+/// an edge vanishes, and an estimate for others.
+pub fn pond_storage(outline: &[Pt], fpu: f64, est: &PondEstimate) -> Result<StorageVolume, String> {
+    let PondEstimate { depth, z, bottom } = *est;
+    if !(depth.is_finite() && depth > 0.0) {
+        return Err("Enter a depth greater than zero.".into());
+    }
+    if !(z.is_finite() && z >= 0.0) {
+        return Err("Enter a side slope of zero (vertical) or more.".into());
+    }
+    if !bottom.is_finite() {
+        return Err("Enter the bottom elevation.".into());
+    }
+    let (a, p, k) = inset_terms(outline);
+    let (a, p) = (a * fpu * fpu, p * fpu);
+    if a <= 0.0 {
+        return Err("The outline has no area.".into());
+    }
+    if pond_max_depth(outline, fpu, z).is_some_and(|max| depth > max * (1.0 + 1e-9)) {
+        return Err("The side slopes meet before reaching that depth: use a smaller depth or a steeper slope.".into());
+    }
+    let steps = ((depth / 0.5).ceil() as usize).clamp(2, 40);
+    let mut elevations = Vec::with_capacity(steps + 1);
+    let mut values = Vec::with_capacity(steps + 1);
+    for i in 0..=steps {
+        let h = depth * i as f64 / steps as f64;
+        let r = z * (depth - h);
+        elevations.push(bottom + h);
+        values.push((a - p * r + k * r * r).max(0.0));
+    }
+    Ok(StorageVolume::new(
+        POND_ESTIMATE,
+        bottom,
+        VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations, values },
+    ))
 }
 
 /// Re-measures every node's drawings (after the calibration changes).
@@ -653,5 +772,78 @@ mod tests {
         let n = p.node(id).unwrap();
         assert_eq!(n.pos, [11.0, 10.0]);
         assert_eq!(n.outline.as_ref().unwrap()[2], [21.0, 20.0]);
+    }
+
+    #[test]
+    fn pond_estimate_matches_prismatoid() {
+        // A 100 x 60 ft top, 4 ft deep at 3:1: the bottom is 76 x 36 ft, as a prismatoid.
+        let est = PondEstimate { depth: 4.0, z: 3.0, bottom: 100.0 };
+        let top = rect(0.0, 0.0, 50.0, 30.0); // 2 ft per unit
+        let v = pond_storage(&top, 2.0, &est).unwrap();
+        let VolumeShape::Custom { kind, elevations, values } = &v.shape else { panic!() };
+        assert_eq!(*kind, CustomKind::AreaPrismatic);
+        assert_eq!((elevations[0], *elevations.last().unwrap()), (100.0, 104.0));
+        assert!((values[0] - 76.0 * 36.0).abs() < 1e-6 && (values.last().unwrap() - 6000.0).abs() < 1e-6);
+        let exact =
+            StorageVolume::new("", 100.0, VolumeShape::Prismatoid { width: 36.0, length: 76.0, height: 4.0, z: 3.0 });
+        let (vol, want) = (v.gross(104.0), exact.gross(104.0));
+        // Average end areas over half-foot stages overstate a quadratic area slightly.
+        assert!((vol - want).abs() / want < 1e-3, "{vol} vs {want}");
+        // Clockwise points give the same storage.
+        let mut cw = top.clone();
+        cw.reverse();
+        assert_eq!(pond_storage(&cw, 2.0, &est).unwrap(), v);
+        // The sides of a 60 ft wide pond meet 30 ft in, 10 ft down at 3:1.
+        assert!((pond_max_depth(&top, 2.0, 3.0).unwrap() - 10.0).abs() < 1e-9);
+        assert!(pond_storage(&top, 2.0, &PondEstimate { depth: 11.0, ..est }).is_err());
+        assert!(pond_storage(&top, 2.0, &PondEstimate { depth: 0.0, ..est }).is_err());
+        assert!(pond_storage(&top[..2], 2.0, &est).is_err());
+        // Vertical sides: the area is the same at every stage.
+        let box_ = pond_storage(&top, 2.0, &PondEstimate { z: 0.0, ..est }).unwrap();
+        assert!((box_.gross(104.0) - 6000.0 * 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn pond_estimate_handles_concave_outlines() {
+        // An L of two 10-wide arms (area 300): inset by 1 the arms are 8 wide, 18 and 10 long.
+        let l = vec![[0.0, 0.0], [20.0, 0.0], [20.0, 10.0], [10.0, 10.0], [10.0, 20.0], [0.0, 20.0]];
+        let v = pond_storage(&l, 1.0, &PondEstimate { depth: 1.0, z: 1.0, bottom: 0.0 }).unwrap();
+        let VolumeShape::Custom { values, .. } = &v.shape else { panic!() };
+        assert!((values[0] - (18.0 * 8.0 + 8.0 * 10.0)).abs() < 1e-9, "{values:?}");
+        assert!((pond_max_depth(&l, 1.0, 1.0).unwrap() - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn estimated_pond_follows_its_footprint() {
+        let mut p = Project::default();
+        let id = p.add_node(NodeType::Pond, [0.0, 0.0]);
+        let est = PondEstimate::default();
+        let n = p.node_mut(id).unwrap();
+        n.outline = Some(rect(0.0, 0.0, 100.0, 60.0));
+        let NodeData::Pond(pond) = &mut n.data else { panic!() };
+        pond.estimate = Some(est);
+        pond.storage.volumes.push(StorageVolume::new(
+            "Other",
+            100.0,
+            VolumeShape::Prismatoid { width: 1.0, length: 1.0, height: 1.0, z: 0.0 },
+        ));
+        pond.storage.volumes.push(pond_storage(&rect(0.0, 0.0, 100.0, 60.0), 1.0, &est).unwrap());
+        // Calibrating at 2 ft per unit quadruples the top area; other volumes stay.
+        p.diagram.underlay = Some(crate::project::Underlay {
+            file_name: String::new(),
+            bytes: Vec::new(),
+            page: 0,
+            origin: [0.0, 0.0],
+            scale: 1.0,
+            rotation: 0.0,
+            feet_per_unit: Some(2.0),
+            opacity: 1.0,
+            visible: true,
+            locked: false,
+        });
+        sync_all(&mut p);
+        let NodeData::Pond(pond) = &p.node(id).unwrap().data else { panic!() };
+        assert_eq!(pond.storage.volumes[0].description, "Other");
+        assert_eq!(pond.storage.volumes[1].surface_area(104.0), Some(24_000.0));
     }
 }

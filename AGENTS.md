@@ -343,6 +343,16 @@ Keep this section updated at the end of every session.
   `widgets::grid_marked` swatches, "Source" column, rebuild keeps each row's drawing by index
   (mirroring grid insert/delete). Colours: `diagram::subarea_color(row)`, remainder = subcat
   colour. Test: `tests/underlay.rs::draw_subareas_edit_and_place_background`.
+- Pond estimator (2026-10-27, user request): `Tool::Pond` / `Cmd::Pond` (dock, settings column,
+  Diagram menu; script `pond` or `pond:x0,y0,x1,y1` to open the dialog on a rectangle) traces
+  the pond's top; `dialogs::misc::pond_estimate` asks depth, side slope z and bottom elevation,
+  then creates a pond at the centroid with `Node::outline` = footprint (drawn/printed in the pond
+  colour), `Pond::estimate`, and one `CustomKind::AreaPrismatic` volume described
+  `drawing::POND_ESTIMATE`. `drawing::pond_storage`: inward mitred offset area
+  A − P·r + K·r² (K = Σ tan(turn/2); exact for convex outlines until an edge vanishes), r =
+  z·(depth − h), stages ~0.5 ft apart; `pond_max_depth` = where the sides meet. `sync_node`
+  re-estimates that volume when the footprint is edited or the background recalibrated.
+  `widgets::push_button` now carries an accessibility label (tests can `get_by_label("OK")`).
 - Session (`ui::recovery`, store key `session`; 0.3.0's `recovery` key is still read): `DELAY`
   (1 s) after any change the open projects are recorded — saved files by path, unsaved or
   file-less ones (always on the web) with their JSON, plus the front tab. At start (non-headless)

@@ -275,7 +275,8 @@ fn diagram_draw(c: &mut Ctx) -> Page {
     let pts_of = |o: &[[f64; 2]]| -> Vec<(f32, f32)> { o.iter().map(|q| (tx(q[0]), ty(q[1]))).collect() };
     for n in &nodes {
         let Some(o) = n.outline.as_ref().filter(|o| o.len() >= 3) else { continue };
-        let edge = node_color(NodeType::Subcat).1;
+        // Subcatchment outlines and estimated pond footprints, each in its node colour.
+        let edge = node_color(n.node_type()).1;
         let outline = pts_of(o);
         page.fill_alpha(OUTLINE_ALPHA);
         page.polygon(&outline, Some(edge), None);

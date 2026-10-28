@@ -141,6 +141,12 @@ Trace a subcatchment: choose Trace Subcatchment, click the corners of the draina
 A subcatchment is created at the centre of the outline with the measured area; edit it to set ground covers and Tc. Corners snap to the corners of other \
 outlines, so neighbouring subcatchments can share boundaries. An existing subcatchment can be given an outline, or a new one, with Draw / Redraw Outline \
 (right-click menu or the Area tab).\n\n\
+Pond estimator: choose Pond Estimator (Diagram menu or the pond-section button) and click the corners of the top of the pond, then close the outline. \
+Enter its approximate depth, the side slope (horizontal to 1 vertical; 0 for vertical walls) and the bottom elevation. The dialog shows the bottom \
+area and the storage, and how deep the pond could be before its sloping sides meet. OK creates a pond at the centre of the outline whose storage is \
+\"Pond estimate\": surface areas of the outline offset inward along the side slope, about every half foot from the bottom to the top, stored by the \
+prismatic (average-end-area) formula. The offset is exact for convex outlines and an estimate for others. The pond's edit dialog opens on its Storage \
+tab; add its outlets next. Its footprint stays on the diagram; editing its points, or recalibrating the background, re-estimates that storage.\n\n\
 Sub-areas: select a subcatchment that has an outline and choose Draw Sub-Area (dock, right-click menu or the Area tab), then click the corners of an area \
 of different cover (roofs, pavement, a pond…). Points are kept inside the outline and snap to nearby corners and edges; a sub-area may not overlap another. \
 Its area is measured, the Area tab opens with it selected to pick its cover, and the row that was there becomes the remainder: the outline's area less the \

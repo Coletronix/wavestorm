@@ -866,6 +866,9 @@ impl WaveStormApp {
                 if ui.button("Trace Subcatchment").clicked() {
                     self.start_trace();
                 }
+                if ui.button("Pond Estimator").clicked() {
+                    self.start_pond();
+                }
                 if ui.button("Measure Length").clicked() {
                     self.tool = Tool::Measure { points: Vec::new() };
                     self.status = "Click points along the path; double-click or Enter to finish".into();
@@ -1072,6 +1075,18 @@ impl WaveStormApp {
         };
     }
 
+    /// Starts the pond estimator: draw the pond's top; its depth and side slope come next.
+    fn start_pond(&mut self) {
+        let has_scale = self.doc().project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit).is_some();
+        self.tool = Tool::Pond { points: Vec::new() };
+        self.status = if has_scale {
+            "Click the corners of the top of the pond; click the first point, double-click or press Enter to close"
+                .into()
+        } else {
+            "No calibrated background: areas will use 1 diagram unit = 1 ft. Calibrate the background first for real areas.".into()
+        };
+    }
+
     /// Starts drawing a sub-area inside subcatchment `id`'s outline.
     fn start_subarea(&mut self, id: NodeId) {
         self.doc().selection = vec![id];
@@ -1268,6 +1283,7 @@ impl WaveStormApp {
             Cmd::Select => self.tool == Tool::Select,
             Cmd::Calibrate => matches!(self.tool, Tool::Calibrate { .. }),
             Cmd::Trace => matches!(self.tool, Tool::Trace { .. }),
+            Cmd::Pond => matches!(self.tool, Tool::Pond { .. }),
             Cmd::Measure => matches!(self.tool, Tool::Measure { .. }),
             Cmd::TcPath => matches!(self.tool, Tool::TcPath { .. }),
             Cmd::SubArea => matches!(self.tool, Tool::SubArea { .. }),
@@ -1376,6 +1392,7 @@ impl WaveStormApp {
                 self.status = "Click two points a known distance apart on the background".into();
             }
             Cmd::Trace => self.start_trace(),
+            Cmd::Pond => self.start_pond(),
             Cmd::Measure => {
                 self.tool = Tool::Measure { points: Vec::new() };
                 self.status = "Click points along the path; double-click or Enter to finish".into();
@@ -1470,6 +1487,7 @@ impl WaveStormApp {
                     Cmd::Calibrate,
                     Cmd::Trace,
                     Cmd::SubArea,
+                    Cmd::Pond,
                     Cmd::Measure,
                     Cmd::TcPath,
                 ],
@@ -1643,6 +1661,10 @@ impl WaveStormApp {
                 }
                 CanvasAction::Traced(None, points) => self.finish_trace(points),
                 CanvasAction::Traced(Some(id), points) => self.redraw_outline(id, points),
+                CanvasAction::PondTraced(points) => {
+                    let st = dialogs::misc::PondEstimateState::new(&points);
+                    self.open_window(Window::PondEstimate(st));
+                }
                 CanvasAction::SubArea(id, points) => self.add_subarea(id, points),
                 CanvasAction::ShapeEdited(id) => {
                     self.refresh_drafts(id);
@@ -2067,6 +2089,7 @@ impl WaveStormApp {
                 Cmd::Select,
                 Cmd::Trace,
                 Cmd::SubArea,
+                Cmd::Pond,
                 Cmd::Measure,
                 Cmd::TcPath,
                 Cmd::Calibrate,
@@ -2364,6 +2387,7 @@ enum Cmd {
     Underlay,
     Calibrate,
     Trace,
+    Pond,
     Measure,
     TcPath,
     SubArea,
@@ -2400,6 +2424,7 @@ impl Cmd {
             Cmd::Underlay => Glyph::Underlay,
             Cmd::Calibrate => Glyph::Calibrate,
             Cmd::Trace => Glyph::Trace,
+            Cmd::Pond => Glyph::Pond,
             Cmd::Measure => Glyph::Measure,
             Cmd::TcPath => Glyph::TcPath,
             Cmd::SubArea => Glyph::SubArea,
@@ -2446,6 +2471,9 @@ impl Cmd {
             Cmd::Underlay => "Load background image or PDF",
             Cmd::Calibrate => "Calibrate background scale",
             Cmd::Trace => "Trace a subcatchment outline",
+            Cmd::Pond => {
+                "Pond estimator: draw the top of a pond, enter its depth and side slope, and get a pond with its storage"
+            }
             Cmd::Measure => "Measure length",
             Cmd::TcPath => "Draw the selected subcatchment's Tc flow path (segment lengths are measured from it)",
             Cmd::SubArea => {
@@ -2720,6 +2748,17 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
         "new" => app.new_project(),
         "close" => app.close_active(),
         "trace" => app.start_trace(),
+        "pond" => {
+            // `pond` starts the tool; `pond:x0,y0,x1,y1` opens the estimator for that rectangle.
+            let v: Vec<f32> = arg.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+            match v.as_slice() {
+                [x0, y0, x1, y1] => {
+                    let pts = [pos2(*x0, *y0), pos2(*x1, *y0), pos2(*x1, *y1), pos2(*x0, *y1)];
+                    app.open_window(Window::PondEstimate(dialogs::misc::PondEstimateState::new(&pts)));
+                }
+                _ => app.start_pond(),
+            }
+        }
         "help" => app.open_window(Window::Help(help::HelpState::topic(if arg.is_empty() { "start" } else { arg }))),
         "about" => app.open_window(Window::About),
         "print" => app.open_window(Window::Print(dialogs::misc::PrintState::default())),

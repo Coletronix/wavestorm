@@ -7,8 +7,9 @@ use crate::theme::{ThemeKind, Tokens};
 use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{Pos2, RichText, vec2};
+use wavestorm_core::drawing::{self, PondEstimate};
 use wavestorm_core::landuse::ImperviousBasis;
-use wavestorm_core::project::{DiagramSettings, Project};
+use wavestorm_core::project::{DiagramSettings, NodeData, NodeType, Project};
 use wavestorm_core::units::{UnitSystem, Units};
 
 pub struct UnitsState {
@@ -357,6 +358,115 @@ pub fn calibrate(ctx: &egui::Context, doc: &mut Doc, st: &mut CalibrateState) ->
                     });
                 }
                 keep = false;
+            }
+            Buttons::Cancel => keep = false,
+            Buttons::None => {}
+        }
+    });
+    keep
+}
+
+/// Pond estimator: asks for the depth and side slope of a pond whose top was just drawn.
+pub struct PondEstimateState {
+    /// The drawn top of the pond (diagram units).
+    pub points: Vec<[f64; 2]>,
+    pub est: PondEstimate,
+}
+
+impl PondEstimateState {
+    pub fn new(points: &[Pos2]) -> Self {
+        PondEstimateState {
+            points: points.iter().map(|p| [p.x as f64, p.y as f64]).collect(),
+            est: PondEstimate::default(),
+        }
+    }
+}
+
+/// On OK, creates a pond at the centre of the drawn outline whose storage is the estimated
+/// stage-area data (prismatic), and opens its Storage tab.
+pub fn pond_estimate(
+    ctx: &egui::Context,
+    doc: &mut Doc,
+    st: &mut PondEstimateState,
+    actions: &mut Vec<WindowAction>,
+) -> bool {
+    let mut keep = true;
+    let u = doc.project.units;
+    let fpu = drawing::feet_per_unit(&doc.project);
+    crate::frame::Win::new("Pond Estimator").collapsible(false).resizable(false).show(ctx, |ui| {
+        let top_area = drawing::polygon_area(&st.points) * fpu * fpu;
+        ui.label(format!("Area at the top of the pond (drawn): {}", u.fmt_area(top_area)));
+        if doc.project.diagram.underlay.as_ref().and_then(|ul| ul.feet_per_unit).is_none() {
+            ui.colored_label(Tokens::get(ui.ctx()).warning, "Not calibrated: 1 diagram unit = 1 ft.");
+        }
+        ui.add_space(4.0);
+        let len = u.len_label();
+        conv_field(
+            ui,
+            "pe-depth",
+            "Approximate Depth:",
+            len,
+            &mut st.est.depth,
+            |x| u.len(x),
+            |x| u.len_in(x),
+            2,
+            260.0,
+        );
+        conv_field(ui, "pe-z", "Side Slope:", "H:1V", &mut st.est.z, |x| x, |x| x.max(0.0), 2, 260.0);
+        conv_field(
+            ui,
+            "pe-bottom",
+            "Bottom Elevation:",
+            len,
+            &mut st.est.bottom,
+            |x| u.len(x),
+            |x| u.len_in(x),
+            u.elev_dp(),
+            260.0,
+        );
+        ui.add_space(4.0);
+        let volume = drawing::pond_storage(&st.points, fpu, &st.est);
+        match &volume {
+            Ok(v) => {
+                let top = st.est.bottom + st.est.depth;
+                ui.label(format!("Bottom area: {}", u.fmt_area(v.surface_area(st.est.bottom).unwrap_or(0.0))));
+                ui.label(format!(
+                    "Storage: {} from {} to {} (prismatic stage-area data)",
+                    u.fmt_volume(v.gross(top)),
+                    u.fmt_elev(st.est.bottom),
+                    u.fmt_elev(top)
+                ));
+            }
+            Err(e) => {
+                ui.colored_label(Tokens::get(ui.ctx()).warning, e.as_str());
+            }
+        }
+        if let Some(max) = drawing::pond_max_depth(&st.points, fpu, st.est.z) {
+            ui.label(RichText::new(format!("The side slopes meet {} below the top.", u.fmt_len(max))).small());
+        }
+        match ok_cancel_apply(ui, false, "background") {
+            Buttons::Ok | Buttons::Apply => {
+                if let Ok(v) = volume {
+                    let c = drawing::centroid(&st.points);
+                    let (outline, est) = (st.points.clone(), st.est);
+                    let mut id = 0;
+                    doc.edit("Pond Estimator", |p| {
+                        id = p.add_node(NodeType::Pond, c);
+                        if let Some(n) = p.node_mut(id) {
+                            n.outline = Some(outline);
+                            if let NodeData::Pond(pond) = &mut n.data {
+                                pond.storage.volumes.push(v);
+                                pond.estimate = Some(est);
+                            }
+                        }
+                    });
+                    doc.selection = vec![id];
+                    actions.push(WindowAction::OpenEdit(id));
+                    actions.push(WindowAction::Status(
+                        "Created a pond with estimated storage. Add its outlets on the Outlets tab.".into(),
+                    ));
+                    keep = false;
+                }
             }
             Buttons::Cancel => keep = false,
             Buttons::None => {}

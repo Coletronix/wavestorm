@@ -348,3 +348,47 @@ fn draw_subareas_edit_and_place_background() {
     let o = n.outline.unwrap();
     assert!((wavestorm_core::drawing::polygon_area(&o) * fpu * fpu - total).abs() / total < 0.02);
 }
+
+#[test]
+fn pond_estimator_creates_pond_with_storage() {
+    let mut h = harness();
+    script(h.state_mut(), "new");
+    h.run_steps(2);
+    // Uncalibrated: 1 unit = 1 ft. Draw the top of a 100 x 60 ft pond.
+    script(h.state_mut(), "pond");
+    h.step();
+    let corners = [pos2(100.0, 100.0), pos2(200.0, 100.0), pos2(200.0, 160.0), pos2(100.0, 160.0)];
+    for c in corners.iter().chain(&corners[..1]) {
+        let s = h.state_mut().world_to_screen(*c);
+        click(&mut h, s);
+    }
+    h.run_steps(2);
+    assert!(
+        h.state_mut().doc().windows.iter().any(|w| matches!(w, wavestorm_ui::windows::Window::PondEstimate(_))),
+        "closing the outline asks for the depth"
+    );
+    // The defaults (4 ft deep, 3:1 sides) are accepted.
+    egui_kittest::kittest::Queryable::get_by_label(&h, "OK").click();
+    h.run_steps(3);
+    let doc = h.state_mut().doc();
+    let pond = doc.project.nodes.iter().find(|n| n.node_type() == NodeType::Pond).expect("pond created");
+    assert_eq!(doc.selection, vec![pond.id]);
+    assert_eq!(pond.outline.as_ref().map(|o| o.len()), Some(4));
+    let NodeData::Pond(p) = &pond.data else { panic!() };
+    assert!(p.estimate.is_some());
+    let v = p.storage.volumes.first().expect("estimated storage");
+    // Average-end areas of a 100 x 60 top, 76 x 36 bottom (clicks land on whole pixels).
+    let want = wavestorm_core::storage::StorageVolume::new(
+        "",
+        100.0,
+        wavestorm_core::storage::VolumeShape::Prismatoid { width: 36.0, length: 76.0, height: 4.0, z: 3.0 },
+    )
+    .gross(104.0);
+    let got = v.gross(104.0);
+    assert!((got - want).abs() / want < 0.03, "storage {got} vs {want}");
+    let edit = doc.windows.iter().find_map(|w| match w {
+        wavestorm_ui::windows::Window::Edit(e) if e.node == pond.id => Some(e.tab),
+        _ => None,
+    });
+    assert_eq!(edit, Some(1), "the pond opens on its Storage tab");
+}

@@ -79,6 +79,8 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 - Trace subcatchment outlines on it, and the areas are measured automatically. Draw
   sub-areas inside an outline: each is measured and coloured, and the remainder row is
   the outline less the drawn sub-areas, so the rows always add up.
+- Pond estimator: draw the top of a pond, enter its approximate depth and side slope, and a
+  pond is created with its stage-area storage (prismatic) already filled in.
 - Edit any drawing: drag its points, drag an edge's middle to add a point, or right-click a
   point to delete it. Areas and Tc lengths update to match.
 - Draw a subcatchment's time-of-concentration flow path on the diagram. Its points are lettered

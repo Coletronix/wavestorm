@@ -17,6 +17,9 @@ pub enum Tool {
     /// Click the corners of a subcatchment outline; close to create the subcatchment (or, with
     /// `node`, to give that subcatchment this outline).
     Trace { points: Vec<Pos2>, node: Option<NodeId> },
+    /// Click the corners of a pond's top; close to estimate its storage (depth and side slope
+    /// are asked for next).
+    Pond { points: Vec<Pos2> },
     /// Measure a polyline length.
     Measure { points: Vec<Pos2> },
     /// Draw subcatchment `node`'s Tc flow path, from its most distant point to the outlet; each
@@ -36,6 +39,7 @@ impl Tool {
             Tool::Calibrate { .. } => "Calibrate",
             Tool::Trace { node: None, .. } => "Trace Subcatchment",
             Tool::Trace { node: Some(_), .. } => "Draw Outline",
+            Tool::Pond { .. } => "Pond Estimator",
             Tool::Measure { .. } => "Measure",
             Tool::TcPath { .. } => "Tc Flow Path",
             Tool::SubArea { .. } => "Draw Sub-Area",
@@ -129,6 +133,8 @@ pub enum CanvasAction {
     Calibrated(Pos2, Pos2),
     /// Finished trace: outline in world coordinates, for a new subcatchment or the given one.
     Traced(Option<NodeId>, Vec<Pos2>),
+    /// Finished pond footprint (world coordinates), for the pond estimator.
+    PondTraced(Vec<Pos2>),
     Measured(Vec<Pos2>),
     /// Finished Tc flow path for a subcatchment (world coordinates, upstream end first).
     TcPath(NodeId, Vec<Pos2>),
@@ -376,6 +382,15 @@ pub fn show(
             draw_polyline(&painter, doc, canvas, points, if close { None } else { cursor }, true, t.subcat.1);
             if close {
                 actions.push(CanvasAction::Traced(*node, points.clone()));
+                *tool = Tool::Select;
+            }
+        }
+        Tool::Pond { points } => {
+            let cursor = world_ptr.map(|w| snap_to_drawings(doc, canvas, w, None, None));
+            let close = closing(ui, doc, canvas, &resp, points, cursor) && points.len() >= 3;
+            draw_polyline(&painter, doc, canvas, points, if close { None } else { cursor }, true, t.pond.1);
+            if close {
+                actions.push(CanvasAction::PondTraced(points.clone()));
                 *tool = Tool::Select;
             }
         }
@@ -778,7 +793,9 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
         let pts: Vec<Pos2> = o.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
         let sel = doc.is_selected(n.id);
         let a = |c: Color32, k: u8| Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), k);
-        fill_polygon(p, doc, canvas, o, a(t.subcat.1, if sel { 60 } else { 34 }));
+        // Ponds drawn with the pond estimator show their footprint in the pond colour.
+        let edge = if matches!(n.data, NodeData::Pond(_)) { t.pond.1 } else { t.subcat.1 };
+        fill_polygon(p, doc, canvas, o, a(edge, if sel { 60 } else { 34 }));
         if let NodeData::Subcat(sc) = &n.data {
             for (i, area) in sc.areas.iter().enumerate() {
                 let Some(so) = &area.outline else { continue };
@@ -831,7 +848,7 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
                 );
             }
         }
-        p.add(Shape::closed_line(pts, Stroke::new(if sel { 2.5 } else { 1.5 }, t.subcat.1)));
+        p.add(Shape::closed_line(pts, Stroke::new(if sel { 2.5 } else { 1.5 }, edge)));
     }
 }
 
@@ -1336,6 +1353,16 @@ fn finish_shape_edit(doc: &mut Doc, node: NodeId, shape: ShapeRef, before: Proje
             drawing::outline_changed(sc, o, old, fpu);
         }
         drawing::sync_node(n, fpu);
+        // An estimated pond's storage follows its footprint, unless the depth no longer fits.
+        if let (Some(o), NodeData::Pond(pond)) = (&n.outline, &n.data)
+            && let Some(Err(e)) = pond.estimate.map(|est| drawing::pond_storage(o, fpu, &est))
+        {
+            doc.commit_from(shape.label(), before);
+            // After ShapeEdited, whose status line this replaces.
+            actions.push(CanvasAction::ShapeEdited(node));
+            actions.push(CanvasAction::Message(format!("Pond storage not re-estimated: {e}")));
+            return;
+        }
     }
     doc.commit_from(shape.label(), before);
     actions.push(CanvasAction::ShapeEdited(node));

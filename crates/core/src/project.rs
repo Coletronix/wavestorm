@@ -198,6 +198,9 @@ pub struct Pond {
     /// The chamber wizard's field, when the storage was laid out with it.
     #[serde(default)]
     pub chamber: Option<crate::chamber::Field>,
+    /// The pond estimator's inputs, when the storage was estimated from a drawn footprint.
+    #[serde(default)]
+    pub estimate: Option<crate::drawing::PondEstimate>,
 }
 
 /// A free-text (and optional image) annotation on the diagram.
