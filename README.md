@@ -125,7 +125,7 @@ The screenshots are rendered from the built-in sample project
 
 Download the package for your system from the
 [latest release](https://github.com/Coletronix/wavestorm/releases/latest). In the file names,
-`VERSION` is the release number, for example `0.6.0`.
+`VERSION` is the release number, for example `0.7.0`.
 
 | Platform | Download | How to use it |
 |---|---|---|
