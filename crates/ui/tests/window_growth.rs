@@ -1,23 +1,23 @@
-//! Windows must keep their size once opened: a layout that asks for slightly more width than
-//! it has makes a resizable window creep wider every frame.
+//! Windows must keep their size once opened: a layout that asks for slightly more room than
+//! it has makes a resizable window creep wider (or taller) every frame.
 
 use egui::vec2;
 use wavestorm_ui::WaveStormApp;
 
-/// Widths of every floating window (area), by layer id.
-fn widths(ctx: &egui::Context) -> Vec<(egui::Id, f32)> {
+/// Sizes of every floating window (area), by layer id.
+fn sizes(ctx: &egui::Context) -> Vec<(egui::Id, egui::Vec2)> {
     ctx.memory(|m| {
         m.areas()
             .visible_layer_ids()
             .into_iter()
             .filter(|l| l.order == egui::Order::Middle)
-            .filter_map(|l| m.area_rect(l.id).map(|r| (l.id, r.width())))
+            .filter_map(|l| m.area_rect(l.id).map(|r| (l.id, r.size())))
             .collect()
     })
 }
 
 #[test]
-fn windows_do_not_creep_wider() {
+fn windows_do_not_creep_larger() {
     let scripts = [
         "compare",
         "report:1P;tab:1",
@@ -53,14 +53,17 @@ fn windows_do_not_creep_wider() {
             wavestorm_ui::script(h.state_mut(), cmd);
         }
         h.run_steps(4);
-        let before = widths(&h.ctx);
+        let before = sizes(&h.ctx);
         h.run_steps(60);
-        let after = widths(&h.ctx);
-        for (id, w0) in &before {
-            if let Some((_, w1)) = after.iter().find(|(i, _)| i == id)
-                && *w1 > w0 + 1.0
+        let after = sizes(&h.ctx);
+        for (id, s0) in &before {
+            if let Some((_, s1)) = after.iter().find(|(i, _)| i == id)
+                && (s1.x > s0.x + 1.0 || s1.y > s0.y + 1.0)
             {
-                failures.push(format!("{script}: window grew from {w0:.0} to {w1:.0} px in 60 frames"));
+                failures.push(format!(
+                    "{script}: window grew from {:.0} x {:.0} to {:.0} x {:.0} px in 60 frames",
+                    s0.x, s0.y, s1.x, s1.y
+                ));
             }
         }
     }

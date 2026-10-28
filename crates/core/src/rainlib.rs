@@ -565,7 +565,7 @@ pub fn write_huh(uh: &UnitHydrograph) -> String {
 }
 
 // ---------------------------------------------------------------------------------------------
-// IDF curve files (.idf)
+// IDF curve files (.hci; also NOAA Atlas 14 tables and WAVEStorm's earlier .idf layout)
 
 /// How one IDF event gives intensity against duration.
 #[derive(Debug, Clone, PartialEq)]
@@ -658,44 +658,219 @@ impl IdfFile {
     }
 }
 
-/// Parses an IDF file. Two inputs are understood:
-///
-/// * A NOAA Atlas 14 precipitation frequency CSV (depth tables): one event per return period
-///   with a table of intensity = depth / duration. (Other reference-application IDF layouts are
-///   not documented in public material; this is our assumption.)
-/// * The text format written by [`write_idf`], modelled on the rainfall file syntax:
-///
-/// ```text
-/// name=Example   comment=...   timeunits=minutes|hours   depthunits=inches|mm
-/// curve=10-yr            (starts an event)
-/// factor=1.1             (optional frequency factor)
-/// coef= a b c            (i = a/(b+t)^c, i per hour in depthunits, t in timeunits)
-/// idf= t1 i1 t2 i2 ...   (discrete duration/intensity pairs, may span lines)
-/// ```
-pub fn parse_idf(text: &str) -> Result<IdfFile, String> {
-    if text.to_ascii_uppercase().contains("PRECIPITATION FREQUENCY ESTIMATES") {
-        let table = noaa::parse_pfds_csv(text)?;
-        let events = table
-            .aris
-            .iter()
-            .enumerate()
-            .map(|(i, ari)| {
-                let pts: Vec<(f64, f64)> = table
-                    .rows
-                    .iter()
-                    .filter_map(|r| {
-                        r.depths.get(i).filter(|d| d.is_finite() && **d > 0.0).map(|d| (r.hours * 60.0, d / r.hours))
-                    })
-                    .collect();
-                IdfEvent { name: noaa::event_name(*ari), shape: IdfShape::Table(pts), factor: 1.0 }
-            })
-            .filter(|e| matches!(&e.shape, IdfShape::Table(p) if p.len() >= 2))
-            .collect::<Vec<_>>();
-        if events.is_empty() {
-            return Err("No events present in the NOAA table".into());
-        }
-        return Ok(IdfFile { name: "NOAA Atlas 14".into(), comment: table.source, events });
+/// An IDF file from a NOAA Atlas 14 table: one event per return period, intensity = depth /
+/// duration at each tabulated duration.
+pub fn idf_from_noaa(table: &noaa::PfTable) -> Result<IdfFile, String> {
+    let events = table
+        .aris
+        .iter()
+        .enumerate()
+        .map(|(i, ari)| {
+            let pts: Vec<(f64, f64)> =
+                table.rows.iter().filter_map(|r| table.depth(r, i).map(|d| (r.hours * 60.0, d / r.hours))).collect();
+            IdfEvent { name: noaa::event_name(*ari), shape: IdfShape::Table(pts), factor: 1.0 }
+        })
+        .filter(|e| matches!(&e.shape, IdfShape::Table(p) if p.len() >= 2))
+        .collect::<Vec<_>>();
+    if events.is_empty() {
+        return Err("No events present in the NOAA table".into());
     }
+    Ok(IdfFile { name: "NOAA Atlas 14".into(), comment: table.source.clone(), events })
+}
+
+/// Parses an IDF definition. Three inputs are understood:
+///
+/// * The `.hci` IDF file layout published with the reference application's IDF documentation
+///   (public "IDF.txt" and sample files, checked against eleven of them): `NAME=`, `COMMENT=`,
+///   `DEPTHUNITS=` (INCHES default, MM), `TIMEUNITS=` (the intensity's time base: HOURS
+///   default, MINUTES, SECONDS), `DURATUNITS=` (MINUTES default), one `DURATION=` line of
+///   durations, then per event `EVENT=`, an optional `Cf=` frequency factor and one of
+///   `INTEN=` (one intensity per duration; `2x` = twice the first INTEN line), `DEPTH=` (one
+///   depth per duration), `coef1= a b c` (I = a/(b+t)^c), `coef2= a b c` (I = a/(b+t^c)) or
+///   `coef3= a b c d` (I = a + bx + cx² + dx³, x = ln t). Values may be simple expressions
+///   (`24*60`, `2.5/3`); keys are case-insensitive; `//` starts a comment. Intensities are
+///   interpolated log-log between durations and held at the first/last duration outside them;
+///   coefficient events are evaluated over the DURATION range (first to last value) and held
+///   beyond it, so they are sampled into a dense table.
+/// * A NOAA Atlas 14 precipitation frequency CSV (current or pre-2012 layout; depth or
+///   intensity), which the same program reads when saved with an `.hci` name.
+/// * WAVEStorm's own earlier `.idf` layout (`curve=`, `factor=`, `coef=`, `idf=` pairs).
+pub fn parse_idf(text: &str) -> Result<IdfFile, String> {
+    let upper = text.to_ascii_uppercase();
+    if upper.contains("PRECIPITATION FREQUENCY ESTIMATES") || upper.contains("ERRORMSG") {
+        return idf_from_noaa(&noaa::parse_pfds(text)?);
+    }
+    let keys = key_values(text);
+    let has = |k: &str| keys.iter().any(|(_, key, _)| key == k);
+    if !has("duration") && (has("curve") || has("idf") || has("coef")) {
+        return parse_legacy_idf(text);
+    }
+    parse_hci(&keys)
+}
+
+/// One event of an `.hci` file as written.
+enum HciData {
+    Inten(Vec<f64>),
+    Multiple(f64),
+    Depth(Vec<f64>),
+    Coef1([f64; 3]),
+    Coef2([f64; 3]),
+    Coef3([f64; 4]),
+}
+
+/// Number of samples a coefficient event is tabulated at over its duration range (log
+/// spaced: log-log interpolation between them is within about 0.01 % of the equations).
+const COEF_SAMPLES: usize = 64;
+
+fn parse_hci(keys: &[(usize, String, String)]) -> Result<IdfFile, String> {
+    let (mut name, mut comment) = (String::from("IDF"), String::new());
+    let (mut depth_k, mut per_hour, mut dur_min) = (1.0_f64, 1.0_f64, 1.0_f64);
+    let mut durations: Option<(usize, Vec<f64>)> = None;
+    let mut events: Vec<(usize, String, f64, Option<HciData>)> = Vec::new();
+    let unit_word = |v: &str| v.trim().to_ascii_lowercase();
+    for (line, key, value) in keys {
+        let line = *line;
+        let set = |events: &mut Vec<(usize, String, f64, Option<HciData>)>, d: HciData| -> Result<(), String> {
+            let Some(e) = events.last_mut() else { return Err(format!("Line {line}: data before any EVENT= line")) };
+            if e.3.is_some() {
+                return Err(format!("Line {line}: event {} already has its data", e.1));
+            }
+            e.3 = Some(d);
+            Ok(())
+        };
+        match key.as_str() {
+            "name" => name = value.trim().to_string(),
+            "comment" => comment = value.trim().to_string(),
+            "depthunits" => depth_k = depth_factor(value),
+            // Intensity is depth per this time unit: convert to per hour.
+            "timeunits" => {
+                let u = unit_word(value);
+                per_hour = if u.starts_with("min") {
+                    60.0
+                } else if u.starts_with("sec") {
+                    3600.0
+                } else {
+                    1.0
+                };
+            }
+            // Durations are in this unit: convert to minutes.
+            "duratunits" => {
+                let u = unit_word(value);
+                dur_min = if u.starts_with("hour") || u == "hr" || u == "hrs" {
+                    60.0
+                } else if u.starts_with("sec") {
+                    1.0 / 60.0
+                } else {
+                    1.0
+                };
+            }
+            "duration" => durations = Some((line, numbers(value, line)?)),
+            // A doubled "==" (seen in published files) and trailing spaces are tolerated.
+            "event" => events.push((line, value.trim_start_matches('=').trim().to_string(), 1.0, None)),
+            "cf" => {
+                if let Some(e) = events.last_mut() {
+                    e.2 = scalar(value, line)?;
+                }
+            }
+            "inten" => {
+                let v = value.trim();
+                let d = match v.strip_suffix(['x', 'X']).and_then(|m| eval_expr(m.trim())) {
+                    Some(m) => HciData::Multiple(m),
+                    None => HciData::Inten(numbers(v, line)?),
+                };
+                set(&mut events, d)?;
+            }
+            "depth" => set(&mut events, HciData::Depth(numbers(value, line)?))?,
+            "coef1" | "coef2" => {
+                let abc: [f64; 3] = numbers(value, line)?
+                    .try_into()
+                    .map_err(|_| format!("Line {line}: {key} needs three coefficients (a b c)"))?;
+                set(&mut events, if key == "coef1" { HciData::Coef1(abc) } else { HciData::Coef2(abc) })?;
+            }
+            "coef3" => {
+                let abcd: [f64; 4] = numbers(value, line)?
+                    .try_into()
+                    .map_err(|_| format!("Line {line}: coef3 needs four coefficients (a b c d)"))?;
+                set(&mut events, HciData::Coef3(abcd))?;
+            }
+            _ => {}
+        }
+    }
+    let Some((dline, raw)) = durations else { return Err("The IDF file has no DURATION= line".into()) };
+    if raw.is_empty() || raw.iter().any(|d| !(d.is_finite() && *d > 0.0)) {
+        return Err(format!("Line {dline}: durations must be positive numbers"));
+    }
+    let minutes: Vec<f64> = raw.iter().map(|d| d * dur_min).collect();
+    // Intensity in the file's units → inches per hour.
+    let k = depth_k * per_hour;
+    let first_inten = events.iter().find_map(|e| match &e.3 {
+        Some(HciData::Inten(v)) => Some(v.clone()),
+        _ => None,
+    });
+    let mut out = Vec::new();
+    for (line, ev, cf, data) in events {
+        let per_duration = |v: &[f64], what: &str| -> Result<(), String> {
+            if v.len() == raw.len() {
+                Ok(())
+            } else {
+                Err(format!("Line {line}: event {ev} has {} {what} values for {} durations", v.len(), raw.len()))
+            }
+        };
+        let pts: Vec<(f64, f64)> = match data {
+            None => return Err(format!("Line {line}: event {ev} has no INTEN, DEPTH or coefficient line")),
+            Some(HciData::Inten(v)) => {
+                per_duration(&v, "intensity")?;
+                minutes.iter().zip(&v).map(|(t, i)| (*t, i * k)).collect()
+            }
+            Some(HciData::Multiple(m)) => {
+                let base =
+                    first_inten.as_ref().ok_or(format!("Line {line}: INTEN={m}x needs an earlier INTEN line"))?;
+                minutes.iter().zip(base).map(|(t, i)| (*t, i * m * k)).collect()
+            }
+            // Depth over the duration (in the time units the intensity uses).
+            Some(HciData::Depth(v)) => {
+                per_duration(&v, "depth")?;
+                minutes.iter().zip(&v).map(|(t, d)| (*t, d * depth_k / (t / 60.0))).collect()
+            }
+            Some(c @ (HciData::Coef1(_) | HciData::Coef2(_) | HciData::Coef3(_))) => {
+                let (lo, hi) = (raw.first().copied().unwrap_or(1.0), raw.last().copied().unwrap_or(1.0));
+                let (lo, hi) = (lo.min(hi), lo.max(hi));
+                let n = if hi > lo { COEF_SAMPLES } else { 1 };
+                (0..n)
+                    .map(|j| {
+                        let f = if n > 1 { j as f64 / (n - 1) as f64 } else { 0.0 };
+                        let t = lo * (hi / lo).powf(f);
+                        let i = match &c {
+                            HciData::Coef1([a, b, cc]) => a / (b + t).powf(*cc),
+                            HciData::Coef2([a, b, cc]) => a / (b + t.powf(*cc)),
+                            HciData::Coef3([a, b, cc, d]) => {
+                                let x = t.ln();
+                                a + b * x + cc * x * x + d * x * x * x
+                            }
+                            _ => f64::NAN,
+                        };
+                        (t * dur_min, i * k)
+                    })
+                    .collect()
+            }
+        };
+        let mut pts = pts;
+        pts.sort_by(|a, b| a.0.total_cmp(&b.0));
+        if pts.iter().any(|p| !(p.1.is_finite() && p.1 > 0.0)) {
+            return Err(format!("Event {ev}: intensities must be positive (check the values or coefficients)"));
+        }
+        out.push(IdfEvent { name: ev, shape: IdfShape::Table(pts), factor: if cf > 0.0 { cf } else { 1.0 } });
+    }
+    if out.is_empty() {
+        return Err("No events present in the IDF file".into());
+    }
+    Ok(IdfFile { name, comment, events: out })
+}
+
+/// WAVEStorm's earlier `.idf` layout (before `.hci` support), still read so those files open:
+/// `name=`, `comment=`, `timeunits=`, `depthunits=`, then `curve=` events with `factor=`,
+/// `coef= a b c` or `idf= t1 i1 t2 i2 ...` pairs.
+fn parse_legacy_idf(text: &str) -> Result<IdfFile, String> {
     let mut name = String::from("IDF");
     let mut comment = String::new();
     let (mut tu, mut du) = (1.0_f64, 1.0_f64);
@@ -774,31 +949,46 @@ pub fn parse_idf(text: &str) -> Result<IdfFile, String> {
     Ok(IdfFile { name, comment, events })
 }
 
-/// Writes an IDF file in the format read by [`parse_idf`] (minutes, inches per hour).
-/// Shown wherever `.idf` files are read or written: no real `.idf` file has been available to
-/// check against, so the layout is our own guess and may not match other programs' files.
-pub const IDF_PROVISIONAL: &str = "IDF (.idf) support is provisional: the file layout is WAVEStorm' own and has not been verified against real .idf files from other programs.";
-
+/// Writes an `.hci` IDF file (the layout [`parse_idf`] reads): inches per hour against
+/// minutes. All events share one DURATION line (the union of their tabulated durations, or
+/// 5 minutes to 24 hours when every event is a coefficient set); table events are written as
+/// INTEN values at those durations, coefficient events as `coef1`.
 pub fn write_idf(idf: &IdfFile) -> String {
     let clean = |s: &str| s.replace(['\r', '\n'], " ");
-    let mut out = format!("// WAVEStorm IDF curve file (PROVISIONAL FORMAT)\n// {IDF_PROVISIONAL}\n\n");
+    let mut durations: Vec<f64> = idf
+        .events
+        .iter()
+        .flat_map(|e| match &e.shape {
+            IdfShape::Table(p) => p.iter().map(|q| q.0).collect(),
+            IdfShape::Coef { .. } => Vec::new(),
+        })
+        .filter(|t| t.is_finite() && *t > 0.0)
+        .collect();
+    durations.sort_by(f64::total_cmp);
+    durations.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+    if durations.is_empty() {
+        durations = vec![5.0, 24.0 * 60.0];
+    }
+    // "90" reads better as "1.5*60"; whole hours as "2*60".
+    let dur = |t: f64| if t >= 60.0 && (t % 60.0).abs() < 1e-9 { format!("{}*60", fmt(t / 60.0)) } else { fmt(t) };
+    let mut out = String::from("// IDF curve file written by WAVEStorm\n\n");
     out.push_str(&format!("name={}\n", clean(&idf.name)));
     if !idf.comment.is_empty() {
         out.push_str(&format!("comment={}\n", clean(&idf.comment)));
     }
-    out.push_str("timeunits=minutes\ndepthunits=inches\n");
+    out.push_str("\ndepthunits=inches\ntimeunits=hours\nduratunits=minutes\n\n");
+    out.push_str(&format!("duration={}\n", durations.iter().map(|t| dur(*t)).collect::<Vec<_>>().join(" ")));
     for e in &idf.events {
-        out.push_str(&format!("\ncurve={}\n", clean(&e.name)));
+        out.push_str(&format!("\nevent={}\n", clean(&e.name)));
         if (e.factor - 1.0).abs() > 1e-12 {
-            out.push_str(&format!("factor={}\n", fmt(e.factor)));
+            out.push_str(&format!("Cf={}\n", fmt(e.factor)));
         }
         match &e.shape {
-            IdfShape::Coef { a, b, c } => out.push_str(&format!("coef= {} {} {}\n", fmt(*a), fmt(*b), fmt(*c))),
-            IdfShape::Table(p) => {
-                for pair in p.chunks(4) {
-                    let cells: Vec<String> = pair.iter().map(|(t, i)| format!("{} {}", fmt(*t), fmt(*i))).collect();
-                    out.push_str(&format!("idf= {}\n", cells.join("  ")));
-                }
+            IdfShape::Coef { a, b, c } => out.push_str(&format!("coef1= {} {} {}\n", fmt(*a), fmt(*b), fmt(*c))),
+            IdfShape::Table(_) => {
+                let cells: Vec<String> =
+                    durations.iter().map(|t| e.intensity(*t).map_or_else(|| "0".into(), fmt)).collect();
+                out.push_str(&format!("inten={}\n", cells.join(" ")));
             }
         }
     }
@@ -1041,7 +1231,7 @@ impl RainLibrary {
                 }
                 Err(e) => result = Err(e),
             }
-        } else if lower.ends_with(".idf") {
+        } else if lower.ends_with(".hci") || lower.ends_with(".idf") {
             match parse_idf(&text) {
                 Ok(mut i) => {
                     if i.name == "IDF" || i.name == "NOAA Atlas 14" {
@@ -1244,8 +1434,125 @@ coef=24.00      0.5920    0.0230   -.00025    0
         assert!((back.peak_factor() - 300.0).abs() < 6.0, "{}", back.peak_factor());
     }
 
+    /// An `.hci` file in the published layout (our own values): tab and space separators,
+    /// expressions, a doubled "==", trailing spaces, Cf, a multiple, a DEPTH event and the
+    /// three coefficient forms.
+    const HCI: &str = "// IDF test file\nName=Test County\ncomment=Made-up values\n\ndepthunits=INCHES\ntimeunits=hours\nduratunits=minutes\n\nduration=5\t15 1*60 6*60 24*60\n\nevent=2-Year \ninten=5.0 3.5 1.6 0.5 0.15\n\nevent==10-Year\nCf=1.1\ninten=1.5x\n\nevent=Depths\ndepth=0.5 1.0 2.0 3.0 4.8\n";
+
     #[test]
-    fn idf_text_format_and_conversion() {
+    fn hci_tables_units_and_quirks() {
+        let f = parse_idf(HCI).unwrap();
+        assert_eq!((f.name.as_str(), f.comment.as_str()), ("Test County", "Made-up values"));
+        let names: Vec<&str> = f.events.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["2-Year", "10-Year", "Depths"]);
+        let e = &f.events[0];
+        assert!((e.intensity(60.0).unwrap() - 1.6).abs() < 1e-12);
+        // Log-log between 60 and 360 minutes; held beyond the first and last durations.
+        let mid = e.intensity(120.0).unwrap();
+        let expect = (1.6f64.ln() + (2.0f64.ln() / 6.0f64.ln()) * (0.5f64 / 1.6).ln()).exp();
+        assert!((mid - expect).abs() < 1e-12, "{mid} {expect}");
+        assert_eq!(e.intensity(2.0), Some(5.0));
+        assert_eq!(e.intensity(3000.0), Some(0.15));
+        // 1.5x the first INTEN line, with its frequency coefficient.
+        assert!((f.events[1].intensity(15.0).unwrap() - 5.25).abs() < 1e-12);
+        assert_eq!(f.events[1].factor, 1.1);
+        // Depth over duration: 2.0 in in 60 min = 2.0 in/hr; 4.8 in in 24 h = 0.2 in/hr.
+        assert!((f.events[2].intensity(60.0).unwrap() - 2.0).abs() < 1e-12);
+        assert!((f.events[2].intensity(1440.0).unwrap() - 0.2).abs() < 1e-12);
+        // Millimetres per hour with durations in hours.
+        let mm =
+            parse_idf("name=x\ndepthunits=mm\nduratunits=hours\nduration=5/60 1 24\nevent=a\ninten=127 25.4 2.54\n")
+                .unwrap();
+        assert!((mm.events[0].intensity(60.0).unwrap() - 1.0).abs() < 1e-12);
+        assert!((mm.events[0].intensity(5.0).unwrap() - 5.0).abs() < 1e-12);
+        // Intensity per minute: 0.05 in/min = 3 in/hr.
+        let per_min = parse_idf("timeunits=minutes\nduration=10 60\nevent=a\ninten=0.05 0.02\n").unwrap();
+        assert!((per_min.events[0].intensity(10.0).unwrap() - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn hci_coefficients_are_held_within_their_range() {
+        let text = "name=c\nduratunits=minutes\nduration=10 24*60\nevent=one\ncoef1= 69 8.0 0.811\nevent=two\ncoef2= 10.63 8.1 0.45\nevent=three\ncoef3= 11.0983 -2.4724 0.00711 0.01886\n";
+        let f = parse_idf(text).unwrap();
+        let eqs: [&dyn Fn(f64) -> f64; 3] =
+            [&|t| 69.0 / (8.0 + t).powf(0.811), &|t| 10.63 / (8.1 + t.powf(0.45)), &|t| {
+                let x = f64::ln(t);
+                11.0983 - 2.4724 * x + 0.00711 * x * x + 0.01886 * x * x * x
+            }];
+        for (e, eq) in f.events.iter().zip(eqs) {
+            for t in [10.0, 13.0, 37.5, 60.0, 200.0, 1440.0] {
+                let got = e.intensity(t).unwrap();
+                assert!((got / eq(t) - 1.0).abs() < 2e-4, "{} at {t}: {got} vs {}", e.name, eq(t));
+            }
+            // Outside the DURATION range the limit's intensity is used.
+            assert!((e.intensity(5.0).unwrap() - eq(10.0)).abs() < 1e-9);
+            assert!((e.intensity(2880.0).unwrap() - eq(1440.0)).abs() < 1e-9);
+        }
+        // Hour-based durations and millimetres: I(1 h) = 16 / 1^0.532 mm/hr.
+        let h =
+            parse_idf("depthunits=mm\nduratunits=hours\nduration= 5/60 24\nevent=a\ncoef1= 16.0  0  0.532\n").unwrap();
+        assert!((h.events[0].intensity(60.0).unwrap() - 16.0 / 25.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn hci_errors_name_the_problem() {
+        let e = parse_idf("duration=5 10 15\nevent=a\ninten=1 2\n").unwrap_err();
+        assert!(e.contains("event a has 2 intensity values for 3 durations"), "{e}");
+        assert!(parse_idf("event=a\ninten=1 2\n").unwrap_err().contains("no DURATION"));
+        assert!(parse_idf("duration=5 10\nevent=a\n").unwrap_err().contains("no INTEN"));
+        assert!(parse_idf("duration=5 10\ninten=1 2\n").unwrap_err().contains("before any EVENT"));
+        assert!(parse_idf("duration=5 10\nevent=a\ninten=1 -2\n").unwrap_err().contains("positive"));
+        assert!(parse_idf("duration=5 10\nevent=a\ninten=2x\n").unwrap_err().contains("earlier INTEN"));
+        assert!(parse_idf("duration=5 10\nevent=a\ncoef1=1 2\n").unwrap_err().contains("three coefficients"));
+    }
+
+    #[test]
+    fn hci_round_trip() {
+        let f = parse_idf(HCI).unwrap();
+        let text = write_idf(&f);
+        assert!(text.contains("duration=5 15 1*60 6*60 24*60"), "{text}");
+        assert!(text.contains("Cf=1.1"));
+        let back = parse_idf(&text).unwrap();
+        assert_eq!(back.name, "Test County");
+        for (a, b) in f.events.iter().zip(&back.events) {
+            assert_eq!((a.name.as_str(), a.factor), (b.name.as_str(), b.factor));
+            for t in [5.0, 30.0, 100.0, 1440.0] {
+                assert!((a.intensity(t).unwrap() - b.intensity(t).unwrap()).abs() < 1e-6);
+            }
+        }
+        // A project curve of coefficient sets is written as coef1 lines.
+        let c = IdfCurve { name: "k".into(), events: vec![("2-Year".into(), 60.0, 10.0, 0.8)], tables: Vec::new() };
+        let text = write_idf(&IdfFile::from_curve(&c));
+        assert!(text.contains("coef1= 60 10 0.8") && text.contains("duration=5 24*60"), "{text}");
+        let back = parse_idf(&text).unwrap();
+        assert!((back.events[0].intensity(30.0).unwrap() / (60.0 / 40.0f64.powf(0.8)) - 1.0).abs() < 2e-4);
+    }
+
+    /// The public sample `.hci` files (downloaded into the gitignored research folder, never
+    /// committed) all read, with their intensities at 60 minutes as published.
+    #[test]
+    fn published_hci_samples_when_present() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../reference_images/research/idf");
+        let Ok(entries) = std::fs::read_dir(&dir) else { return };
+        let mut n = 0;
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.extension().is_some_and(|e| e.eq_ignore_ascii_case("hci") || e.eq_ignore_ascii_case("csv")) {
+                let text = std::fs::read_to_string(&p).unwrap();
+                let f = parse_idf(&text).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+                assert!(!f.events.is_empty(), "{}", p.display());
+                for e in &f.events {
+                    let i = e.intensity(60.0).unwrap();
+                    assert!(i > 0.05 && i < 200.0, "{} {}: {i}", p.display(), e.name);
+                }
+                n += 1;
+            }
+        }
+        assert!(n > 0 || !dir.exists());
+    }
+
+    #[test]
+    fn legacy_idf_layout_still_reads() {
         let text = "name=Test\ntimeunits=minutes\ncurve=10-yr\nfactor=1.1\ncoef= 100 10 0.8\ncurve=2-yr\nidf= 5 5.0  10 4.0\nidf= 60 1.5  120 1.0\n";
         let f = parse_idf(text).unwrap();
         assert_eq!(f.events.len(), 2);
@@ -1260,7 +1567,8 @@ coef=24.00      0.5920    0.0230   -.00025    0
         assert_eq!(IdfFile::from_curve(&c).events.len(), 2);
         let back = parse_idf(&write_idf(&f)).unwrap();
         assert_eq!(back.events.len(), 2);
-        assert!((back.events[0].intensity(30.0).unwrap() - f.events[0].intensity(30.0).unwrap()).abs() < 1e-4);
+        // Written as coef1 and read back as a dense table over 5 min to 24 h.
+        assert!((back.events[0].intensity(30.0).unwrap() / f.events[0].intensity(30.0).unwrap() - 1.0).abs() < 2e-4);
         let ev = f.events_for("Type II 24-hr", 24.0, "");
         assert_eq!(ev.len(), 2);
         assert_eq!(ev[0].frequency_factor, 1.1);

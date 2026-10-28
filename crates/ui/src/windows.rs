@@ -20,6 +20,7 @@ pub enum Window {
     Messages,
     About,
     Calibrate(dialogs::misc::CalibrateState),
+    PondEstimate(dialogs::misc::PondEstimateState),
     Underlay(dialogs::misc::UnderlayState),
     Undo(dialogs::misc::UndoState),
     Storms(reports::CurveState),
@@ -30,6 +31,9 @@ pub enum Window {
     Help(crate::help::HelpState),
     General(dialogs::misc::GeneralState),
     EventLookup(dialogs::storm::EventLookup),
+    Locate(dialogs::site::LocateState),
+    Georef(dialogs::site::GeorefState),
+    Soils(dialogs::site::SoilsState),
 }
 
 impl Window {
@@ -79,6 +83,12 @@ pub enum WindowAction {
     DrawSubArea(NodeId),
     /// Move or resize the background on the diagram.
     PlaceUnderlay,
+    /// Start a web request (address, map image, soils).
+    Fetch(crate::net::Fetch),
+    /// Start drawing the soil survey's area of interest.
+    DrawAoi,
+    /// Subcatchments changed outside their edit dialogs: open dialogs should pick them up.
+    RefreshDrafts,
 }
 
 /// Shows every window of the document; returns follow-up actions.
@@ -99,6 +109,7 @@ pub fn show_all(ctx: &egui::Context, doc: &mut Doc) -> Vec<WindowAction> {
             Window::Messages => reports::show_messages(ctx, doc, &mut actions),
             Window::About => dialogs::misc::about(ctx),
             Window::Calibrate(s) => dialogs::misc::calibrate(ctx, doc, s),
+            Window::PondEstimate(s) => dialogs::misc::pond_estimate(ctx, doc, s, &mut actions),
             Window::Underlay(s) => dialogs::misc::underlay(ctx, doc, s, &mut actions),
             Window::Undo(s) => dialogs::misc::undo_history(ctx, doc, s),
             Window::Storms(s) => reports::show_curves(ctx, doc, s, &mut actions),
@@ -108,6 +119,9 @@ pub fn show_all(ctx: &egui::Context, doc: &mut Doc) -> Vec<WindowAction> {
             Window::Help(s) => crate::help::show(ctx, s),
             Window::General(s) => dialogs::misc::general(ctx, s, &mut actions),
             Window::EventLookup(s) => dialogs::storm::event_lookup(ctx, doc, s, &mut actions),
+            Window::Locate(s) => dialogs::site::locate(ctx, doc, s, &mut actions),
+            Window::Georef(s) => dialogs::site::georef(ctx, doc, s, &mut actions),
+            Window::Soils(s) => dialogs::site::soils_window(ctx, doc, s, &mut actions),
             Window::Print(s) => {
                 let (keep, go) = dialogs::misc::print(ctx, s);
                 if let Some(o) = go {

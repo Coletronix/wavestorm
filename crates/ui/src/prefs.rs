@@ -18,7 +18,7 @@ pub struct Prefs {
     pub show_tips: bool,
     /// Open the Messages window when a calculation produces new hints, warnings or errors.
     pub show_messages: bool,
-    /// Folder holding rainfall library files (.hcr, .huh, .idf, *-Rain.txt); desktop only.
+    /// Folder holding rainfall library files (.hcr, .huh, .hci, *-Rain.txt); desktop only.
     pub rainfall_folder: String,
     /// Save changed projects to their own files automatically (desktop; projects that have
     /// been saved once).

@@ -74,6 +74,8 @@ fn push_button(ui: &mut Ui, label: &str, width: f32, enabled: bool, latched: boo
     let size = vec2(width.max(text_w + 16.0), 23.0);
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (rect, resp) = ui.allocate_exact_size(size, sense);
+    // Painted by hand, so name it for accessibility (and tests that find buttons by label).
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
         let pressed = resp.is_pointer_button_down_on() || latched;

@@ -68,8 +68,10 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 
 **Rainfall data**
 - Rainfall Event Lookup from county rainfall tables, NOAA Atlas 14 CSV downloads and IDF files.
+  NOAA for Site downloads the NOAA Atlas 14 estimates for a placed background directly
+  (desktop).
 - A rainfall library folder of storm distribution (`.hcr`), unit hydrograph (`.huh`) and IDF
-  files. Storms a project uses are copied into it, so project files stay self-contained.
+  (`.hci`) files. Storms a project uses are copied into it, so project files stay self-contained.
 
 **Working on the diagram**
 - Drag-and-drop nodes, multiple projects in tabs, undo history, notes and pop-up field tips
@@ -79,6 +81,8 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 - Trace subcatchment outlines on it, and the areas are measured automatically. Draw
   sub-areas inside an outline: each is measured and coloured, and the remainder row is
   the outline less the drawn sub-areas, so the rows always add up.
+- Pond estimator: draw the top of a pond, enter its approximate depth and side slope, and a
+  pond is created with its stage-area storage (prismatic) already filled in.
 - Edit any drawing: drag its points, drag an edge's middle to add a point, or right-click a
   point to delete it. Areas and Tc lengths update to match.
 - Draw a subcatchment's time-of-concentration flow path on the diagram. Its points are lettered
@@ -86,6 +90,19 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
   capped at 100 ft by default); you only enter slope and surface.
 - Print or export the diagram as shown on screen: background, translucent area fills, Tc
   paths and CN labels.
+
+**Site location and soils** (United States; online only when you ask)
+- Aerial Photo: find the site by address or latitude/longitude and download a NAIP aerial
+  photo (or a topographic map) from USGS The National Map. It arrives placed and to scale.
+- Georeference your own site plan or PDF by giving two of its points their latitude and
+  longitude. This sets the scale too.
+- Soils: draw an area of interest, or use the subcatchment outlines. WAVEStorm asks NRCS Soil
+  Data Access (the data behind Web Soil Survey) for its soil map units and hydrologic soil
+  groups, and draws them on the diagram. Dual groups count as D unless the site is drained.
+- Apply the soils to subcatchments: each Area row is split by soil group, with the TR-55
+  curve number of its cover for each group.
+- Export the area of interest as a zipped shapefile for Web Soil Survey. Print a
+  Hydrologic Soil Group report with a soil map and per-subcatchment tables.
 
 **Projects and data exchange**
 - A start page (New, Open, Open Sample Project, recent projects) when no project is open.
@@ -123,7 +140,7 @@ The screenshots are rendered from the built-in sample project
 
 Download the package for your system from the
 [latest release](https://github.com/Coletronix/wavestorm/releases/latest). In the file names,
-`VERSION` is the release number, for example `0.6.0`.
+`VERSION` is the release number, for example `0.7.0`.
 
 | Platform | Download | How to use it |
 |---|---|---|
@@ -217,11 +234,12 @@ The built-in help (**Help > Contents**) covers the dialogs and the calculation m
 | `.hcr` | ✓ | ✓ | Rainfall distribution |
 | `.huh` | ✓ | ✓ | Dimensionless unit hydrograph |
 | `*-Rain.txt` | ✓ | | County rainfall tables for Rainfall Event Lookup |
-| `.idf` | ✓ | ✓ | **Provisional**: our own layout, not yet verified against real `.idf` files |
+| `.hci` | ✓ | ✓ | IDF curves: intensity or depth tables, coefficient equations, or a NOAA Atlas 14 CSV saved as `.hci` (current and pre-2012 layouts). Checked against published sample files. WAVEStorm's earlier `.idf` files are still read. |
 | NOAA Atlas 14 `.csv` | ✓ | | Precipitation frequency downloads for event lookup |
 | TR-20 input deck | ✓ | | Legacy card-format decks (Project > Import). Volumes match TR-20 output; reach-routed peaks can differ. |
 | `.csv` | ✓ | ✓ | Sub-areas, hydrographs, rating and pump tables |
 | `.pdf` / `.emf` / `.txt` | | ✓ | Reports and vector graphics |
+| `.zip` (shapefile) | | ✓ | Area of interest for Web Soil Survey's Import AOI (WGS 84 polygon) |
 
 Third-party rainfall libraries and project files are loaded at runtime from files you supply.
 None are bundled with WAVEStorm.
@@ -252,9 +270,9 @@ Key calibration choices, each covered by tests:
 - Stor-Ind+Trans reaches are level-pool routed, then translated by length over the maximum
   velocity.
 
-Known limitations: there is no rock-fill outlet yet, metric `.hcp` files are not read, the
-`.idf` layout is unverified, and Stor-Ind+Trans attenuation differed from the reference
-application by about 2 % against 4 % on one published example.
+Known limitations: there is no rock-fill outlet yet, metric `.hcp` files are not read, and
+Stor-Ind+Trans attenuation differed from the reference application by about 2 % against 4 %
+on one published example.
 
 WAVEStorm is engineering software provided without warranty. Check its results
 independently before relying on them for design.

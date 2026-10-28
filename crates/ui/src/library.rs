@@ -79,7 +79,7 @@ pub fn import(name: &str, bytes: &[u8]) -> String {
     if !probe.add_file(name, bytes) {
         return match probe.problems.first() {
             Some(p) => format!("Cannot read {p}"),
-            None => format!("{name} is not a rainfall file (.hcr, .huh, .idf or *-Rain.txt)"),
+            None => format!("{name} is not a rainfall file (.hcr, .huh, .hci or *-Rain.txt)"),
         };
     }
     let mut st = lock();
@@ -93,9 +93,6 @@ pub fn import(name: &str, bytes: &[u8]) -> String {
         {
             store::write(IMPORT_KEY, &json);
         }
-    }
-    if name.to_ascii_lowercase().ends_with(".idf") {
-        return format!("Imported {name} (PROVISIONAL: .idf layout not yet verified against real files)");
     }
     format!("Imported {name}")
 }
@@ -187,6 +184,7 @@ fn scan(folder: &str) -> RainLibrary {
         let lower = name.to_ascii_lowercase();
         if !(lower.ends_with(".hcr")
             || lower.ends_with(".huh")
+            || lower.ends_with(".hci")
             || lower.ends_with(".idf")
             || lower.ends_with("-rain.txt"))
         {

@@ -6,6 +6,8 @@
 
 use crate::cn::SubArea;
 use crate::project::{Node, NodeData, Project, Subcatchment};
+use crate::storage::{CustomKind, StorageVolume, VolumeShape};
+use serde::{Deserialize, Serialize};
 
 /// A point in diagram units.
 pub type Pt = [f64; 2];
@@ -64,17 +66,26 @@ pub fn triangulate(p: &[Pt]) -> Vec<[usize; 3]> {
     if signed < 0.0 {
         idx.reverse();
     }
+    // Inside or on the edge: a reflex corner touching the diagonal also blocks an ear, or the
+    // clipped triangle would cover the notch beside it.
     let in_triangle = |q: Pt, a: Pt, b: Pt, c: Pt| {
         let (d1, d2, d3) = (cross(sub(b, a), sub(q, a)), cross(sub(c, b), sub(q, b)), cross(sub(a, c), sub(q, c)));
-        d1 > 1e-12 && d2 > 1e-12 && d3 > 1e-12
+        q != a && q != b && q != c && d1 >= -1e-12 && d2 >= -1e-12 && d3 >= -1e-12
     };
     let mut tris = Vec::with_capacity(n - 2);
     while idx.len() > 3 {
         let m = idx.len();
+        let reflex = |k: usize| {
+            let (a, b, c) = (idx[(k + m - 1) % m], idx[k], idx[(k + 1) % m]);
+            cross(sub(p[b], p[a]), sub(p[c], p[b])) <= 0.0
+        };
         let ear = (0..m).find(|&i| {
             let (a, b, c) = (idx[(i + m - 1) % m], idx[i], idx[(i + 1) % m]);
             cross(sub(p[b], p[a]), sub(p[c], p[b])) > 0.0
-                && !idx.iter().any(|&j| j != a && j != b && j != c && in_triangle(p[j], p[a], p[b], p[c]))
+                && !(0..m).any(|k| {
+                    let j = idx[k];
+                    j != a && j != b && j != c && reflex(k) && in_triangle(p[j], p[a], p[b], p[c])
+                })
         });
         let Some(i) = ear else { break };
         tris.push([idx[(i + m - 1) % m], idx[i], idx[(i + 1) % m]]);
@@ -106,6 +117,56 @@ pub fn nearest_on_boundary(p: Pt, poly: &[Pt]) -> Pt {
         .map(|i| nearest_on_segment(p, poly[i], poly[(i + 1) % n]))
         .min_by(|a, b| dist(p, *a).total_cmp(&dist(p, *b)))
         .unwrap_or(p)
+}
+
+/// Distance of `p` along closed ring `ring`'s perimeter from its first point, when `p` lies
+/// within `tol` of the ring (on the nearest edge).
+fn ring_position(ring: &[Pt], p: Pt, tol: f64) -> Option<f64> {
+    let n = ring.len();
+    let mut along = 0.0;
+    let mut best: Option<(f64, f64)> = None;
+    for i in 0..n {
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        let q = nearest_on_segment(p, a, b);
+        let d = dist(p, q);
+        if d <= tol && best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, along + dist(a, q)));
+        }
+        along += dist(a, b);
+    }
+    best.map(|(_, s)| s)
+}
+
+/// The corners of closed ring `ring` passed when going from `a` to `b` along it the shorter
+/// way round, in order (`a` and `b` themselves excluded). `None` when either point is not on
+/// the ring (within `tol`). Used to make a drawn edge follow a boundary, such as a soil line.
+pub fn follow_ring(ring: &[Pt], a: Pt, b: Pt, tol: f64) -> Option<Vec<Pt>> {
+    let n = ring.len();
+    if n < 3 {
+        return None;
+    }
+    let (sa, sb) = (ring_position(ring, a, tol)?, ring_position(ring, b, tol)?);
+    let mut cum = Vec::with_capacity(n);
+    let mut per = 0.0;
+    for i in 0..n {
+        cum.push(per);
+        per += dist(ring[i], ring[(i + 1) % n]);
+    }
+    if per <= 0.0 {
+        return None;
+    }
+    let fwd = (sb - sa).rem_euclid(per);
+    let forward = fwd <= per - fwd;
+    let span = if forward { fwd } else { per - fwd };
+    let mut out: Vec<(f64, Pt)> = (0..n)
+        .map(|k| {
+            let off = if forward { (cum[k] - sa).rem_euclid(per) } else { (sa - cum[k]).rem_euclid(per) };
+            (off, ring[k])
+        })
+        .filter(|(off, _)| *off > tol && *off < span - tol)
+        .collect();
+    out.sort_by(|x, y| x.0.total_cmp(&y.0));
+    Some(out.into_iter().map(|(_, q)| q).collect())
 }
 
 /// Distance tolerance for a polygon: a millionth of its size.
@@ -310,10 +371,69 @@ pub fn tc_leg_flows(n: &Node) -> Vec<Option<crate::tc::PathFlow>> {
         .collect()
 }
 
+/// Whether a closed polygon's edges cross or touch only where neighbouring edges meet (no
+/// self-intersection), so its area and fill are well defined.
+pub fn polygon_is_simple(p: &[Pt]) -> bool {
+    let tol = tolerance(p);
+    // A repeated point (two corners dragged together) is one corner.
+    let mut p: Vec<Pt> = p.to_vec();
+    p.dedup_by(|a, b| dist(*a, *b) <= tol);
+    while p.len() > 1 && p.first().zip(p.last()).is_some_and(|(a, b)| dist(*a, *b) <= tol) {
+        p.pop();
+    }
+    let n = p.len();
+    if n < 3 {
+        return false;
+    }
+    let e: Vec<(Pt, Pt)> = edges(&p).collect();
+    for i in 0..n {
+        for j in i + 1..n {
+            // Neighbouring edges share a corner.
+            if j == i + 1 || (i == 0 && j == n - 1) {
+                continue;
+            }
+            let ((a, b), (c, d)) = (e[i], e[j]);
+            if proper_cross(a, b, c, d, tol)
+                || dist(nearest_on_segment(a, c, d), a) <= tol
+                || dist(nearest_on_segment(c, a, b), c) <= tol
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Whether the polyline `path` (being added to a shape that is drawn so far as `drawn`) stays
+/// inside `outline`, clear of the shapes `others` (it may run along their edges) and does not
+/// cross the drawn polyline. Used before letting a drawn edge follow a boundary.
+pub fn path_clear(path: &[Pt], outline: &[Pt], others: &[&[Pt]], drawn: &[Pt]) -> bool {
+    let tol = tolerance(outline);
+    let segs: Vec<(Pt, Pt)> = path.windows(2).map(|w| (w[0], w[1])).collect();
+    let samples =
+        segs.iter().flat_map(|(a, b)| [0.25, 0.5, 0.75].map(|f| [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]));
+    let probes: Vec<Pt> = path.iter().copied().chain(samples).collect();
+    if !probes.iter().all(|q| inside_or_on(*q, outline, tol)) {
+        return false;
+    }
+    if others.iter().any(|o| probes.iter().any(|q| strictly_inside(*q, o, tol))) {
+        return false;
+    }
+    let mut walls: Vec<(Pt, Pt)> = edges(outline).collect();
+    for o in others {
+        walls.extend(edges(o));
+    }
+    walls.extend(drawn.windows(2).map(|w| (w[0], w[1])));
+    segs.iter().all(|(a, b)| !walls.iter().any(|(c, d)| proper_cross(*a, *b, *c, *d, tol)))
+}
+
 /// Why a drawn sub-area cannot be used, if it cannot.
 pub fn subarea_problem(shape: &[Pt], outline: &[Pt], others: &[&[Pt]]) -> Option<&'static str> {
     if shape.len() < 3 || polygon_area(shape) <= 0.0 {
         return Some("A sub-area needs at least three points around some area.");
+    }
+    if !polygon_is_simple(shape) {
+        return Some("A sub-area's edges cannot cross or touch each other.");
     }
     if !polygon_within(shape, outline) {
         return Some("A sub-area must lie inside its subcatchment's outline.");
@@ -329,10 +449,62 @@ pub fn feet_per_unit(p: &Project) -> f64 {
     p.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit).filter(|f| f.is_finite() && *f > 0.0).unwrap_or(1.0)
 }
 
+/// Shares `total` among the rows `idx` in proportion to their current areas (all to the first
+/// when they have none).
+fn share(areas: &mut [SubArea], idx: &[usize], total: f64) {
+    let sum: f64 = idx.iter().filter_map(|i| areas.get(*i)).map(|a| a.area.max(0.0)).sum();
+    for (k, i) in idx.iter().enumerate() {
+        if let Some(a) = areas.get_mut(*i) {
+            a.area = if sum > 0.0 {
+                total * a.area.max(0.0) / sum
+            } else if k == 0 {
+                total
+            } else {
+                0.0
+            };
+        }
+    }
+}
+
+/// The first Area row drawn with the same shape as row `i` (rows split by soil group share
+/// their drawing), or `i`.
+pub fn shape_row(sc: &Subcatchment, i: usize) -> usize {
+    let Some(o) = sc.areas.get(i).and_then(|a| a.outline.as_ref()) else { return i };
+    sc.areas.iter().position(|a| a.outline.as_ref() == Some(o)).unwrap_or(i)
+}
+
+/// The places to label with a curve number: each drawn shape (`Some`, once even when split by
+/// soil group) and, with drawn shapes, the remainder (`None`); each with the area-weighted CN
+/// of its rows.
+pub fn cn_regions(sc: &Subcatchment) -> Vec<(Option<&[Pt]>, f64)> {
+    let weighted = |rows: &mut dyn Iterator<Item = &SubArea>| {
+        let (a, w) = rows.fold((0.0, 0.0), |(a, w), r| (a + r.area, w + r.area * r.cn));
+        if a > 0.0 { w / a } else { 0.0 }
+    };
+    let mut out: Vec<(Option<&[Pt]>, f64)> = Vec::new();
+    for (i, a) in sc.areas.iter().enumerate() {
+        let Some(o) = a.outline.as_deref() else { continue };
+        if shape_row(sc, i) != i {
+            continue;
+        }
+        let cn = weighted(&mut sc.areas.iter().filter(|r| r.outline.as_deref() == Some(o)));
+        let cn = if cn > 0.0 { cn } else { a.cn };
+        out.push((Some(o), cn));
+    }
+    if !out.is_empty() && sc.areas.iter().any(|a| a.remainder) {
+        let cn = weighted(&mut sc.areas.iter().filter(|r| r.remainder));
+        let cn = if cn > 0.0 { cn } else { sc.areas.iter().find(|r| r.remainder).map_or(0.0, |r| r.cn) };
+        out.push((None, cn));
+    }
+    out
+}
+
 /// Recomputes a drawn subcatchment's areas: each drawn sub-area from its outline, and the
 /// remainder row (the flagged one, else the first row not drawn, else a new open-space row) as
-/// the outline's area less the drawn ones. Returns false, changing nothing, for subcatchments
-/// without an outline or without drawn sub-areas.
+/// the outline's area less the drawn ones. Rows split by soil group (several rows with the same
+/// drawing, or several remainder rows) share their shape's area in their current proportions.
+/// Returns false, changing nothing, for subcatchments without an outline or without drawn
+/// sub-areas.
 pub fn sync_subareas(sc: &mut Subcatchment, outline: Option<&[Pt]>, fpu: f64) -> bool {
     let Some(outline) = outline.filter(|o| o.len() >= 3) else { return false };
     if !sc.areas.iter().any(|a| a.outline.is_some()) {
@@ -340,23 +512,30 @@ pub fn sync_subareas(sc: &mut Subcatchment, outline: Option<&[Pt]>, fpu: f64) ->
     }
     let f2 = fpu * fpu;
     let mut drawn = 0.0;
-    for a in sc.areas.iter_mut() {
-        if let Some(o) = &a.outline {
-            a.area = polygon_area(o) * f2;
-            a.remainder = false;
-            drawn += a.area;
+    for i in 0..sc.areas.len() {
+        if shape_row(sc, i) != i {
+            continue;
         }
+        let Some(o) = sc.areas.get(i).and_then(|a| a.outline.clone()) else { continue };
+        let rows: Vec<usize> = (0..sc.areas.len()).filter(|j| sc.areas[*j].outline.as_ref() == Some(&o)).collect();
+        let area = polygon_area(&o) * f2;
+        share(&mut sc.areas, &rows, area);
+        drawn += area;
+    }
+    for a in sc.areas.iter_mut().filter(|a| a.outline.is_some()) {
+        a.remainder = false;
     }
     let rest = (polygon_area(outline) * f2 - drawn).max(0.0);
-    let idx = sc.areas.iter().position(|a| a.remainder).or_else(|| sc.areas.iter().position(|a| a.outline.is_none()));
-    match idx {
-        Some(i) => {
+    let mut rows: Vec<usize> = (0..sc.areas.len()).filter(|i| sc.areas[*i].remainder).collect();
+    if rows.is_empty() {
+        rows.extend(sc.areas.iter().position(|a| a.outline.is_none()));
+    }
+    match rows.first() {
+        Some(_) => {
             for (j, a) in sc.areas.iter_mut().enumerate() {
-                a.remainder = j == i;
+                a.remainder = rows.contains(&j);
             }
-            if let Some(a) = sc.areas.get_mut(i) {
-                a.area = rest;
-            }
+            share(&mut sc.areas, &rows, rest);
         }
         None => {
             let mut r = SubArea::new(rest, 61.0, "Open Space, Good, HSG B");
@@ -400,17 +579,142 @@ pub fn sync_tc_lengths(sc: &mut Subcatchment, path: &[Pt], fpu: f64) {
     }
 }
 
-/// Re-measures a node's drawings: drawn sub-areas and the remainder, and Tc segments from the
-/// drawn path.
+/// Re-measures a node's drawings: drawn sub-areas and the remainder, Tc segments from the
+/// drawn path, and an estimated pond's storage from its footprint.
 pub fn sync_node(n: &mut Node, fpu: f64) {
     let outline = n.outline.clone();
     let path = n.tc_path.clone();
-    if let NodeData::Subcat(sc) = &mut n.data {
-        sync_subareas(sc, outline.as_deref(), fpu);
-        if let Some(p) = &path {
-            sync_tc_lengths(sc, p, fpu);
+    match &mut n.data {
+        NodeData::Subcat(sc) => {
+            sync_subareas(sc, outline.as_deref(), fpu);
+            if let Some(p) = &path {
+                sync_tc_lengths(sc, p, fpu);
+            }
+        }
+        NodeData::Pond(pond) => {
+            if let (Some(o), Some(est)) = (&outline, pond.estimate)
+                && let Ok(v) = pond_storage(o, fpu, &est)
+                && let Some(slot) = pond.storage.volumes.iter_mut().find(|v| v.description == POND_ESTIMATE)
+            {
+                *slot = v;
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Description of the storage volume the pond estimator writes (and later re-estimates when
+/// the footprint or the calibration changes).
+pub const POND_ESTIMATE: &str = "Pond estimate";
+
+/// Pond estimator inputs: the drawn outline is the top of the pond, the sides slope inward
+/// at `z` horizontal to 1 vertical down to a flat bottom `depth` below the top elevation `top`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PondEstimate {
+    pub depth: f64,
+    pub z: f64,
+    pub top: f64,
+}
+
+impl Default for PondEstimate {
+    fn default() -> Self {
+        PondEstimate { depth: 4.0, z: 3.0, top: 104.0 }
+    }
+}
+
+impl PondEstimate {
+    /// Elevation of the flat bottom.
+    pub fn bottom(&self) -> f64 {
+        self.top - self.depth
+    }
+}
+
+/// Area `a`, perimeter `p` and corner sum `k` of a polygon (diagram units), such that the
+/// polygon offset inward by `r` (mitred corners) has area `a - p·r + k·r²`. `k` is the sum of
+/// tan(φ/2) over the turning angles φ (positive at convex corners, negative at re-entrant
+/// ones): 4 for a rectangle, giving (W − 2r)(L − 2r).
+fn inset_terms(outline: &[Pt]) -> (f64, f64, f64) {
+    let mut pts: Vec<Pt> = Vec::with_capacity(outline.len());
+    for q in outline {
+        if pts.last().is_none_or(|l| dist(*l, *q) > 1e-9) {
+            pts.push(*q);
         }
     }
+    while pts.len() > 1 && pts.first().zip(pts.last()).is_some_and(|(a, b)| dist(*a, *b) <= 1e-9) {
+        pts.pop();
+    }
+    let n = pts.len();
+    if n < 3 {
+        return (0.0, 0.0, 0.0);
+    }
+    let signed: f64 = (0..n).map(|i| cross(pts[i], pts[(i + 1) % n])).sum();
+    let orient = if signed < 0.0 { -1.0 } else { 1.0 };
+    let mut perimeter = 0.0;
+    let mut k = 0.0;
+    for i in 0..n {
+        let (a, b, c) = (pts[(i + n - 1) % n], pts[i], pts[(i + 1) % n]);
+        perimeter += dist(b, c);
+        let (e1, e2) = (sub(b, a), sub(c, b));
+        let phi = orient * cross(e1, e2).atan2(e1[0] * e2[0] + e1[1] * e2[1]);
+        // A near-reversal (a spike) would blow up the mitre; it adds next to no area.
+        k += (phi / 2.0).clamp(-1.5, 1.5).tan();
+    }
+    (polygon_area(&pts), perimeter, k)
+}
+
+/// The deepest flat-bottomed pond `outline` can hold with `z`:1 side slopes (ft), where the
+/// sloping sides meet; `None` for vertical sides or a shape without area.
+pub fn pond_max_depth(outline: &[Pt], fpu: f64, z: f64) -> Option<f64> {
+    let (a, p, k) = inset_terms(outline);
+    let (a, p) = (a * fpu * fpu, p * fpu);
+    if a <= 0.0 || p <= 0.0 || z <= 0.0 {
+        return None;
+    }
+    // Smallest positive root of k·r² − p·r + a = 0 (the stable form also covers k ≤ 0); with
+    // no real root the inset shrinks to its least area where the perimeter vanishes.
+    let disc = p * p - 4.0 * k * a;
+    let r = if disc >= 0.0 { 2.0 * a / (p + disc.sqrt()) } else { p / (2.0 * k) };
+    Some(r / z)
+}
+
+/// Stage-area storage for a pond whose top is the drawn `outline`: surface areas of the
+/// inward-offset outline at stages about every half foot from the bottom to the top, stored
+/// by the average-end-area (prismatic) formula. The offset is exact for convex outlines until
+/// an edge vanishes, and an estimate for others.
+pub fn pond_storage(outline: &[Pt], fpu: f64, est: &PondEstimate) -> Result<StorageVolume, String> {
+    let PondEstimate { depth, z, top } = *est;
+    if !(depth.is_finite() && depth > 0.0) {
+        return Err("Enter a depth greater than zero.".into());
+    }
+    if !(z.is_finite() && z >= 0.0) {
+        return Err("Enter a side slope of zero (vertical) or more.".into());
+    }
+    if !top.is_finite() {
+        return Err("Enter the top elevation.".into());
+    }
+    let bottom = est.bottom();
+    let (a, p, k) = inset_terms(outline);
+    let (a, p) = (a * fpu * fpu, p * fpu);
+    if a <= 0.0 {
+        return Err("The outline has no area.".into());
+    }
+    if pond_max_depth(outline, fpu, z).is_some_and(|max| depth > max * (1.0 + 1e-9)) {
+        return Err("The side slopes meet before reaching that depth: use a smaller depth or a steeper slope.".into());
+    }
+    let steps = ((depth / 0.5).ceil() as usize).clamp(2, 40);
+    let mut elevations = Vec::with_capacity(steps + 1);
+    let mut values = Vec::with_capacity(steps + 1);
+    for i in 0..=steps {
+        let h = depth * i as f64 / steps as f64;
+        let r = z * (depth - h);
+        elevations.push(bottom + h);
+        values.push((a - p * r + k * r * r).max(0.0));
+    }
+    Ok(StorageVolume::new(
+        POND_ESTIMATE,
+        bottom,
+        VolumeShape::Custom { kind: CustomKind::AreaPrismatic, elevations, values },
+    ))
 }
 
 /// Re-measures every node's drawings (after the calibration changes).
@@ -534,12 +838,62 @@ mod tests {
         assert_eq!(clamp_inside([3.0, 3.0], &r), [3.0, 3.0]);
         // Triangles of a concave polygon cover exactly its area.
         let l = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 4.0], [4.0, 4.0], [4.0, 10.0], [0.0, 10.0]];
-        for poly in [l.clone(), l.iter().rev().copied().collect()] {
+        // A symmetric L puts its reflex corner exactly on a diagonal; that ear must be refused.
+        let sym = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [5.0, 5.0], [5.0, 10.0], [0.0, 10.0]];
+        for poly in [l.clone(), l.iter().rev().copied().collect(), sym.clone(), sym.iter().rev().copied().collect()] {
             let tris = triangulate(&poly);
             assert_eq!(tris.len(), 4);
             let sum: f64 = tris.iter().map(|t| polygon_area(&[poly[t[0]], poly[t[1]], poly[t[2]]])).sum();
             assert!((sum - polygon_area(&poly)).abs() < 1e-9, "{sum}");
         }
+    }
+
+    #[test]
+    fn simple_polygons_and_clear_paths() {
+        assert!(polygon_is_simple(&rect(0.0, 0.0, 10.0, 10.0)));
+        // A bow tie crosses itself; a pinched shape touches itself.
+        assert!(!polygon_is_simple(&[[0.0, 0.0], [10.0, 10.0], [10.0, 0.0], [0.0, 10.0]]));
+        assert!(!polygon_is_simple(&[[0.0, 0.0], [10.0, 0.0], [5.0, 5.0], [10.0, 10.0], [0.0, 10.0], [5.0, 5.0]]));
+        // A repeated corner is still simple.
+        assert!(polygon_is_simple(&[[0.0, 0.0], [10.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]));
+        assert_eq!(
+            subarea_problem(&[[1.0, 1.0], [9.0, 9.0], [9.0, 1.0], [1.0, 5.0]], &rect(0.0, 0.0, 10.0, 10.0), &[]),
+            Some("A sub-area's edges cannot cross or touch each other.")
+        );
+
+        let outline = rect(0.0, 0.0, 100.0, 100.0);
+        let roof = rect(40.0, 40.0, 60.0, 60.0);
+        // Along the roof's edge is fine; through it is not.
+        assert!(path_clear(&[[40.0, 30.0], [40.0, 40.0], [40.0, 60.0], [40.0, 70.0]], &outline, &[&roof], &[]));
+        assert!(!path_clear(&[[30.0, 50.0], [50.0, 50.0], [70.0, 50.0]], &outline, &[&roof], &[]));
+        // Outside the outline is not.
+        assert!(!path_clear(&[[90.0, 50.0], [110.0, 50.0], [90.0, 60.0]], &outline, &[], &[]));
+        // Nor across the line drawn so far.
+        let drawn = [[10.0, 10.0], [10.0, 90.0]];
+        assert!(!path_clear(&[[5.0, 50.0], [20.0, 50.0]], &outline, &[], &drawn));
+        assert!(path_clear(&[[10.0, 90.0], [30.0, 90.0]], &outline, &[], &drawn));
+    }
+
+    #[test]
+    fn following_a_ring_takes_the_shorter_way() {
+        // A 100 x 10 strip: from the middle of the bottom edge to the middle of the left edge
+        // the short way passes the bottom-left corner only.
+        let ring = rect(0.0, 0.0, 100.0, 10.0);
+        assert_eq!(follow_ring(&ring, [50.0, 0.0], [0.0, 5.0], 1e-6), Some(vec![[0.0, 0.0]]));
+        // The other direction lists the same corner.
+        assert_eq!(follow_ring(&ring, [0.0, 5.0], [50.0, 0.0], 1e-6), Some(vec![[0.0, 0.0]]));
+        // Bottom middle to top middle: either way passes two corners; the order follows the walk.
+        let path = follow_ring(&ring, [40.0, 0.0], [40.0, 10.0], 1e-6).unwrap();
+        assert_eq!(path, vec![[0.0, 0.0], [0.0, 10.0]]);
+        // Points on corners are not repeated; off-ring points give None.
+        assert_eq!(follow_ring(&ring, [0.0, 0.0], [100.0, 0.0], 1e-6), Some(vec![]));
+        assert_eq!(follow_ring(&ring, [50.0, 3.0], [0.0, 5.0], 1e-6), None);
+        // A wiggly boundary: every vertex between is kept, in order.
+        let wiggle = vec![[0.0, 0.0], [10.0, 2.0], [20.0, -2.0], [30.0, 2.0], [40.0, 0.0], [40.0, 50.0], [0.0, 50.0]];
+        assert_eq!(
+            follow_ring(&wiggle, [0.0, 0.0], [40.0, 0.0], 1e-6),
+            Some(vec![[10.0, 2.0], [20.0, -2.0], [30.0, 2.0]])
+        );
     }
 
     #[test]
@@ -653,5 +1007,80 @@ mod tests {
         let n = p.node(id).unwrap();
         assert_eq!(n.pos, [11.0, 10.0]);
         assert_eq!(n.outline.as_ref().unwrap()[2], [21.0, 20.0]);
+    }
+
+    #[test]
+    fn pond_estimate_matches_prismatoid() {
+        // A 100 x 60 ft top, 4 ft deep at 3:1: the bottom is 76 x 36 ft, as a prismatoid.
+        let est = PondEstimate { depth: 4.0, z: 3.0, top: 104.0 };
+        assert_eq!(est.bottom(), 100.0);
+        let top = rect(0.0, 0.0, 50.0, 30.0); // 2 ft per unit
+        let v = pond_storage(&top, 2.0, &est).unwrap();
+        let VolumeShape::Custom { kind, elevations, values } = &v.shape else { panic!() };
+        assert_eq!(*kind, CustomKind::AreaPrismatic);
+        assert_eq!((elevations[0], *elevations.last().unwrap()), (100.0, 104.0));
+        assert!((values[0] - 76.0 * 36.0).abs() < 1e-6 && (values.last().unwrap() - 6000.0).abs() < 1e-6);
+        let exact =
+            StorageVolume::new("", 100.0, VolumeShape::Prismatoid { width: 36.0, length: 76.0, height: 4.0, z: 3.0 });
+        let (vol, want) = (v.gross(104.0), exact.gross(104.0));
+        // Average end areas over half-foot stages overstate a quadratic area slightly.
+        assert!((vol - want).abs() / want < 1e-3, "{vol} vs {want}");
+        // Clockwise points give the same storage.
+        let mut cw = top.clone();
+        cw.reverse();
+        assert_eq!(pond_storage(&cw, 2.0, &est).unwrap(), v);
+        // The sides of a 60 ft wide pond meet 30 ft in, 10 ft down at 3:1.
+        assert!((pond_max_depth(&top, 2.0, 3.0).unwrap() - 10.0).abs() < 1e-9);
+        assert!(pond_storage(&top, 2.0, &PondEstimate { depth: 11.0, ..est }).is_err());
+        assert!(pond_storage(&top, 2.0, &PondEstimate { depth: 0.0, ..est }).is_err());
+        assert!(pond_storage(&top[..2], 2.0, &est).is_err());
+        // Vertical sides: the area is the same at every stage.
+        let box_ = pond_storage(&top, 2.0, &PondEstimate { z: 0.0, ..est }).unwrap();
+        assert!((box_.gross(104.0) - 6000.0 * 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn pond_estimate_handles_concave_outlines() {
+        // An L of two 10-wide arms (area 300): inset by 1 the arms are 8 wide, 18 and 10 long.
+        let l = vec![[0.0, 0.0], [20.0, 0.0], [20.0, 10.0], [10.0, 10.0], [10.0, 20.0], [0.0, 20.0]];
+        let v = pond_storage(&l, 1.0, &PondEstimate { depth: 1.0, z: 1.0, top: 1.0 }).unwrap();
+        let VolumeShape::Custom { values, .. } = &v.shape else { panic!() };
+        assert!((values[0] - (18.0 * 8.0 + 8.0 * 10.0)).abs() < 1e-9, "{values:?}");
+        assert!((pond_max_depth(&l, 1.0, 1.0).unwrap() - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn estimated_pond_follows_its_footprint() {
+        let mut p = Project::default();
+        let id = p.add_node(NodeType::Pond, [0.0, 0.0]);
+        let est = PondEstimate::default();
+        let n = p.node_mut(id).unwrap();
+        n.outline = Some(rect(0.0, 0.0, 100.0, 60.0));
+        let NodeData::Pond(pond) = &mut n.data else { panic!() };
+        pond.estimate = Some(est);
+        pond.storage.volumes.push(StorageVolume::new(
+            "Other",
+            100.0,
+            VolumeShape::Prismatoid { width: 1.0, length: 1.0, height: 1.0, z: 0.0 },
+        ));
+        pond.storage.volumes.push(pond_storage(&rect(0.0, 0.0, 100.0, 60.0), 1.0, &est).unwrap());
+        // Calibrating at 2 ft per unit quadruples the top area; other volumes stay.
+        p.diagram.underlay = Some(crate::project::Underlay {
+            file_name: String::new(),
+            bytes: Vec::new(),
+            page: 0,
+            origin: [0.0, 0.0],
+            scale: 1.0,
+            rotation: 0.0,
+            feet_per_unit: Some(2.0),
+            opacity: 1.0,
+            visible: true,
+            locked: false,
+            geo: None,
+        });
+        sync_all(&mut p);
+        let NodeData::Pond(pond) = &p.node(id).unwrap().data else { panic!() };
+        assert_eq!(pond.storage.volumes[0].description, "Other");
+        assert_eq!(pond.storage.volumes[1].surface_area(104.0), Some(24_000.0));
     }
 }

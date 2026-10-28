@@ -15,7 +15,7 @@ pub enum Purpose {
     NoaaCsv,
     /// A pump or special-outlet rating table (two columns).
     RatingCsv,
-    /// Several rainfall library files at once (.hcr, .huh, .idf, *-Rain.txt).
+    /// Several rainfall library files at once (.hcr, .huh, .hci, *-Rain.txt).
     RainLib,
 }
 
@@ -66,8 +66,8 @@ impl Platform {
             Purpose::LinkCsv => ("Hydrograph CSV", &["csv", "txt"]),
             Purpose::ImportTr20 => ("TR-20 input file", &["inp", "dat", "tr2", "txt"]),
             Purpose::RatingCsv => ("Rating table", &["csv", "txt"]),
-            Purpose::NoaaCsv => ("Rainfall table, IDF file (provisional) or NOAA Atlas 14 CSV", &["txt", "idf", "csv"]),
-            Purpose::RainLib => ("Rainfall files", &["hcr", "huh", "idf", "txt"]),
+            Purpose::NoaaCsv => ("Rainfall table, IDF file or NOAA Atlas 14 CSV", &["txt", "hci", "idf", "csv"]),
+            Purpose::RainLib => ("Rainfall files", &["hcr", "huh", "hci", "idf", "txt"]),
         }
     }
 

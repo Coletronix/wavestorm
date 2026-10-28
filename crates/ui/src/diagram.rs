@@ -17,6 +17,9 @@ pub enum Tool {
     /// Click the corners of a subcatchment outline; close to create the subcatchment (or, with
     /// `node`, to give that subcatchment this outline).
     Trace { points: Vec<Pos2>, node: Option<NodeId> },
+    /// Click the corners of a pond's top; close to estimate its storage (depth and side slope
+    /// are asked for next).
+    Pond { points: Vec<Pos2> },
     /// Measure a polyline length.
     Measure { points: Vec<Pos2> },
     /// Draw subcatchment `node`'s Tc flow path, from its most distant point to the outlet; each
@@ -27,6 +30,10 @@ pub enum Tool {
     SubArea { node: NodeId, points: Vec<Pos2> },
     /// Move the background (drag it) or resize it (drag a corner); drawings follow it.
     PlaceUnderlay,
+    /// Pick two points on the background, then enter their latitude and longitude.
+    Georef { points: Vec<Pos2> },
+    /// Click the corners of the soil survey's area of interest.
+    Aoi { points: Vec<Pos2> },
 }
 
 impl Tool {
@@ -36,10 +43,13 @@ impl Tool {
             Tool::Calibrate { .. } => "Calibrate",
             Tool::Trace { node: None, .. } => "Trace Subcatchment",
             Tool::Trace { node: Some(_), .. } => "Draw Outline",
+            Tool::Pond { .. } => "Pond Estimator",
             Tool::Measure { .. } => "Measure",
             Tool::TcPath { .. } => "Tc Flow Path",
             Tool::SubArea { .. } => "Draw Sub-Area",
             Tool::PlaceUnderlay => "Place Background",
+            Tool::Georef { .. } => "Georeference",
+            Tool::Aoi { .. } => "Area of Interest",
         }
     }
 }
@@ -85,6 +95,9 @@ pub struct Interaction {
     pub rubber: Option<(Pos2, Pos2)>,
     pub hover_world: Option<Pos2>,
     pub hover_node: Option<NodeId>,
+    /// While drawing a sub-area: the number of points after each click (a click that follows a
+    /// soil boundary adds several), so Backspace removes a whole click.
+    pub clicks: Vec<usize>,
 }
 
 pub enum Drag {
@@ -127,8 +140,14 @@ pub enum CanvasAction {
     ContextNode(NodeId),
     /// Finished calibration: two world points.
     Calibrated(Pos2, Pos2),
+    /// Two world points picked for georeferencing.
+    Georef(Pos2, Pos2),
+    /// Finished area of interest (world coordinates).
+    AoiTraced(Vec<Pos2>),
     /// Finished trace: outline in world coordinates, for a new subcatchment or the given one.
     Traced(Option<NodeId>, Vec<Pos2>),
+    /// Finished pond footprint (world coordinates), for the pond estimator.
+    PondTraced(Vec<Pos2>),
     Measured(Vec<Pos2>),
     /// Finished Tc flow path for a subcatchment (world coordinates, upstream end first).
     TcPath(NodeId, Vec<Pos2>),
@@ -263,6 +282,7 @@ pub fn show(
 
     draw_grid(&painter, doc, canvas, &t);
     draw_underlay(&painter, doc, canvas);
+    draw_soils(&painter, doc, canvas, &t);
     draw_outlines(&painter, doc, canvas, &t);
     // Tc flow paths: one being divided in an open edit dialog (lettered as it is now divided),
     // else the stored path of each selected subcatchment.
@@ -316,10 +336,11 @@ pub fn show(
     match tool {
         Tool::Select => select_tool(ui, doc, canvas, &resp, it, &mut actions),
         Tool::PlaceUnderlay => place_underlay(ui, doc, canvas, &resp, it, &painter, &t, &mut actions),
-        Tool::Calibrate { .. } | Tool::Measure { .. } => {
-            let calibrate = matches!(tool, Tool::Calibrate { .. });
+        Tool::Calibrate { .. } | Tool::Measure { .. } | Tool::Georef { .. } => {
+            let georef = matches!(tool, Tool::Georef { .. });
+            let calibrate = georef || matches!(tool, Tool::Calibrate { .. });
             let mut finished = None;
-            if let Tool::Calibrate { points } | Tool::Measure { points } = tool {
+            if let Tool::Calibrate { points } | Tool::Measure { points } | Tool::Georef { points } = tool {
                 let need = if calibrate { 2 } else { usize::MAX };
                 if resp.clicked()
                     && let Some(w) = world_ptr
@@ -332,7 +353,9 @@ pub fn show(
                         && points.len() >= 2);
                 draw_polyline(&painter, doc, canvas, points, world_ptr, false, Color32::from_rgb(220, 30, 30));
                 if finish {
-                    finished = Some(if calibrate {
+                    finished = Some(if georef {
+                        CanvasAction::Georef(points[0], points[1])
+                    } else if calibrate {
                         CanvasAction::Calibrated(points[0], points[1])
                     } else {
                         CanvasAction::Measured(points.clone())
@@ -379,6 +402,24 @@ pub fn show(
                 *tool = Tool::Select;
             }
         }
+        Tool::Pond { points } => {
+            let cursor = world_ptr.map(|w| snap_to_drawings(doc, canvas, w, None, None));
+            let close = closing(ui, doc, canvas, &resp, points, cursor) && points.len() >= 3;
+            draw_polyline(&painter, doc, canvas, points, if close { None } else { cursor }, true, t.pond.1);
+            if close {
+                actions.push(CanvasAction::PondTraced(points.clone()));
+                *tool = Tool::Select;
+            }
+        }
+        Tool::Aoi { points } => {
+            let cursor = world_ptr.map(|w| snap_to_drawings(doc, canvas, w, None, None));
+            let close = closing(ui, doc, canvas, &resp, points, cursor) && points.len() >= 3;
+            draw_polyline(&painter, doc, canvas, points, if close { None } else { cursor }, true, AOI_COLOR);
+            if close {
+                actions.push(CanvasAction::AoiTraced(points.clone()));
+                *tool = Tool::Select;
+            }
+        }
         Tool::SubArea { node, points } => {
             let id = *node;
             let outline: Vec<Pt> = doc.project.node(id).and_then(|n| n.outline.clone()).unwrap_or_default();
@@ -386,17 +427,84 @@ pub fn show(
                 actions.push(CanvasAction::Message("Draw the subcatchment's outline before its sub-areas.".into()));
                 *tool = Tool::Select;
             } else {
-                // Points stay inside the outline and snap to nearby corners and edges.
-                let cursor = world_ptr
-                    .map(|w| wp(drawing::clamp_inside(pt(snap_to_drawings(doc, canvas, w, Some(id), None)), &outline)));
+                if ui.input(|i| i.key_pressed(Key::S) && i.modifiers.is_none()) && soil_rings(doc, true).is_some() {
+                    doc.soil_snap = !doc.soil_snap;
+                    actions.push(CanvasAction::Message(
+                        if doc.soil_snap {
+                            "Snapping to soil boundaries (S turns it off)"
+                        } else {
+                            "Not snapping to soil boundaries (S turns it on)"
+                        }
+                        .into(),
+                    ));
+                }
+                let soils = soil_rings(doc, false);
+                // Points stay inside the outline and snap to nearby corners and edges: of the
+                // drawings first, then of the soil map units.
+                let cursor = world_ptr.map(|w| {
+                    let s = snap_to_drawings(doc, canvas, w, Some(id), None);
+                    let s = match &soils {
+                        Some(rings) if s == w => snap_to_rings(doc, canvas, w, rings),
+                        _ => s,
+                    };
+                    wp(drawing::clamp_inside(pt(s), &outline))
+                });
+                // Two points on the same soil boundary: the edge between them follows it, the
+                // shortest way that stays inside the outline, clear of the other sub-areas and
+                // of the line drawn so far (otherwise the edge stays straight).
+                let tol = 1.0 / doc.view.zoom as f64;
+                let others = subarea_outlines(doc, id, None);
+                let others: Vec<&[Pt]> = others.iter().map(Vec::as_slice).collect();
+                let follow = |a: Pos2, b: Pos2, drawn: &[Pos2]| -> Vec<Pos2> {
+                    let Some(rings) = &soils else { return Vec::new() };
+                    let drawn: Vec<Pt> = drawn.iter().map(|q| pt(*q)).collect();
+                    rings
+                        .iter()
+                        .filter_map(|r| drawing::follow_ring(r, pt(a), pt(b), tol))
+                        .filter(|arc| !arc.is_empty())
+                        .map(|arc| {
+                            let chain: Vec<Pt> =
+                                std::iter::once(pt(a)).chain(arc.iter().copied()).chain([pt(b)]).collect();
+                            (drawing::polyline_length(&chain), arc, chain)
+                        })
+                        .filter(|(_, _, chain)| drawing::path_clear(chain, &outline, &others, &drawn))
+                        .min_by(|x, y| x.0.total_cmp(&y.0))
+                        .map(|(_, arc, _)| arc.into_iter().map(wp).collect())
+                        .unwrap_or_default()
+                };
+                if points.is_empty() {
+                    it.clicks.clear();
+                }
+                let before = points.len();
                 let mut close = closing(ui, doc, canvas, &resp, points, cursor);
+                if points.len() == before + 1 {
+                    if before >= 1 {
+                        // The drawn line so far, without the new point's own leg.
+                        let arc = follow(points[before - 1], points[before], &points[..before]);
+                        for (k, q) in arc.into_iter().enumerate() {
+                            points.insert(before + k, q);
+                        }
+                    }
+                    it.clicks.push(points.len());
+                } else if points.len() + 1 == before {
+                    // Backspace: remove the whole last click (a followed run, not just its end).
+                    it.clicks.retain(|c| *c <= points.len());
+                    points.truncate(it.clicks.last().copied().unwrap_or(0));
+                }
                 if close {
                     let shape: Vec<Pt> = points.iter().map(|q| pt(*q)).collect();
-                    let others = subarea_outlines(doc, id, None);
-                    let others: Vec<&[Pt]> = others.iter().map(Vec::as_slice).collect();
-                    if let Some(problem) = drawing::subarea_problem(&shape, &outline, &others) {
+                    // Closing back to the first point can follow a boundary too, when the result
+                    // is a valid sub-area; otherwise the straight closing edge is used.
+                    let arc = match (points.last(), points.first()) {
+                        (Some(l), Some(f)) => follow(*l, *f, points),
+                        _ => Vec::new(),
+                    };
+                    let followed: Vec<Pt> = shape.iter().copied().chain(arc.iter().map(|q| pt(*q))).collect();
+                    if !arc.is_empty() && drawing::subarea_problem(&followed, &outline, &others).is_none() {
+                        points.extend(arc);
+                    } else if let Some(problem) = drawing::subarea_problem(&shape, &outline, &others) {
                         actions.push(CanvasAction::Message(format!(
-                            "{problem} Adjust the points (Backspace removes the last) or press Esc."
+                            "{problem} Adjust the points (Backspace removes the last click) or press Esc."
                         )));
                         close = false;
                     }
@@ -405,11 +513,16 @@ pub fn show(
                     Some(NodeData::Subcat(sc)) => sc.areas.len(),
                     _ => 0,
                 };
+                // The rubber band to the pointer shows the boundary it would follow.
+                let mut shown = points.clone();
+                if !close && let (Some(l), Some(c)) = (points.last(), cursor) {
+                    shown.extend(follow(*l, c, points));
+                }
                 draw_polyline(
                     &painter,
                     doc,
                     canvas,
-                    points,
+                    &shown,
                     if close { None } else { cursor },
                     true,
                     subarea_color(next, &t),
@@ -483,13 +596,18 @@ pub fn subarea_color(i: usize, t: &Tokens) -> Color32 {
 /// The drawn sub-area outlines of subcatchment `id`, except row `skip`.
 fn subarea_outlines(doc: &Doc, id: NodeId, skip: Option<usize>) -> Vec<Vec<Pt>> {
     match doc.project.node(id).map(|n| &n.data) {
-        Some(NodeData::Subcat(sc)) => sc
-            .areas
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| Some(*i) != skip)
-            .filter_map(|(_, a)| a.outline.clone())
-            .collect(),
+        Some(NodeData::Subcat(sc)) => {
+            // Rows split by soil group share a drawing: each drawing counts once, and skipping a
+            // row skips its twins too.
+            let skipped = skip.and_then(|i| sc.areas.get(i)).and_then(|a| a.outline.as_ref());
+            let mut out: Vec<Vec<Pt>> = Vec::new();
+            for o in sc.areas.iter().filter_map(|a| a.outline.as_ref()) {
+                if Some(o) != skipped && !out.contains(o) {
+                    out.push(o.clone());
+                }
+            }
+            out
+        }
         _ => Vec::new(),
     }
 }
@@ -506,14 +624,31 @@ pub fn shape_points(n: &wavestorm_core::project::Node, s: ShapeRef) -> Option<&V
     }
 }
 
-fn shape_points_mut(n: &mut wavestorm_core::project::Node, s: ShapeRef) -> Option<&mut Vec<Pt>> {
+/// Applies `f` to the points of one of a node's shapes and returns its result. A sub-area split
+/// by soil group has the same drawing on several Area rows: they all change together, so the
+/// copies never drift apart.
+fn edit_shape<R>(
+    n: &mut wavestorm_core::project::Node,
+    s: ShapeRef,
+    mut f: impl FnMut(&mut Vec<Pt>) -> R,
+) -> Option<R> {
     match s {
-        ShapeRef::Outline => n.outline.as_mut(),
-        ShapeRef::TcPath => n.tc_path.as_mut(),
-        ShapeRef::SubArea(i) => match &mut n.data {
-            NodeData::Subcat(sc) => sc.areas.get_mut(i).and_then(|a| a.outline.as_mut()),
-            _ => None,
-        },
+        ShapeRef::Outline => n.outline.as_mut().map(f),
+        ShapeRef::TcPath => n.tc_path.as_mut().map(f),
+        ShapeRef::SubArea(i) => {
+            let NodeData::Subcat(sc) = &mut n.data else { return None };
+            let shared = sc.areas.get(i)?.outline.clone()?;
+            let mut out = None;
+            for (j, a) in sc.areas.iter_mut().enumerate() {
+                if let Some(o) = a.outline.as_mut().filter(|o| **o == shared) {
+                    let r = f(o);
+                    if j == i {
+                        out = Some(r);
+                    }
+                }
+            }
+            out
+        }
     }
 }
 
@@ -576,6 +711,31 @@ fn snap_to_drawings(
         }
     }
     best.map_or(w, |(_, q)| q)
+}
+
+/// The soil map unit boundaries (outer rings and holes, diagram units) that drawing snaps to:
+/// while the soils are shown and snapping is on (or regardless of the setting with `any`).
+fn soil_rings(doc: &Doc, any: bool) -> Option<Vec<&Vec<Pt>>> {
+    let shown = doc.project.soils.as_ref().is_some_and(|m| m.visible);
+    let layer = doc.soil_layer.as_ref().filter(|_| shown && (any || doc.soil_snap))?;
+    Some(layer.shapes.iter().flat_map(|s| s.rings.iter()).collect())
+}
+
+/// `w` snapped to the nearest ring corner within 8 px, else the nearest ring edge within 6 px.
+fn snap_to_rings(doc: &Doc, canvas: Rect, w: Pos2, rings: &[&Vec<Pt>]) -> Pos2 {
+    let s = to_screen(&doc.view, canvas, w);
+    let near = |q: Pt| (to_screen(&doc.view, canvas, wp(q)) - s).length();
+    let corner = rings.iter().flat_map(|r| r.iter()).map(|q| (near(*q), *q)).filter(|(d, _)| *d < 8.0);
+    if let Some((_, q)) = corner.min_by(|a, b| a.0.total_cmp(&b.0)) {
+        return wp(q);
+    }
+    rings
+        .iter()
+        .map(|r| drawing::nearest_on_boundary(pt(w), r))
+        .map(|q| (near(q), q))
+        .filter(|(d, _)| *d < 6.0)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map_or(w, |(_, q)| wp(q))
 }
 
 /// The background image's rectangle in diagram units.
@@ -752,6 +912,123 @@ fn draw_underlay(p: &egui::Painter, doc: &Doc, canvas: Rect) {
     p.image(tex.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
 }
 
+/// Outline colour of the soil survey's area of interest.
+pub const AOI_COLOR: Color32 = Color32::from_rgb(200, 40, 160);
+
+/// Map colour of a hydrologic soil group (green A to red D; grey when unrated).
+pub fn hsg_color(g: Option<wavestorm_core::cn::Hsg>) -> Color32 {
+    let (r, gr, b) = wavestorm_core::soils::group_rgb(g);
+    Color32::from_rgb(r, gr, b)
+}
+
+/// One soil map unit polygon ready to paint.
+pub struct SoilShape {
+    pub group: Option<wavestorm_core::cn::Hsg>,
+    pub label: String,
+    /// Outer ring then holes (diagram units).
+    pub rings: Vec<Vec<Pt>>,
+    tris: Vec<[usize; 3]>,
+    label_at: Option<Pt>,
+}
+
+/// The project's soil map projected onto the diagram, kept until the map or the background's
+/// placement changes (projecting and triangulating every frame would be wasteful).
+pub struct SoilLayer {
+    key: (wavestorm_core::project::Underlay, wavestorm_core::soils::SoilMap),
+    pub shapes: Vec<SoilShape>,
+    pub aoi: Vec<Pt>,
+}
+
+/// Rebuilds `doc.soil_layer` when the soil map or the background placement changed.
+pub fn sync_soil_layer(doc: &mut Doc) {
+    let (Some(map), Some(u)) = (&doc.project.soils, &doc.project.diagram.underlay) else {
+        doc.soil_layer = None;
+        return;
+    };
+    // The image bytes don't affect placement; leave them out of the key.
+    let mut u = u.clone();
+    u.bytes = Vec::new();
+    if doc.soil_layer.as_ref().is_some_and(|l| l.key.0 == u && l.key.1 == *map) {
+        return;
+    }
+    let Some(to) = wavestorm_core::geo::projector(&u) else {
+        doc.soil_layer = None;
+        return;
+    };
+    let shapes = map
+        .polygons
+        .iter()
+        .map(|poly| {
+            let rings: Vec<Vec<Pt>> = poly.rings.iter().map(|r| r.iter().map(|q| to(*q)).collect()).collect();
+            let outer = rings.first().cloned().unwrap_or_default();
+            let holes: Vec<&[Pt]> = rings.iter().skip(1).map(Vec::as_slice).collect();
+            let group = map.group_of(&poly.mukey);
+            let symbol = map.unit(&poly.mukey).map(|u| u.symbol.clone()).unwrap_or_default();
+            SoilShape {
+                group,
+                label: format!("{symbol} ({})", group.map_or('-', |g| g.letter())),
+                tris: drawing::triangulate(&outer),
+                label_at: drawing::label_spot(&outer, &holes).map(|(p, _)| p),
+                rings,
+            }
+        })
+        .collect();
+    let aoi = map.aoi.iter().map(|q| to(*q)).collect();
+    doc.soil_layer = Some(SoilLayer { key: (u.clone(), map.clone()), shapes, aoi });
+}
+
+/// The soil map units (coloured by soil group, labelled with symbol and group) and the area of
+/// interest: the fetched one, and one being prepared in the Soils window.
+fn draw_soils(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
+    let dashed = |pts: &[Pt]| {
+        let mut s: Vec<Pos2> = pts.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
+        if let Some(f) = s.first().copied() {
+            s.push(f);
+        }
+        p.extend(Shape::dashed_line(&s, Stroke::new(2.0, AOI_COLOR), 8.0, 5.0));
+    };
+    if let (Some(layer), Some(map)) = (&doc.soil_layer, &doc.project.soils)
+        && map.visible
+    {
+        for s in &layer.shapes {
+            let Some(outer) = s.rings.first() else { continue };
+            let c = hsg_color(s.group);
+            let fill = Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 60);
+            let mut mesh = egui::Mesh::default();
+            for q in outer {
+                mesh.colored_vertex(to_screen(&doc.view, canvas, wp(*q)), fill);
+            }
+            for [a, b, cc] in &s.tris {
+                mesh.add_triangle(*a as u32, *b as u32, *cc as u32);
+            }
+            p.add(Shape::mesh(mesh));
+            for r in &s.rings {
+                let pts: Vec<Pos2> = r.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
+                p.add(Shape::closed_line(pts, Stroke::new(1.2, c)));
+            }
+        }
+        for s in &layer.shapes {
+            let Some(at) = s.label_at else { continue };
+            let Some(outer) = s.rings.first() else { continue };
+            let r = Rect::from_points(&outer.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect::<Vec<_>>());
+            if r.width().min(r.height()) < 40.0 || !canvas.intersects(r) {
+                continue;
+            }
+            let at = to_screen(&doc.view, canvas, wp(at));
+            let ink = if t.is_dark() { Color32::WHITE } else { Color32::from_rgb(40, 40, 40) };
+            p.text(at, Align2::CENTER_CENTER, &s.label, FontId::proportional(11.0), ink);
+        }
+        dashed(&layer.aoi);
+    }
+    for w in &doc.windows {
+        if let crate::windows::Window::Soils(s) = w
+            && let Some(aoi) = &s.aoi
+        {
+            dashed(aoi);
+        }
+    }
+}
+
 /// Fills a simple (possibly concave) polygon given in diagram units.
 fn fill_polygon(p: &egui::Painter, doc: &Doc, canvas: Rect, poly: &[Pt], fill: Color32) {
     let mut mesh = egui::Mesh::default();
@@ -778,10 +1055,16 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
         let pts: Vec<Pos2> = o.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
         let sel = doc.is_selected(n.id);
         let a = |c: Color32, k: u8| Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), k);
-        fill_polygon(p, doc, canvas, o, a(t.subcat.1, if sel { 60 } else { 34 }));
+        // Ponds drawn with the pond estimator show their footprint in the pond colour.
+        let edge = if matches!(n.data, NodeData::Pond(_)) { t.pond.1 } else { t.subcat.1 };
+        fill_polygon(p, doc, canvas, o, a(edge, if sel { 60 } else { 34 }));
         if let NodeData::Subcat(sc) = &n.data {
             for (i, area) in sc.areas.iter().enumerate() {
                 let Some(so) = &area.outline else { continue };
+                // Rows split by soil group share one drawing: paint it once.
+                if drawing::shape_row(sc, i) != i {
+                    continue;
+                }
                 let c = subarea_color(i, t);
                 fill_polygon(p, doc, canvas, so, a(c, if sel { 110 } else { 80 }));
                 let sp: Vec<Pos2> = so.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
@@ -790,11 +1073,10 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
             // Curve-number labels: each drawn sub-area, and the remainder (placed clear of them),
             // away from node symbols and Tc paths where they fit.
             let drawn: Vec<&[Pt]> = sc.areas.iter().filter_map(|a| a.outline.as_deref()).collect();
-            for area in &sc.areas {
-                let (region, hard) = match &area.outline {
-                    Some(so) => (so.as_slice(), &[][..]),
-                    None if area.remainder && !drawn.is_empty() => (o.as_slice(), drawn.as_slice()),
-                    None => continue,
+            for (shape, cn) in drawing::cn_regions(sc) {
+                let (region, hard) = match shape {
+                    Some(so) => (so, &[][..]),
+                    None => (o.as_slice(), drawn.as_slice()),
                 };
                 // Skip the search for shapes too small (or too far off screen) to label.
                 let r =
@@ -802,7 +1084,7 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
                 if r.width().min(r.height()) < 16.0 || !canvas.intersects(r) {
                     continue;
                 }
-                let label = format!("CN {}", wavestorm_core::units::group(area.cn, 0));
+                let label = format!("CN {}", wavestorm_core::units::group(cn, 0));
                 let font = FontId::proportional(11.0);
                 let width = p.layout_no_wrap(label.clone(), font.clone(), Color32::WHITE).size().x;
                 // The label must fit: its half-width (roughly) and half-height inside the clearance.
@@ -831,7 +1113,7 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
                 );
             }
         }
-        p.add(Shape::closed_line(pts, Stroke::new(if sel { 2.5 } else { 1.5 }, t.subcat.1)));
+        p.add(Shape::closed_line(pts, Stroke::new(if sel { 2.5 } else { 1.5 }, edge)));
     }
 }
 
@@ -1212,14 +1494,15 @@ fn draw_polyline(
     }
     if closed_preview && s.len() >= 3 {
         let fill = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 40);
-        let c = polygon_centroid(&s);
+        // Ear-clipped like the finished fills: a fan from the centre overlaps itself (and
+        // spills outside) on concave shapes.
         let mut mesh = egui::Mesh::default();
-        mesh.colored_vertex(c, fill);
         for q in &s {
             mesh.colored_vertex(*q, fill);
         }
-        for i in 0..s.len() as u32 {
-            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % s.len() as u32);
+        let poly: Vec<Pt> = s.iter().map(|q| pt(*q)).collect();
+        for [a, b, c] in drawing::triangulate(&poly) {
+            mesh.add_triangle(a as u32, b as u32, c as u32);
         }
         p.add(Shape::mesh(mesh));
         p.add(Shape::closed_line(s.clone(), Stroke::new(2.0, color)));
@@ -1307,11 +1590,53 @@ fn draw_shape_handles(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
 pub fn drawings_problem(n: &wavestorm_core::project::Node) -> Option<&'static str> {
     let NodeData::Subcat(sc) = &n.data else { return None };
     let outline = n.outline.as_deref()?;
-    let shapes: Vec<&[Pt]> = sc.areas.iter().filter_map(|a| a.outline.as_deref()).collect();
+    // Each drawing once: rows split by soil group share theirs.
+    let mut shapes: Vec<&[Pt]> = Vec::new();
+    for s in sc.areas.iter().filter_map(|a| a.outline.as_deref()) {
+        if !shapes.contains(&s) {
+            shapes.push(s);
+        }
+    }
     (0..shapes.len()).find_map(|i| {
         let others: Vec<&[Pt]> = shapes.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, s)| *s).collect();
         drawing::subarea_problem(shapes[i], outline, &others)
     })
+}
+
+/// A point dropped on (or within 3 pixels of) the point before or after it in its shape is
+/// the same corner twice: the dragged one is removed, as long as the shape keeps enough points.
+fn merge_dropped_point(doc: &mut Doc, canvas: Rect, node: NodeId, shape: ShapeRef, index: usize) -> bool {
+    let Some(pts) = doc.project.node(node).and_then(|n| shape_points(n, shape)).cloned() else { return false };
+    let n = pts.len();
+    let (min, closed) = if shape == ShapeRef::TcPath { (2, false) } else { (3, true) };
+    if n <= min || index >= n {
+        return false;
+    }
+    let s = |q: Pt| to_screen(&doc.view, canvas, wp(q));
+    let at = s(pts[index]);
+    let mut neighbours = Vec::new();
+    if index > 0 {
+        neighbours.push(index - 1);
+    } else if closed {
+        neighbours.push(n - 1);
+    }
+    if index + 1 < n {
+        neighbours.push(index + 1);
+    } else if closed {
+        neighbours.push(0);
+    }
+    if !neighbours.iter().any(|j| (s(pts[*j]) - at).length() <= 3.0) {
+        return false;
+    }
+    let Some(nd) = doc.project.node_mut(node) else { return false };
+    if shape == ShapeRef::TcPath {
+        drawing::remove_path_point(nd, index)
+    } else {
+        edit_shape(nd, shape, |p| {
+            p.remove(index);
+        })
+        .is_some()
+    }
 }
 
 /// Settles an edit of a drawn shape: undoes it if a sub-area would leave the outline or
@@ -1336,6 +1661,16 @@ fn finish_shape_edit(doc: &mut Doc, node: NodeId, shape: ShapeRef, before: Proje
             drawing::outline_changed(sc, o, old, fpu);
         }
         drawing::sync_node(n, fpu);
+        // An estimated pond's storage follows its footprint, unless the depth no longer fits.
+        if let (Some(o), NodeData::Pond(pond)) = (&n.outline, &n.data)
+            && let Some(Err(e)) = pond.estimate.map(|est| drawing::pond_storage(o, fpu, &est))
+        {
+            doc.commit_from(shape.label(), before);
+            // After ShapeEdited, whose status line this replaces.
+            actions.push(CanvasAction::ShapeEdited(node));
+            actions.push(CanvasAction::Message(format!("Pond storage not re-estimated: {e}")));
+            return;
+        }
     }
     doc.commit_from(shape.label(), before);
     actions.push(CanvasAction::ShapeEdited(node));
@@ -1374,8 +1709,8 @@ fn select_tool(
                     if let Some(nd) = doc.project.node_mut(n) {
                         if s == ShapeRef::TcPath {
                             drawing::insert_path_point(nd, edge, pt(start_world));
-                        } else if let Some(pts) = shape_points_mut(nd, s) {
-                            pts.insert(edge + 1, pt(start_world));
+                        } else {
+                            edit_shape(nd, s, |pts| pts.insert(edge + 1, pt(start_world)));
                         }
                     }
                     (n, s, edge + 1)
@@ -1463,9 +1798,11 @@ fn select_tool(
                 };
                 let fpu = drawing::feet_per_unit(&doc.project);
                 if let Some(n) = doc.project.node_mut(node) {
-                    if let Some(q) = shape_points_mut(n, shape).and_then(|pts| pts.get_mut(index)) {
-                        *q = placed;
-                    }
+                    edit_shape(n, shape, |pts| {
+                        if let Some(q) = pts.get_mut(index) {
+                            *q = placed;
+                        }
+                    });
                     // Live feedback for drawn sub-areas and Tc lengths; outlines settle on release.
                     if shape != ShapeRef::Outline {
                         drawing::sync_node(n, fpu);
@@ -1492,7 +1829,13 @@ fn select_tool(
     // Drag end.
     if resp.drag_stopped() || (it.drag.is_some() && !ui.input(|i| i.pointer.any_down())) {
         match it.drag.take() {
-            Some(Drag::Vertex { node, shape, before, .. }) => finish_shape_edit(doc, node, shape, before, actions),
+            Some(Drag::Vertex { node, shape, before, index }) => {
+                let merged = merge_dropped_point(doc, canvas, node, shape, index);
+                finish_shape_edit(doc, node, shape, before, actions);
+                if merged {
+                    actions.push(CanvasAction::Message("Points dropped on each other were merged into one".into()));
+                }
+            }
             Some(Drag::Nodes { before, cloned, .. }) => {
                 if doc.project.diagram.snap_to_grid {
                     let sel = doc.selection.clone();
@@ -1571,13 +1914,14 @@ fn select_tool(
         let before = doc.project.clone();
         let removed = doc.project.node_mut(node).is_some_and(|n| match shape {
             ShapeRef::TcPath => drawing::remove_path_point(n, index),
-            _ => shape_points_mut(n, shape).is_some_and(|pts| {
+            _ => edit_shape(n, shape, |pts| {
                 let ok = pts.len() > 3 && index < pts.len();
                 if ok {
                     pts.remove(index);
                 }
                 ok
-            }),
+            })
+            .unwrap_or(false),
         });
         if removed {
             finish_shape_edit(doc, node, shape, before, actions);

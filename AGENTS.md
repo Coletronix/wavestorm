@@ -21,7 +21,7 @@ Read this file first. Keep it current: it is the hand-off between sessions.
    published in the reference application's public sample reports, under neutral test names.
    Exception (user decision, 2026-10-23): for interoperability we read and write the
    reference application's project (`.hcp`), rainfall (`.hcr`), unit-hydrograph (`.huh`),
-   IDF (`.idf`) and county rainfall-table (`*-Rain.txt`) text formats. Their data files are
+   IDF (`.hci`) and county rainfall-table (`*-Rain.txt`) text formats. Their data files are
    loaded at runtime from files the user supplies; never commit or bundle them. Tests use small
    fixtures written by us, or the gitignored samples in `reference_images/expert_reference/`
    and skip when those are absent. The `.hcp` header section carries the product name: build
@@ -58,7 +58,7 @@ gitignored.
 |---|---|
 | `hydrograph` | `Hydrograph` (t0, dt, cfs), parabolic peak interpolation (TR-20 convention), volume, centroid |
 | `rainfall`, `rainfall_data` | NRCS Type I/IA/II/III 24-hr mass curves (WinTR-55 v2, smoothed by monotone cubic), 6/12-hr trims, custom/Chicago storms, events, AMC, back-to-back storms |
-| `rainlib` | Rainfall library files: `.hcr`/`.huh`/`.idf` parsers and writers, `*-Rain.txt` county tables, storm-code mapping |
+| `rainlib` | Rainfall library files: `.hcr`/`.huh`/`.hci` (IDF) parsers and writers, `*-Rain.txt` county tables, storm-code mapping |
 | `uh` | NRCS dimensionless UH (NEH 630 Table 16-1), gamma UHs for any peak factor |
 | `runoff` | SCS runoff equation, TR-20 unit-hydrograph runoff, SBUH, Rational |
 | `cn` | TR-55 Table 2-2 lookup, composite CN, unconnected-impervious adjustment |
@@ -73,6 +73,9 @@ gitignored.
 | `calc` | Calculation engine: topological order, per-node results, calculation messages |
 | `hcp` | Open/save the reference application's `.hcp` interchange files (Latin-1 aware, unmatched keys kept in `foreign` fields and written back) |
 | `base64` | Embedding background files in project JSON |
+| `geo` | Background georeference (pixel ↔ lat/lon on a tangent plane), two-point solve, map image / address request URLs |
+| `soils` | NRCS Soil Data Access query/parse (WKT), soil map on the diagram, polygon overlap areas, splitting sub-areas by HSG, HSG report |
+| `shapefile` | One-polygon zipped shapefile (AOI export for Web Soil Survey) |
 
 Internal units are US customary: ft, sq ft, cu ft, cfs, hours, inches of rain. Conversion to
 display units (English/metric, large/small units) happens only at the UI/report edge.
@@ -130,10 +133,21 @@ Keep this section updated at the end of every session.
   timedepth/timeincr, `curve=` multi-storm files, units, inline expressions), `.huh` unit
   hydrographs (peak ordinate = t/Tp 1), `*-Rain.txt` county tables (quoted CSV, several storm codes
   per row, `storm_for_code` maps "NOAA_C", "MSE3", "N10_D"... to library storm names) and
-  `.idf` files. The `.idf` text layout is OUR ASSUMPTION (no sample): `name/comment/timeunits/
-  depthunits`, then per event `curve=`, optional `factor=`, `coef= a b c` (i = a/(b+t)^c) or
-  `idf= t1 i1 t2 i2 ...` points (log-log interpolation); a NOAA Atlas 14 depth CSV is also
-  accepted. Writers: `write_hcr/huh/idf`. Library folder pref (Settings > General, desktop),
+  IDF files. Resolved 2026-10-28 (user request): the reference application's IDF files are
+  `.hci`, NOT `.idf`; its public IDF.txt spec and ~19 public sample `.hci` files (gitignored
+  copies in `reference_images/research/idf/`, read by
+  `rainlib::tests::published_hci_samples_when_present`) define the layout `rainlib::parse_idf`
+  follows: NAME/COMMENT/DEPTHUNITS(INCHES|MM)/TIMEUNITS (intensity time base, default
+  HOURS)/DURATUNITS (default MINUTES), one DURATION line (expressions like `24*60`), events
+  EVENT/Cf/INTEN (`2x` = first INTEN line × 2)/DEPTH/coef1/coef2/coef3; coefficient events
+  are sampled (64 log points) over the DURATION range and held beyond it, as the spec says.
+  Real files contain `event==25-Year`, tabs and trailing spaces. A NOAA PFDS CSV saved as
+  `.hci` is also an IDF file (current layout and the pre-2012 transposed one,
+  `noaa::parse_pfds`). Our earlier provisional `.idf` layout is still read
+  (`parse_legacy_idf`); `write_idf` writes `.hci`. NOAA PFDS for a point:
+  `noaa::pfds_url` (`cgi-bin/new/fe_text_mean.csv`; no CORS, desktop only), "NOAA for Site" in
+  Event Lookup (`Fetch::Noaa`, centre of the georeferenced background). Writers:
+  `write_hcr/huh/idf`. Library folder pref (Settings > General, desktop),
   "Import Rainfall Files..." (desktop and web; web imports persist in localStorage up to 2.5 MB).
   Library storms/UHs used by events, the default UH or a subcatchment UH are copied into the
   project (`library::adopt`) so projects stay self-contained. The full-library test runs when
@@ -235,9 +249,8 @@ Keep this section updated at the end of every session.
   1. (done) Project Reports: reference tab set, All/Selected Nodes, Show Totals, button
      column; tables from `core::listings` (script `project-report:N`).
   2. (done) Storm / UH / IDF viewers (`reports/curves.rs`; IDF graph on a log duration axis,
-     `ChartSpec::log_x`) and the Event Depth(s) option (script `storms-events`). `.idf` support is
-     marked PROVISIONAL in the UI and in written files (`rainlib::IDF_PROVISIONAL`) until a
-     real `.idf` sample is available; remove the marker once the layout is verified.
+     `ChartSpec::log_x`) and the Event Depth(s) option (script `storms-events`). IDF files are
+     `.hci` (verified against public samples, 2026-10-28; see the rainfall library entry).
   3. (done) Calculation Settings Rainfall tab. (done) Resize tab: automatic sizing
      (`core::resize`) of round pipe reaches and round culverts marked `auto_size`, smallest
      listed diameter keeping the current event's peak depth ≤ 0.98 D (reach) or pond peak ≤
@@ -343,6 +356,65 @@ Keep this section updated at the end of every session.
   `widgets::grid_marked` swatches, "Source" column, rebuild keeps each row's drawing by index
   (mirroring grid insert/delete). Colours: `diagram::subarea_color(row)`, remainder = subcat
   colour. Test: `tests/underlay.rs::draw_subareas_edit_and_place_background`.
+- Pond estimator (2026-10-27, user request): `Tool::Pond` / `Cmd::Pond` (dock, settings column,
+  Diagram menu; script `pond` or `pond:x0,y0,x1,y1` to open the dialog on a rectangle) traces
+  the pond's top; `dialogs::misc::pond_estimate` asks top elevation, depth and side slope z
+  (bottom = top − depth, `PondEstimate::bottom`),
+  then creates a pond at the centroid with `Node::outline` = footprint (drawn/printed in the pond
+  colour), `Pond::estimate`, and one `CustomKind::AreaPrismatic` volume described
+  `drawing::POND_ESTIMATE`. `drawing::pond_storage`: inward mitred offset area
+  A − P·r + K·r² (K = Σ tan(turn/2); exact for convex outlines until an edge vanishes), r =
+  z·(depth − h), stages ~0.5 ft apart; `pond_max_depth` = where the sides meet. `sync_node`
+  re-estimates that volume when the footprint is edited or the background recalibrated.
+  `widgets::push_button` now carries an accessibility label (tests can `get_by_label("OK")`).
+- Site location and soils (2026-10-27, user request; branch `feature/geolocated-site-soils`).
+  User decisions: no tax-parcel maps (no free nationwide source); dual HSGs default to D with
+  a "Site is drained" box (first letter); a subcatchment over several soils has its Area rows
+  split by soil (option a), not a dominant-soil row. `Underlay::geo` (`geo::GeoRef`: anchor
+  pixel, lon/lat, bearing) + `feet_per_unit` place the diagram; stored per pixel so moving or
+  resizing the background keeps it. Background > Aerial Photo (`dialogs::site::locate`,
+  `Fetch::Map`): Nominatim address lookup, then USGS NAIP `ImageServer/exportImage` (the cached
+  basemap `USGSImageryOnly` is ~15 ft/px at site scale, so it is only used for the "roads and
+  names" option), Web Mercator bbox sized so the image is north-up at `feet_per_pixel`; the
+  reply must be exactly the requested size. Over an earlier north-up georeferenced background
+  the photo lines up with it. Background > Georeference (`Tool::Georef`, `geo::two_point`) also
+  sets the scale. Diagram > Soils (`dialogs::site::soils_window`): AOI drawn (`Tool::Aoi`) or
+  `soils::default_aoi` (hull of outlines + 10 %/50 ft); `Fetch::Soils` posts
+  `soils::sda_request` (`GetClippedMapunits` + `hydgrpdcd` + `STAsText`, AOI `MakeValid`, ≤
+  10,000 ac) to SDA; `parse_sda` keeps units/polygons in lon/lat in `Project::soils`.
+  `soils::split_subcat` merges earlier splits (`same_row`: description sans ", HSG x",
+  outline, remainder, C, land use), then splits each row by the soils under its own ground
+  (drawn outline / outline − drawn for remainder / whole outline when nothing is drawn),
+  drops groups < 1 %, shares unmapped ground pro rata, keeps one row when the cover's CN is
+  equal on all groups, leaves non-TR-55 descriptions alone. Split rows share an outline or
+  the remainder flag: `drawing::sync_subareas` shares a shape's area in current proportions,
+  `shape_row`/`cn_regions` draw a shared drawing once with a weighted CN label. Overlap areas:
+  `soils::Prepared` (ear-clip triangles × Sutherland–Hodgman). Fixed with it: `triangulate`
+  accepted ears touched by a reflex corner (symmetric L shapes overlapped). Network:
+  `ui::net` (ehttp; ureq+rustls on desktop, fetch on web; replies via inbox like
+  `platform`; headless apps never go online, tests push `net::Reply`s). SDA rejects two
+  Content-Type headers: replace ehttp's default. Print option "Hydrologic soil group report"
+  (`PrintOptions::hsg_report`, on by default when the project has soils): soil map page +
+  `soils::report_lines`. `webpki-roots` brought CDLA-Permissive-2.0 into `deny.toml`/
+  `about.toml`. Live check: `cargo test -p wavestorm-ui --test site -- --ignored`.
+  Sub-area drawing snaps to soil boundaries while the soils are shown (`Doc::soil_snap`, on by
+  default, S key or Soils window): `diagram::snap_to_rings` after `snap_to_drawings`; a click
+  whose previous point is on the same ring inserts the ring corners between them
+  (`drawing::follow_ring`; among rings the geometrically shortest run that passes
+  `drawing::path_clear`: inside the outline, clear of other sub-areas, not crossing the line
+  so far), also for the closing edge (dropped if the shape would then be invalid, so Enter
+  always closes a valid shape); the rubber band previews it; Backspace removes a whole click
+  (`Interaction::clicks`). Fixed with it (user report 2026-10-28): split rows share one
+  drawing, so `edit_shape` applies point edits to every row with that drawing and
+  `drawings_problem`/`subarea_outlines` count each drawing once (twins used to "overlap",
+  undoing every edit); `subarea_problem` rejects self-crossing shapes
+  (`drawing::polygon_is_simple`); a dragged point dropped within 3 px of a neighbour merges
+  with it (`merge_dropped_point`); the drawing preview fill is ear-clipped (the centre fan
+  spilled outside concave shapes).
+- Tabs and the window title show the project's file name once it has one (`Doc::title`), so
+  Save As renames the tab; the printed title is still `Project::title`.
+- `tests/window_growth.rs` checks heights too (the curve viewers used to grow 1 px a frame
+  from guessed tab/button heights; they now use the height left / last frame's button rows).
 - Session (`ui::recovery`, store key `session`; 0.3.0's `recovery` key is still read): `DELAY`
   (1 s) after any change the open projects are recorded — saved files by path, unsaved or
   file-less ones (always on the web) with their JSON, plus the front tab. At start (non-headless)
@@ -405,10 +477,10 @@ Semantic versioning: the single source of truth is `version` in the workspace `C
 - There is no changelog file (removed 2026-10-25, user request): the git history is the
   changelog, so write commit subjects that read well as release-note lines (they are listed
   verbatim). Commits titled "Release v…" are left out of the notes.
-- Release cadence (user, 2026-10-23): there are no real users yet, so cut a **minor** release
-  at the end of each substantial batch of work (a feature set, a redesign, a rename) without
-  waiting to be asked; patch releases for fix-only batches. Mention the new tag in the
-  hand-off.
+- Release cadence (user, 2026-10-27, replaces the earlier "release without being asked"
+  rule): **only bump the version and tag a release when the user says to.** Otherwise commit
+  work normally and leave the version alone; when asked, pick patch or minor by the rules
+  below and mention the new tag in the hand-off.
 - To release: bump the workspace version (patch = fixes, minor = features or file-format
   additions, major = breaking project-file changes; while 0.x, breaking changes may go in a
   minor), run `cargo test`, clippy and the wasm check, commit "Release vX.Y.Z", then

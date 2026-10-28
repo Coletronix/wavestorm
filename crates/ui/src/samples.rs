@@ -140,6 +140,7 @@ pub fn sample_project() -> Project {
             tailwater: [Tailwater::Free; 3],
             large_units: false,
             chamber: None,
+            estimate: None,
         });
     }
 

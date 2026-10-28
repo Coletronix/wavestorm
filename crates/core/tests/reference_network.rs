@@ -109,6 +109,7 @@ fn network() -> (Project, NodeId, NodeId) {
         tailwater: [Tailwater::Fixed(49.0), Tailwater::Free, Tailwater::Free],
         large_units: true,
         chamber: None,
+        estimate: None,
     });
     (p, reach, pond)
 }

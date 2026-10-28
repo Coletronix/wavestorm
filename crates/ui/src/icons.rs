@@ -294,6 +294,8 @@ pub enum Glyph {
     Underlay,
     Calibrate,
     Trace,
+    /// Pond estimator: a pond seen in section, sides sloping down to a flat bottom.
+    Pond,
     Measure,
     /// Draw a subcatchment's Tc flow path: a bent path with a clock.
     TcPath,
@@ -564,6 +566,23 @@ pub fn draw_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
             for q in pts {
                 p.rect_filled(Rect::from_center_size(q, vec2(3.0, 3.0)), 0.0, ink);
             }
+        }
+        Glyph::Pond => {
+            let at = |fx: f32, fy: f32| pos2(r.min.x + s * fx, r.min.y + s * fy);
+            // Ground line, then the pond's section: sloping sides and a flat bottom, filled
+            // with water up to just below the top.
+            let ground = k(Color32::from_rgb(120, 90, 40));
+            p.line_segment([at(0.0, 0.3), at(1.0, 0.3)], Stroke::new(1.2, ground));
+            let water = vec![at(0.08, 0.42), at(0.92, 0.42), at(0.7, 0.86), at(0.3, 0.86)];
+            p.add(Shape::convex_polygon(water, t.pond.0, Stroke::NONE));
+            p.add(Shape::line(
+                vec![at(0.02, 0.3), at(0.3, 0.86), at(0.7, 0.86), at(0.98, 0.3)],
+                Stroke::new(1.5, t.pond.1),
+            ));
+            p.line_segment([at(0.08, 0.42), at(0.92, 0.42)], Stroke::new(1.0, t.pond.1));
+            // A depth arrow.
+            p.line_segment([at(0.5, 0.06), at(0.5, 0.8)], Stroke::new(1.0, ink));
+            p.add(Shape::convex_polygon(vec![at(0.5, 0.86), at(0.42, 0.72), at(0.58, 0.72)], ink, Stroke::NONE));
         }
         Glyph::Measure => {
             let bar = Rect::from_center_size(c, vec2(s * 0.95, s * 0.38));
@@ -1022,6 +1041,15 @@ pub fn draw_glass_glyph(p: &Painter, g: Glyph, r: Rect, t: &Tokens) {
                     egui::StrokeKind::Inside,
                 );
             }
+        }
+        Glyph::Pond => {
+            // A pond in section: a glass basin with blue-tinted water, and a depth arrow.
+            pen.seg(at(0.02, 0.3), at(0.98, 0.3));
+            let water = vec![at(0.1, 0.42), at(0.9, 0.42), at(0.7, 0.84), at(0.3, 0.84)];
+            glass::gradient_fill(p, &water, glass::alpha(t.pond.1, 0.6), glass::alpha(t.pond.1, 0.3));
+            pen.line(vec![at(0.04, 0.3), at(0.3, 0.86), at(0.7, 0.86), at(0.96, 0.3)]);
+            pen.seg(at(0.5, 0.06), at(0.5, 0.7));
+            pen.line(vec![at(0.4, 0.6), at(0.5, 0.72), at(0.6, 0.6)]);
         }
         Glyph::Pointer => {
             // The cursor arrow from the glass references.

@@ -6,6 +6,7 @@ pub mod misc;
 pub mod node;
 pub mod outlet;
 pub mod settings;
+pub mod site;
 pub mod storm;
 
 use crate::widgets;
@@ -96,6 +97,9 @@ fn field_tip(label: &str) -> Option<&'static str> {
         "Crest Length" | "Weir Length" => "Length of the weir crest perpendicular to the flow.",
         "Breadth" | "Crest Breadth" => "Breadth of a broad-crested weir in the direction of flow.",
         "Side Slope Z" | "Side-Z" | "Z" => "Horizontal run per unit rise of the side slopes.",
+        "Side Slope" => "Horizontal run per unit rise of the pond's side slopes (3 for 3:1); 0 for vertical walls.",
+        "Approximate Depth" => "Depth from the top elevation down to the pond's flat bottom.",
+        "Top Elevation" => "Elevation of the drawn top of the pond; the bottom is the depth below it.",
         "Voids" | "Stone Voids" => "Percent of the gross volume available for water (about 40 % for clean stone).",
         "Multiplier" => "Number of identical storage volumes.",
         "Trigger Elevation" => "Water level that starts the timer of a delayed gate.",

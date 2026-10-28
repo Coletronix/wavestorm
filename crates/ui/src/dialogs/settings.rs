@@ -179,13 +179,33 @@ fn rainfall(
     });
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
-            conv_field(ui, "depth", "Depth:", u.rain_heading(), &mut e.depth, |x| u.rain(x), |x| u.rain_in(x).max(0.0), 2, 110.0);
+            conv_field(
+                ui,
+                "depth",
+                "Depth:",
+                u.rain_heading(),
+                &mut e.depth,
+                |x| u.rain(x),
+                |x| u.rain_in(x).max(0.0),
+                2,
+                110.0,
+            );
             let mut amc = e.amc.number() as f64;
             if conv_field(ui, "amc", "AMC:", "", &mut amc, |x| x, |x| x.clamp(1.0, 3.0), 0, 80.0) {
                 e.amc = Amc::from_number(amc.round().clamp(1.0, 3.0) as u8);
             }
             opt_field(ui, "ri", "Rational Intensity:", "in/hr", &mut e.rational_intensity, |x| x, |x| x, 2, 170.0);
-            opt_field(ui, "rd", "Rational Duration:", "min", &mut e.rational_duration, |x| x * 60.0, |x| x / 60.0, 1, 170.0);
+            opt_field(
+                ui,
+                "rd",
+                "Rational Duration:",
+                "min",
+                &mut e.rational_duration,
+                |x| x * 60.0,
+                |x| x / 60.0,
+                1,
+                170.0,
+            );
         });
         if let Some(slot) = s.events.get_mut(idx) {
             *slot = e.clone();
@@ -203,7 +223,12 @@ fn rainfall(
             ui.horizontal(|ui| {
                 ui.label("Name:");
                 widgets::text_box(ui, &mut st.name, 96.0);
-                let names: Vec<(usize, String)> = s.events.iter().enumerate().map(|(i, e)| (i, format!("{}  ({:.2})", e.name, u.rain(e.depth)))).collect();
+                let names: Vec<(usize, String)> = s
+                    .events
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| (i, format!("{}  ({:.2})", e.name, u.rain(e.depth))))
+                    .collect();
                 let mut pick = usize::MAX;
                 if widgets::combo(ui, "ev", &mut pick, &names, 30.0) && pick < s.events.len() {
                     s.current_event = pick;
@@ -243,34 +268,70 @@ fn rainfall(
             ui.horizontal(|ui| {
                 let import = widgets::button(ui, "Import Events From...", 150.0);
                 egui::Popup::menu(&import).show(|ui| {
-                    if ui.button("County rainfall table / IDF file / NOAA table...").on_hover_text("Create events from a county table, an IDF curve file (provisional format) or a NOAA Atlas 14 table").clicked() {
-                        actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
+                    if ui
+                        .button("County rainfall table / IDF file / NOAA table...")
+                        .on_hover_text(
+                            "Create events from a county table, an IDF curve file (.hci) or a NOAA Atlas 14 table",
+                        )
+                        .clicked()
+                    {
+                        actions.push(WindowAction::OpenWindow(Window::EventLookup(
+                            crate::dialogs::storm::EventLookup::new(doc),
+                        )));
                         ui.close();
                     }
-                    if ui.button("IDF file (provisional)...").on_hover_text(wavestorm_core::rainlib::IDF_PROVISIONAL).clicked() {
-                        actions.push(WindowAction::OpenWindow(Window::EventLookup(crate::dialogs::storm::EventLookup::new(doc))));
+                    if ui
+                        .button("IDF file...")
+                        .on_hover_text("An IDF curve file (.hci) or a NOAA Atlas 14 CSV")
+                        .clicked()
+                    {
+                        actions.push(WindowAction::OpenWindow(Window::EventLookup(
+                            crate::dialogs::storm::EventLookup::new(doc),
+                        )));
                         actions.push(WindowAction::PickFile(crate::platform::Purpose::NoaaCsv));
                         ui.close();
                     }
-                    if ui.button("Typical 1 to 100-year events").on_hover_text("Replace events with 1, 2, 5, 10, 25, 50, 100-year (edit depths for your site)").clicked() {
-                        let storm = s.events.get(s.current_event).map(|e| e.storm.clone()).unwrap_or_else(|| "Type II 24-hr".into());
-                        s.events = [("1-Year", 2.6), ("2-Year", 3.1), ("5-Year", 3.9), ("10-Year", 4.6), ("25-Year", 5.6), ("50-Year", 6.4), ("100-Year", 7.3)]
-                            .iter()
-                            .map(|(n, d)| RainEvent::new(n, &storm, *d))
-                            .collect();
+                    if ui
+                        .button("Typical 1 to 100-year events")
+                        .on_hover_text("Replace events with 1, 2, 5, 10, 25, 50, 100-year (edit depths for your site)")
+                        .clicked()
+                    {
+                        let storm = s
+                            .events
+                            .get(s.current_event)
+                            .map(|e| e.storm.clone())
+                            .unwrap_or_else(|| "Type II 24-hr".into());
+                        s.events = [
+                            ("1-Year", 2.6),
+                            ("2-Year", 3.1),
+                            ("5-Year", 3.9),
+                            ("10-Year", 4.6),
+                            ("25-Year", 5.6),
+                            ("50-Year", 6.4),
+                            ("100-Year", 7.3),
+                        ]
+                        .iter()
+                        .map(|(n, d)| RainEvent::new(n, &storm, *d))
+                        .collect();
                         s.current_event = 3;
                         ui.close();
                     }
                 });
                 if widgets::button(ui, "New", 44.0).on_hover_text("Add a copy of the current event").clicked() {
-                    let mut ne = s.events.get(s.current_event).cloned().unwrap_or_else(|| RainEvent::new("Event", "Type II 24-hr", 3.0));
+                    let mut ne = s
+                        .events
+                        .get(s.current_event)
+                        .cloned()
+                        .unwrap_or_else(|| RainEvent::new("Event", "Type II 24-hr", 3.0));
                     ne.name = format!("Event {}", s.events.len() + 1);
                     s.events.push(ne);
                     s.current_event = s.events.len() - 1;
                 }
             });
             ui.horizontal(|ui| {
-                if widgets::button_enabled(ui, "Del All", 70.0, s.events.len() > 1).on_hover_text("Delete all events but the current one").clicked()
+                if widgets::button_enabled(ui, "Del All", 70.0, s.events.len() > 1)
+                    .on_hover_text("Delete all events but the current one")
+                    .clicked()
                     && let Some(keep) = s.events.get(s.current_event).cloned()
                 {
                     s.events = vec![keep];
@@ -279,7 +340,19 @@ fn rainfall(
                 let view = widgets::button(ui, "View All", 70.0);
                 egui::Popup::menu(&view).show(|ui| {
                     for (i, ev) in s.events.iter().enumerate() {
-                        if ui.selectable_label(i == s.current_event, format!("{}   {} {}   {}", ev.name, format_args!("{:.2}", u.rain(ev.depth)), u.rain_heading(), ev.storm)).clicked() {
+                        if ui
+                            .selectable_label(
+                                i == s.current_event,
+                                format!(
+                                    "{}   {} {}   {}",
+                                    ev.name,
+                                    format_args!("{:.2}", u.rain(ev.depth)),
+                                    u.rain_heading(),
+                                    ev.storm
+                                ),
+                            )
+                            .clicked()
+                        {
                             s.current_event = i;
                             ui.close();
                         }

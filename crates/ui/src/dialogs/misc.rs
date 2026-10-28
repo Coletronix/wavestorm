@@ -7,8 +7,9 @@ use crate::theme::{ThemeKind, Tokens};
 use crate::widgets;
 use crate::windows::WindowAction;
 use egui::{Pos2, RichText, vec2};
+use wavestorm_core::drawing::{self, PondEstimate};
 use wavestorm_core::landuse::ImperviousBasis;
-use wavestorm_core::project::{DiagramSettings, Project};
+use wavestorm_core::project::{DiagramSettings, NodeData, NodeType, Project};
 use wavestorm_core::units::{UnitSystem, Units};
 
 pub struct UnitsState {
@@ -183,7 +184,7 @@ pub fn general(ctx: &egui::Context, st: &mut GeneralState, actions: &mut Vec<Win
             let lib = crate::library::current();
             #[cfg(not(target_arch = "wasm32"))]
             {
-                ui.label("Folder with rainfall files (.hcr storms, .huh unit hydrographs, .idf IDF curves, *-Rain.txt county tables):");
+                ui.label("Folder with rainfall files (.hcr storms, .huh unit hydrographs, .hci IDF curves, *-Rain.txt county tables):");
                 ui.horizontal(|ui| {
                     widgets::text_box(ui, &mut st.draft.rainfall_folder, 360.0);
                     if widgets::button(ui, "Browse...", 78.0).clicked()
@@ -206,7 +207,7 @@ pub fn general(ctx: &egui::Context, st: &mut GeneralState, actions: &mut Vec<Win
                 }
             });
             let t = Tokens::get(ui.ctx());
-            ui.label(RichText::new(format!("{} storms, {} unit hydrographs, {} IDF files (provisional format), {} lookup tables loaded", lib.storms.len(), lib.uhs.len(), lib.idfs.len(), lib.tables.len())).color(t.text_dim));
+            ui.label(RichText::new(format!("{} storms, {} unit hydrographs, {} IDF files, {} lookup tables loaded", lib.storms.len(), lib.uhs.len(), lib.idfs.len(), lib.tables.len())).color(t.text_dim));
             for p in lib.problems.iter().take(3) {
                 ui.colored_label(t.warning, p);
             }
@@ -365,6 +366,119 @@ pub fn calibrate(ctx: &egui::Context, doc: &mut Doc, st: &mut CalibrateState) ->
     keep
 }
 
+/// Pond estimator: asks for the depth and side slope of a pond whose top was just drawn.
+pub struct PondEstimateState {
+    /// The drawn top of the pond (diagram units).
+    pub points: Vec<[f64; 2]>,
+    pub est: PondEstimate,
+}
+
+impl PondEstimateState {
+    pub fn new(points: &[Pos2]) -> Self {
+        PondEstimateState {
+            points: points.iter().map(|p| [p.x as f64, p.y as f64]).collect(),
+            est: PondEstimate::default(),
+        }
+    }
+}
+
+/// On OK, creates a pond at the centre of the drawn outline whose storage is the estimated
+/// stage-area data (prismatic), and opens its Storage tab.
+pub fn pond_estimate(
+    ctx: &egui::Context,
+    doc: &mut Doc,
+    st: &mut PondEstimateState,
+    actions: &mut Vec<WindowAction>,
+) -> bool {
+    let mut keep = true;
+    let u = doc.project.units;
+    let fpu = drawing::feet_per_unit(&doc.project);
+    crate::frame::Win::new("Pond Estimator").collapsible(false).resizable(false).show(ctx, |ui| {
+        let top_area = drawing::polygon_area(&st.points) * fpu * fpu;
+        ui.label(format!("Area at the top of the pond (drawn): {}", u.fmt_area(top_area)));
+        if doc.project.diagram.underlay.as_ref().and_then(|ul| ul.feet_per_unit).is_none() {
+            ui.colored_label(Tokens::get(ui.ctx()).warning, "Not calibrated: 1 diagram unit = 1 ft.");
+        }
+        ui.add_space(4.0);
+        let len = u.len_label();
+        conv_field(
+            ui,
+            "pe-top",
+            "Top Elevation:",
+            len,
+            &mut st.est.top,
+            |x| u.len(x),
+            |x| u.len_in(x),
+            u.elev_dp(),
+            260.0,
+        );
+        conv_field(
+            ui,
+            "pe-depth",
+            "Approximate Depth:",
+            len,
+            &mut st.est.depth,
+            |x| u.len(x),
+            |x| u.len_in(x),
+            2,
+            260.0,
+        );
+        conv_field(ui, "pe-z", "Side Slope:", "H:1V", &mut st.est.z, |x| x, |x| x.max(0.0), 2, 260.0);
+        ui.add_space(4.0);
+        let volume = drawing::pond_storage(&st.points, fpu, &st.est);
+        match &volume {
+            Ok(v) => {
+                let (top, bottom) = (st.est.top, st.est.bottom());
+                ui.label(format!(
+                    "Bottom elevation: {}    Bottom area: {}",
+                    u.fmt_elev(bottom),
+                    u.fmt_area(v.surface_area(bottom).unwrap_or(0.0))
+                ));
+                ui.label(format!(
+                    "Storage: {} from {} to {} (prismatic stage-area data)",
+                    u.fmt_volume(v.gross(top)),
+                    u.fmt_elev(bottom),
+                    u.fmt_elev(top)
+                ));
+            }
+            Err(e) => {
+                ui.colored_label(Tokens::get(ui.ctx()).warning, e.as_str());
+            }
+        }
+        if let Some(max) = drawing::pond_max_depth(&st.points, fpu, st.est.z) {
+            ui.label(RichText::new(format!("The side slopes meet {} below the top.", u.fmt_len(max))).small());
+        }
+        match ok_cancel_apply(ui, false, "background") {
+            Buttons::Ok | Buttons::Apply => {
+                if let Ok(v) = volume {
+                    let c = drawing::centroid(&st.points);
+                    let (outline, est) = (st.points.clone(), st.est);
+                    let mut id = 0;
+                    doc.edit("Pond Estimator", |p| {
+                        id = p.add_node(NodeType::Pond, c);
+                        if let Some(n) = p.node_mut(id) {
+                            n.outline = Some(outline);
+                            if let NodeData::Pond(pond) = &mut n.data {
+                                pond.storage.volumes.push(v);
+                                pond.estimate = Some(est);
+                            }
+                        }
+                    });
+                    doc.selection = vec![id];
+                    actions.push(WindowAction::OpenEdit(id));
+                    actions.push(WindowAction::Status(
+                        "Created a pond with estimated storage. Add its outlets on the Outlets tab.".into(),
+                    ));
+                    keep = false;
+                }
+            }
+            Buttons::Cancel => keep = false,
+            Buttons::None => {}
+        }
+    });
+    keep
+}
+
 #[derive(Default)]
 pub struct UnderlayState {
     pub page_text: String,
@@ -504,6 +618,15 @@ impl Default for PrintState {
     }
 }
 
+impl PrintState {
+    /// The soil group report is included when the project has soil survey data.
+    pub fn new(p: &Project) -> Self {
+        let mut st = PrintState::default();
+        st.opts.hsg_report = p.soils.is_some();
+        st
+    }
+}
+
 /// Today's date as m/d/yyyy.
 pub fn today() -> String {
     #[cfg(target_arch = "wasm32")]
@@ -540,6 +663,9 @@ pub fn print(ctx: &egui::Context, st: &mut PrintState) -> (bool, Option<wavestor
             widgets::check(ui, &mut st.opts.summaries, "Node summaries");
             widgets::check(ui, &mut st.opts.graphs, "Hydrograph graphs");
             widgets::check(ui, &mut st.opts.tables, "Tabular hydrographs");
+            widgets::check(ui, &mut st.opts.hsg_report, "Hydrologic soil group report").on_hover_text(
+                "Soil map of the area of interest and the soil groups of each subcatchment (Diagram > Soils)",
+            );
         });
         widgets::text_field(ui, "Date printed:", &mut st.opts.date, 160.0);
         ui.label(

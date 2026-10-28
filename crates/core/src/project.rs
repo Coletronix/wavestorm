@@ -198,6 +198,9 @@ pub struct Pond {
     /// The chamber wizard's field, when the storage was laid out with it.
     #[serde(default)]
     pub chamber: Option<crate::chamber::Field>,
+    /// The pond estimator's inputs, when the storage was estimated from a drawn footprint.
+    #[serde(default)]
+    pub estimate: Option<crate::drawing::PondEstimate>,
 }
 
 /// A free-text (and optional image) annotation on the diagram.
@@ -297,6 +300,17 @@ impl Node {
     pub fn label(&self) -> String {
         format!("{}{}", self.number, self.node_type().letter())
     }
+    /// The display units for this node's own values: the project's units, with large areas and
+    /// volumes (acres, acre-feet) only when the node's "Large units" box is also checked.
+    pub fn units(&self, project: &Units) -> Units {
+        let large = match &self.data {
+            NodeData::Subcat(sc) => sc.large_units,
+            NodeData::Pond(p) => p.large_units,
+            _ => true,
+        };
+        Units { large: project.large && large, ..*project }
+    }
+
     /// "Subcatchment 1S: Name"
     pub fn title(&self) -> String {
         if self.name.is_empty() {
@@ -476,6 +490,9 @@ pub struct Underlay {
     pub visible: bool,
     #[serde(default)]
     pub locked: bool,
+    /// Where the background is in the real world (see `geo`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo: Option<crate::geo::GeoRef>,
 }
 
 /// Diagram display settings.
@@ -519,6 +536,9 @@ pub struct Project {
     /// Interchange-file data this model does not represent (see `hcp`).
     #[serde(default)]
     pub foreign: Vec<ForeignEntry>,
+    /// Soil survey map units fetched for an area of interest (see `soils`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soils: Option<crate::soils::SoilMap>,
 }
 
 pub const FORMAT_VERSION: u32 = 1;
@@ -539,6 +559,7 @@ impl Default for Project {
             land_use: crate::landuse::LandUseSettings::default(),
             next_id: 1,
             foreign: Vec::new(),
+            soils: None,
         }
     }
 }
