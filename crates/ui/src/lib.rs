@@ -39,7 +39,18 @@ use platform::{Incoming, Platform, Purpose};
 use prefs::Prefs;
 use theme::{ThemeKind, Tokens};
 use wavestorm_core::project::{Node, NodeData, NodeId, NodeType, Project};
+use wavestorm_core::{geo, terrain};
 use windows::{Window, WindowAction};
+
+/// A downloaded image to place as the background: north-up, `feet_per_pixel` on the ground.
+struct PlacedImage {
+    file_name: String,
+    bytes: Vec<u8>,
+    width: u32,
+    height: u32,
+    feet_per_pixel: f64,
+    geo: geo::GeoRef,
+}
 
 /// The application.
 pub struct WaveStormApp {
@@ -163,15 +174,29 @@ impl WaveStormApp {
             if self.docs.is_empty() {
                 continue;
             }
-            if let Err(e) = self.handle_reply(reply) {
+            if let Err(e) = self.handle_reply(ctx, reply) {
                 self.status = e.lines().next().unwrap_or_default().to_string();
                 self.error = Some(e);
             }
         }
     }
 
-    /// A finished web request: an address found, a map image to place, or soils.
-    fn handle_reply(&mut self, reply: net::Reply) -> Result<(), String> {
+    /// A finished web request: an address found, a map image to place, soils or elevations.
+    fn handle_reply(&mut self, ctx: &egui::Context, reply: net::Reply) -> Result<(), String> {
+        // The capture date is a footnote to the map: without it, nothing is said.
+        if let net::Fetch::ImageryDate { source, .. } = &reply.fetch {
+            let date = reply.result.ok().and_then(|b| geo::parse_imagery_date(*source, &String::from_utf8_lossy(&b)));
+            if let Some(date) = date {
+                let note = format!("{}: {date}.", source.label());
+                for w in &mut self.doc().windows {
+                    if let Window::Locate(s) = w {
+                        s.message = format!("{}\n{note}", s.message);
+                    }
+                }
+                self.status = format!("{} {note}", self.status);
+            }
+            return Ok(());
+        }
         let failed = reply.result.is_err();
         let result = reply.result.and_then(|bytes| match &reply.fetch {
             net::Fetch::Geocode(_) => {
@@ -185,8 +210,16 @@ impl WaveStormApp {
                 Ok(())
             }
             net::Fetch::Map { source, center, width_ft, height_ft, place } => {
-                self.load_map(*source, *center, *width_ft, *height_ft, place, bytes)
+                self.load_map(*source, *center, *width_ft, *height_ft, place, bytes)?;
+                if source.date_url(*center).is_some() {
+                    self.net.start(ctx, net::Fetch::ImageryDate { source: *source, center: *center });
+                }
+                Ok(())
             }
+            net::Fetch::Terrain { center, width_ft, height_ft, place, background } => {
+                self.load_terrain(*center, *width_ft, *height_ft, place, *background, &bytes)
+            }
+            net::Fetch::ImageryDate { .. } => Ok(()),
             net::Fetch::Noaa { lon_lat } => {
                 let name = format!("NOAA Atlas 14 ({}).csv", wavestorm_core::geo::format_lat_lon(*lon_lat));
                 let doc = self.doc();
@@ -229,7 +262,12 @@ impl WaveStormApp {
             // Show the problem where the request was made, too.
             for w in &mut self.doc().windows {
                 match w {
-                    Window::Locate(s) if matches!(reply.fetch, net::Fetch::Geocode(_) | net::Fetch::Map { .. }) => {
+                    Window::Locate(s)
+                        if matches!(
+                            reply.fetch,
+                            net::Fetch::Geocode(_) | net::Fetch::Map { .. } | net::Fetch::Terrain { .. }
+                        ) =>
+                    {
                         s.message = e.clone()
                     }
                     Window::Soils(s) if matches!(reply.fetch, net::Fetch::Soils { .. }) => s.message = e.clone(),
@@ -265,9 +303,120 @@ impl WaveStormApp {
                 raster.width, raster.height, req.width_px, req.height_px
             ));
         }
+        let file_name = format!("{} - {}.jpg", source.label(), place.chars().take(60).collect::<String>());
+        let placed = PlacedImage {
+            file_name,
+            bytes,
+            width: req.width_px,
+            height: req.height_px,
+            feet_per_pixel: req.feet_per_pixel,
+            geo: req.geo,
+        };
+        self.place_background(placed, center, "Load Aerial Photo", None);
+        self.status = format!(
+            "{} loaded and placed ({}). Credit: {}.",
+            source.label(),
+            wavestorm_core::geo::format_lat_lon(center),
+            source.credit()
+        );
+        Ok(())
+    }
+
+    /// Stores downloaded 3DEP elevations in the project and, with `background`, makes their
+    /// shaded relief with contours the background (one undo step).
+    fn load_terrain(
+        &mut self,
+        center: geo::LonLat,
+        width_ft: f64,
+        height_ft: f64,
+        place: &str,
+        background: bool,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        let req = terrain::dem_request(center, width_ft, height_ft)?;
+        let grid = terrain::parse_dem(bytes, &req, center, &dialogs::misc::today())?;
+        let u = self.doc().project.units;
+        let range = grid.range().map_or(String::new(), |[lo, hi]| {
+            format!(", ground {} to {} {}", u.fmt_len(lo), u.fmt_len(hi), u.len_label())
+        });
+        let gaps = match grid.coverage() {
+            c if c < 0.99 => format!(" {:.0} % of the area has no elevations.", (1.0 - c) * 100.0),
+            _ => String::new(),
+        };
+        let cells = format!("{} x {} cells of {}", grid.width, grid.height, u.fmt_len(grid.feet_per_pixel));
+        if background {
+            let relief = terrain::render_relief(&grid, geo::MAX_MAP_PIXELS)
+                .ok_or("There are no 3DEP elevations for this place.")?;
+            let img = image::RgbaImage::from_raw(relief.width, relief.height, relief.rgba)
+                .ok_or("The shaded relief could not be drawn.")?;
+            let mut png = Vec::new();
+            image::DynamicImage::ImageRgba8(img)
+                .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .map_err(|e| format!("The shaded relief could not be drawn ({e})."))?;
+            let contours = format!(
+                "contours every {} {}, heavier every {}",
+                u.fmt_len(relief.interval),
+                u.len_label(),
+                u.fmt_len(relief.index)
+            );
+            let file_name =
+                format!("Lidar shaded relief, {contours} - {}.png", place.chars().take(60).collect::<String>());
+            let placed = PlacedImage {
+                file_name,
+                bytes: png,
+                width: relief.width,
+                height: relief.height,
+                feet_per_pixel: relief.feet_per_pixel,
+                geo: relief.geo,
+            };
+            self.place_background(placed, center, "Load Lidar Relief", Some(grid));
+            self.status = format!(
+                "Lidar shaded relief loaded and placed ({contours}{range}). Credit: {}.{gaps}",
+                terrain::CREDIT
+            );
+        } else {
+            let placed = self
+                .doc()
+                .project
+                .diagram
+                .underlay
+                .as_ref()
+                .is_some_and(|ul| ul.geo.is_some() && ul.feet_per_unit.is_some());
+            self.doc().edit("Get Elevations", |p| p.terrain = Some(grid));
+            self.status = format!(
+                "Elevations loaded ({cells}{range}). Credit: {}.{gaps}{}",
+                terrain::CREDIT,
+                if placed { "" } else { " Place the background (Aerial Photo or Georeference) to use them." }
+            );
+        }
+        let note =
+            format!("Elevations loaded ({cells}{range}); drawn Tc flow paths take their slopes from them.{gaps}");
+        for w in &mut self.doc().windows {
+            if let Window::Locate(s) = w {
+                // Added to what the map download said (its reply may come first).
+                s.message = if s.message.is_empty() || s.message.starts_with("Downloading") {
+                    note.clone()
+                } else {
+                    format!("{}\n{note}", s.message)
+                };
+            }
+        }
+        Ok(())
+    }
+
+    /// Makes a downloaded, georeferenced image the background, to scale (undo step `label`, which
+    /// also stores `terrain` when given). A calibrated diagram keeps its scale (the image is
+    /// sized to it); otherwise the image fills the view.
+    fn place_background(
+        &mut self,
+        img: PlacedImage,
+        center: geo::LonLat,
+        label: &str,
+        terrain: Option<terrain::Terrain>,
+    ) {
         let canvas = self.canvas_rect;
         let doc = self.doc();
-        let (w, h) = (raster.width as f64, raster.height as f64);
+        let (w, h) = (img.width as f64, img.height as f64);
         let old_fpu = doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit);
         let view = canvas.is_finite().then(|| {
             (diagram::to_world(&doc.view, canvas, canvas.min), diagram::to_world(&doc.view, canvas, canvas.max))
@@ -280,8 +429,8 @@ impl WaveStormApp {
             _ => ([600.0, 400.0], 1200.0 / w),
         };
         let (scale, fpu) = match old_fpu {
-            Some(f) => (req.feet_per_pixel / f, f),
-            None => (fit_scale, req.feet_per_pixel / fit_scale),
+            Some(f) => (img.feet_per_pixel / f, f),
+            None => (fit_scale, img.feet_per_pixel / fit_scale),
         };
         // Over an earlier north-up georeferenced background the photo lines up with it, so the
         // drawings keep their places.
@@ -294,11 +443,10 @@ impl WaveStormApp {
             .and_then(|u| wavestorm_core::geo::from_lon_lat(u, center));
         let c = lined_up.unwrap_or(c);
         let has_drawings = doc.project.nodes.iter().any(|n| n.outline.is_some() || n.tc_path.is_some());
-        let file_name = format!("{} - {}.jpg", source.label(), place.chars().take(60).collect::<String>());
-        doc.edit("Load Aerial Photo", |p| {
+        doc.edit(label, |p| {
             p.diagram.underlay = Some(wavestorm_core::project::Underlay {
-                file_name: file_name.clone(),
-                bytes: bytes.clone(),
+                file_name: img.file_name,
+                bytes: img.bytes,
                 page: 0,
                 origin: [c[0] - w * scale / 2.0, c[1] - h * scale / 2.0],
                 scale,
@@ -307,8 +455,11 @@ impl WaveStormApp {
                 opacity: 0.85,
                 visible: true,
                 locked: false,
-                geo: Some(req.geo),
+                geo: Some(img.geo),
             });
+            if terrain.is_some() {
+                p.terrain = terrain;
+            }
             if old_fpu.is_none() {
                 wavestorm_core::drawing::sync_all(p);
             }
@@ -328,13 +479,6 @@ impl WaveStormApp {
                 s.message = note.into();
             }
         }
-        self.status = format!(
-            "{} loaded and placed ({}). Credit: {}.",
-            source.label(),
-            wavestorm_core::geo::format_lat_lon(center),
-            source.credit()
-        );
-        Ok(())
     }
 
     /// Starts a web request and says so on the status line.
@@ -2147,6 +2291,7 @@ impl WaveStormApp {
     fn finish_tc_path(&mut self, id: NodeId, points: Vec<Pos2>) {
         let points: Vec<[f64; 2]> = points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
         let fpu = self.doc().project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit);
+        let surface = terrain::Surface::new(&self.doc().project);
         if !self.doc().windows.iter().any(|w| matches!(w, Window::Edit(e) if e.node == id)) {
             self.open_edit(id);
         }
@@ -2156,7 +2301,7 @@ impl WaveStormApp {
             {
                 e.tab = 2;
                 // A newly drawn path starts from fresh flow types.
-                e.tc_path = Some(dialogs::node::TcPathState::new(points.clone(), fpu, &[]));
+                e.tc_path = Some(dialogs::node::TcPathState::new(points.clone(), fpu, &[], surface.clone()));
             }
         }
         self.status = "Choose the flow type of each leg of the path, then OK".into();

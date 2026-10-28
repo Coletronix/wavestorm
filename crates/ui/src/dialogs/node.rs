@@ -15,6 +15,7 @@ use wavestorm_core::outlets::{OutletDevice, Routing};
 use wavestorm_core::project::{Node, NodeData, NodeId, NodeType, Tailwater};
 use wavestorm_core::storage::{CustomKind, StorageVolume, VolumeShape};
 use wavestorm_core::tc::{self, PathFlow, PathLeg, TcKind, TcSegment};
+use wavestorm_core::terrain;
 use wavestorm_core::units::Units;
 
 pub struct EditState {
@@ -57,14 +58,26 @@ pub struct TcPathState {
     pub replace: bool,
     /// The background has a calibrated scale (otherwise 1 diagram unit = 1 ft).
     pub calibrated: bool,
+    /// The project's ground elevations, when it has them and the background is placed.
+    pub surface: Option<terrain::Surface>,
+    /// Ground elevation (ft) at each of `points`.
+    pub elev: Vec<Option<f64>>,
+    /// What taking the slopes from the ground did (or why it could not).
+    pub ground_note: String,
 }
 
 impl TcPathState {
     /// Legs of `points` measured with the background scale `feet_per_unit` (repeated points are
     /// dropped so leg `i` runs from point `i` to `i + 1`). Legs covered by one of `existing`'s
     /// path segments keep its flow type; otherwise the first leg starts as sheet flow and the
-    /// rest as shallow concentrated flow.
-    pub fn new(points: Vec<[f64; 2]>, feet_per_unit: Option<f64>, existing: &[TcSegment]) -> Self {
+    /// rest as shallow concentrated flow. With ground elevations (`surface`) the slopes are
+    /// taken from the ground unless `existing` gives them.
+    pub fn new(
+        points: Vec<[f64; 2]>,
+        feet_per_unit: Option<f64>,
+        existing: &[TcSegment],
+        surface: Option<terrain::Surface>,
+    ) -> Self {
         let fpu = feet_per_unit.filter(|f| f.is_finite() && *f > 0.0);
         let mut drawn: Vec<[f64; 2]> = Vec::with_capacity(points.len());
         for p in points {
@@ -81,9 +94,38 @@ impl TcPathState {
             sheet_limit: tc::SHEET_LIMIT_FT,
             replace: true,
             calibrated: fpu.is_some(),
+            surface,
+            elev: Vec::new(),
+            ground_note: String::new(),
         };
         st.reset(existing);
         st
+    }
+
+    /// Sets the slopes from the ground elevations: each segment's fall over its length
+    /// (`terrain::path_slopes`). Says what it did in `ground_note`.
+    pub fn slopes_from_ground(&mut self) {
+        let mut legs = self.legs.clone();
+        let breaks = |legs: &[PathLeg]| tc::path_breaks(&tc::path_runs(legs));
+        self.ground_note = match terrain::path_slopes(&mut legs, &self.elev) {
+            None => "Part of the path is outside the downloaded elevations: enter the slopes.".into(),
+            Some(flat) => {
+                let b = breaks(&legs);
+                let letter = |p: usize| tc::point_label(b.iter().position(|x| *x == p).unwrap_or(0));
+                self.legs = legs;
+                let mut note = "Slopes from the ground (fall over length of each segment).".to_string();
+                if !flat.is_empty() {
+                    let names: Vec<String> =
+                        flat.iter().map(|[a, b]| format!("{} to {}", letter(*a), letter(*b))).collect();
+                    note.push_str(&format!(
+                        " The ground is flat or rises along {}: slope set to {}; check it.",
+                        names.join(", "),
+                        terrain::MIN_SLOPE
+                    ));
+                }
+                note
+            }
+        };
     }
 
     /// Recomputes the points and legs from the drawn path: flow types (and, on a segment's first
@@ -110,6 +152,14 @@ impl TcPathState {
             .collect();
         if self.limit_sheet {
             tc::limit_sheet_flow(&mut self.points, &mut self.legs, self.sheet_limit);
+        }
+        self.elev = match &self.surface {
+            Some(s) => self.points.iter().map(|p| s.at(*p)).collect(),
+            None => Vec::new(),
+        };
+        self.ground_note.clear();
+        if self.surface.is_some() && self.legs.iter().all(|l| l.slope.is_none()) {
+            self.slopes_from_ground();
         }
     }
 
@@ -836,7 +886,7 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
             }
             if let Some(p) = &path {
                 if widgets::button(ui, "Divide Drawn Path...", 0.0).on_hover_text("Reassign the flow types of the path drawn earlier").clicked() {
-                    st.tc_path = Some(TcPathState::new(p.clone(), doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit), &sc.tc));
+                    st.tc_path = Some(TcPathState::new(p.clone(), doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit), &sc.tc, terrain::Surface::new(&doc.project)));
                 }
                 if widgets::button(ui, "Remove Drawn Path", 0.0).on_hover_text("Remove the path from the diagram; the Tc segments stay as they are").clicked() {
                     st.draft.tc_path = None;
@@ -888,9 +938,16 @@ fn tc_path_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
         let runs = tc::path_runs(&ps.legs);
         let breaks = tc::path_breaks(&runs);
         let letter = |p: usize| tc::point_label(breaks.iter().position(|b| *b == p).unwrap_or(0));
-        egui::Grid::new("tc-legs").num_columns(5).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
+        let ground = ps.surface.is_some();
+        let elev = ps.elev.clone();
+        let z = |i: usize| elev.get(i).copied().flatten().map_or("-".to_string(), |z| format!("{:.1}", u.len(z)));
+        egui::Grid::new("tc-legs").num_columns(if ground { 6 } else { 5 }).spacing(vec2(12.0, 4.0)).show(ui, |ui| {
             ui.label(RichText::new("Leg").strong());
             ui.label(RichText::new(format!("Length ({})", u.len_label())).strong());
+            if ground {
+                ui.label(RichText::new(format!("Ground ({})", u.len_label())).strong())
+                    .on_hover_text("Ground elevation at the start and end of the leg, from the downloaded lidar elevations (USGS 3DEP)");
+            }
             ui.label(RichText::new("Flow").strong());
             ui.label(RichText::new("Slope (ft/ft)").strong()).on_hover_text("Average slope from this leg on. Leave it blank where the slope stays the same as the leg above; entering a different slope starts a new segment.");
             ui.label(RichText::new("Segment").strong());
@@ -898,6 +955,9 @@ fn tc_path_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
             for (i, leg) in ps.legs.iter_mut().enumerate() {
                 ui.label(format!("{}", i + 1));
                 ui.label(wavestorm_core::units::group(u.len(leg.length), 1));
+                if ground {
+                    ui.label(format!("{} to {}", z(i), z(i + 1)));
+                }
                 ui.horizontal(|ui| {
                     // The leg's colour on the diagram.
                     let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), egui::Sense::hover());
@@ -917,6 +977,19 @@ fn tc_path_editor(ctx: &egui::Context, st: &mut EditState, u: &Units) {
             }
         });
         ui.label(RichText::new("The segment ends are lettered on the diagram while this dialog is open.").color(t.text_dim));
+        if ground {
+            ui.horizontal(|ui| {
+                if widgets::button(ui, "Slopes from Ground", 140.0)
+                    .on_hover_text("Set each segment's slope to its fall over its length, from the lidar elevations at its ends. Change a leg's flow type first: segments follow the flow types.")
+                    .clicked()
+                {
+                    ps.slopes_from_ground();
+                }
+                if !ps.ground_note.is_empty() {
+                    ui.label(RichText::new(&ps.ground_note).color(t.text_dim));
+                }
+            });
+        }
         ui.add_space(6.0);
         let mut limit_changed = false;
         ui.horizontal(|ui| {

@@ -411,6 +411,26 @@ Keep this section updated at the end of every session.
   (`drawing::polygon_is_simple`); a dragged point dropped within 3 px of a neighbour merges
   with it (`merge_dropped_point`); the drawing preview fill is ear-clipped (the centre fan
   spilled outside concave shapes).
+- Recent imagery and lidar (2026-10-28, user request: "more current aerial maps", lidar
+  background, elevation surface for Tc slopes). Findings: the USGS NAIP service serves
+  2022–2023; USDA APFO's NAIP server resets connections; Esri's NAIP needs a token. Esri World
+  Imagery (`MapSource::Recent`, now the default, `MapServer/export`, CORS ok) is 2025–26 in
+  most places but not public domain: its credit is shown and the dialog says to check Esri's
+  terms. Capture dates: `MapSource::date_url`/`geo::parse_imagery_date` (Esri `identify` layer
+  0 of World_Imagery; NAIP `query` Category=1), fetched after a map loads (`Fetch::ImageryDate`,
+  failures silent). `geo::Placement` = byteless underlay placement; `export_extent`/
+  `center_geo`/`check_area` are shared by maps and DEMs. `core::terrain`: 3DEP
+  `3DEPElevation/ImageServer/exportImage` with `format=bsq&pixelType=F32` returns w·h LE f32
+  metres + a validity bitmask (MSB first, 1 = data; checked live), `parse_dem` → `Terrain`
+  (feet, NaN gaps, base64 f32 in `Project::terrain`), 1 m cells, ≤ `MAX_DEM_PIXELS` per side.
+  The server's hillshade is nearly blank on flat sites, so `render_relief` draws our own
+  (exaggerated shading, elevation tints, contours by `contour_interval`, index lines 2 px);
+  the UI PNG-encodes it as the background (`Backdrop::Relief` in the Aerial Photo window;
+  `load_terrain`/`place_background` in lib.rs, one undo step with the grid). Slopes:
+  `terrain::Surface` (grid + placement) in `TcPathState`, elevations per point, `path_slopes`
+  = fall/length per run of one flow type on its first leg, min `MIN_SLOPE` (flagged); filled
+  automatically when no existing segment gives slopes, and by "Slopes from Ground". The live
+  check (`--ignored`) covers Esri, the dates and 3DEP.
 - Tabs and the window title show the project's file name once it has one (`Doc::title`), so
   Save As renames the tab; the printed title is still `Project::title`.
 - `tests/window_growth.rs` checks heights too (the curve viewers used to grow 1 px a frame

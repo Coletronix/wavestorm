@@ -539,6 +539,9 @@ pub struct Project {
     /// Soil survey map units fetched for an area of interest (see `soils`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub soils: Option<crate::soils::SoilMap>,
+    /// Ground elevations of the site (see `terrain`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain: Option<crate::terrain::Terrain>,
 }
 
 pub const FORMAT_VERSION: u32 = 1;
@@ -560,6 +563,7 @@ impl Default for Project {
             next_id: 1,
             foreign: Vec::new(),
             soils: None,
+            terrain: None,
         }
     }
 }

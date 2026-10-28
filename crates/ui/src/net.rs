@@ -1,11 +1,11 @@
-//! Web requests for placing a site and fetching its soils: address lookup, map images and
-//! NRCS Soil Data Access. Requests run in the background (a thread on the desktop, `fetch` in
+//! Web requests for placing a site and fetching its soils and ground: address lookup, map
+//! images and their capture dates, NRCS Soil Data Access and USGS 3DEP elevations. Requests run in the background (a thread on the desktop, `fetch` in
 //! the browser); replies arrive through an inbox polled each frame, like picked files. Nothing
 //! goes online unless the user asks for it.
 
 use std::sync::{Arc, Mutex, PoisonError};
 use wavestorm_core::geo::{self, LonLat, MapSource};
-use wavestorm_core::soils;
+use wavestorm_core::{soils, terrain};
 
 /// What a request is for.
 #[derive(Debug, Clone, PartialEq)]
@@ -18,6 +18,10 @@ pub enum Fetch {
     Soils { aoi: Vec<LonLat>, drained: bool },
     /// NOAA Atlas 14 precipitation frequency depths at a point.
     Noaa { lon_lat: LonLat },
+    /// When the map image at a place was captured.
+    ImageryDate { source: MapSource, center: LonLat },
+    /// USGS 3DEP ground elevations of an area; with `background`, also drawn as the background.
+    Terrain { center: LonLat, width_ft: f64, height_ft: f64, place: String, background: bool },
 }
 
 impl Fetch {
@@ -25,7 +29,9 @@ impl Fetch {
     pub fn busy_text(&self) -> &'static str {
         match self {
             Fetch::Geocode(_) => "Looking up the address...",
-            Fetch::Map { .. } => "Downloading the map image from USGS The National Map...",
+            Fetch::Map { .. } => "Downloading the map image...",
+            Fetch::ImageryDate { .. } => "Asking when the imagery was captured...",
+            Fetch::Terrain { .. } => "Downloading ground elevations from the USGS 3D Elevation Program...",
             Fetch::Soils { .. } => "Asking NRCS Soil Data Access for the soils of the area of interest...",
             Fetch::Noaa { .. } => "Asking NOAA for the site's precipitation frequency estimates...",
         }
@@ -94,6 +100,12 @@ fn build(fetch: &Fetch) -> Result<ehttp::Request, String> {
         Fetch::Geocode(q) => ehttp::Request::get(geo::geocode_url(q)),
         Fetch::Map { source, center, width_ft, height_ft, .. } => {
             ehttp::Request::get(geo::map_request(*source, *center, *width_ft, *height_ft)?.url)
+        }
+        Fetch::ImageryDate { source, center } => {
+            ehttp::Request::get(source.date_url(*center).ok_or("This map does not say when it was made.")?)
+        }
+        Fetch::Terrain { center, width_ft, height_ft, .. } => {
+            ehttp::Request::get(terrain::dem_request(*center, *width_ft, *height_ft)?.url)
         }
         Fetch::Soils { aoi, .. } => {
             let body = soils::sda_request(aoi)?;

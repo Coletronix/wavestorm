@@ -132,10 +132,22 @@ The Elevation tab defines a fixed, tabular or tidal water level that upstream po
         title: "Site location and soils",
         body: "A background can be placed in the real world, so the soil survey can be read for the site.\n\n\
 Aerial Photo (Diagram > Background): type an address, or paste the site's latitude and longitude in decimal degrees (\"42.0312, -93.6178\", as \
-web maps copy them), press Find, choose the map (aerial imagery, imagery with roads and names, or the topographic map) and its width and height, \
-then Download Background. The image comes from USGS The National Map (public domain, United States only) and arrives placed and to scale, so \
-no calibration is needed. Over an earlier north-up georeferenced background it lines up with the old one; otherwise it fills the view, or keeps \
-the diagram's calibrated scale. Address lookup uses OpenStreetMap Nominatim.\n\n\
+web maps copy them), press Find, choose the map and its width and height, then Download Background. The maps (United States only):\n\
+- Recent aerial imagery (Esri World Imagery): in most places captured within the last year or two, 0.3 to 0.5 m per pixel. It is not public \
+domain: keep the credit with printed copies and check Esri's terms of use for your work.\n\
+- Aerial imagery (USDA NAIP, from USGS The National Map, public domain): flown every two or three years, about 2 ft per pixel.\n\
+- Lidar shaded relief and contours: drawn by WAVEStorm from USGS 3D Elevation Program (3DEP) bare-earth elevations (public domain; 1 m lidar \
+where it has been flown, which is most of the country), with contours at an interval suited to the ground and heavier index contours.\n\
+- Roads and names over coarse imagery, and the US Topo map (USGS The National Map).\n\
+The image arrives placed and to scale, so no calibration is needed. After an aerial image the window and status line say when and by whom it \
+was captured. Over an earlier north-up georeferenced background it lines up with the old one; otherwise it fills the view, or keeps the \
+diagram's calibrated scale. Address lookup uses OpenStreetMap Nominatim.\n\n\
+Ground elevations: with Also get lidar ground elevations checked (or with the lidar relief, or Elevations Only to keep your own georeferenced \
+background), the 3DEP bare-earth elevations of the area are kept in the project (feet, NAVD 88; 1 m cells, coarser for areas over about \
+4,900 ft). A Tc flow path drawn afterwards takes its slopes from the ground: consecutive legs of one flow type make a segment, whose slope is \
+its fall over its length. The Tc Flow Path window shows the ground elevation at each leg's ends; change the flow types and press Slopes from \
+Ground to recompute. Where the ground is flat or rises along a segment its slope is set to 0.0005 and flagged; check it. Lidar is bare earth: \
+it does not see pipes or culverts under roads, so check slopes across them.\n\n\
 Georeference (Diagram > Background): for your own site plan or PDF, click two points whose latitude and longitude you know (property corners, \
 road intersections, monuments; far apart is best) and enter them. This sets the background's position, its rotation from north, and its scale \
 (replacing a calibration; the dialog shows how much the scale changes, as a check).\n\n\

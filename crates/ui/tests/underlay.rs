@@ -172,7 +172,8 @@ fn calibrate_and_trace_subcatchment() {
         assert_eq!(node.tc_path.as_ref().map(Vec::len), Some(3));
         assert_eq!(node.tc_path_breaks, [0, 1, 2], "every point ends a segment here");
         // Making the second leg sheet flow too merges the legs: only the ends are lettered.
-        let mut merged = wavestorm_ui::dialogs::node::TcPathState::new(node.tc_path.clone().unwrap(), Some(2.5), &[]);
+        let mut merged =
+            wavestorm_ui::dialogs::node::TcPathState::new(node.tc_path.clone().unwrap(), Some(2.5), &[], None);
         merged.limit_sheet = false;
         merged.reset(&[]);
         merged.legs[1].flow = merged.legs[0].flow;

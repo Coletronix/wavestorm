@@ -422,7 +422,90 @@ fn kinked_site() -> (egui_kittest::Harness<'static, WaveStormApp>, wavestorm_cor
     (h, u, id)
 }
 
-/// The real services (address lookup, NAIP image, Soil Data Access), through the same request
+/// A 3DEP grid of `width_ft` × `height_ft` around `CENTER` as the service sends it (metres plus
+/// the validity mask), of ground falling 2 % to the east from 1000 ft at the centre.
+fn dem_reply(width_ft: f64, height_ft: f64) -> Vec<u8> {
+    let req = wavestorm_core::terrain::dem_request(CENTER, width_ft, height_ft).unwrap();
+    let (w, h) = (req.width_px as usize, req.height_px as usize);
+    let mut out = Vec::new();
+    for _ in 0..h {
+        for c in 0..w {
+            let east = (c as f64 + 0.5 - w as f64 / 2.0) * req.feet_per_pixel;
+            out.extend((((1000.0 - 0.02 * east) * 0.3048) as f32).to_le_bytes());
+        }
+    }
+    out.extend(vec![0xffu8; (w * h).div_ceil(8)]);
+    out
+}
+
+#[test]
+fn lidar_relief_background_and_tc_slopes_from_the_ground() {
+    let mut h = harness();
+    h.run_steps(3);
+    script(h.state_mut(), "new");
+    h.run_steps(3);
+    // Elevations alone, before there is a background: kept, not yet usable on the diagram.
+    let terrain_fetch = |background| Fetch::Terrain {
+        center: CENTER,
+        width_ft: 600.0,
+        height_ft: 400.0,
+        place: "Ames".into(),
+        background,
+    };
+    h.state_mut().net.push(Reply { fetch: terrain_fetch(false), result: Ok(dem_reply(600.0, 400.0)) });
+    h.run_steps(3);
+    assert!(h.state_mut().doc().project.terrain.is_some());
+    assert!(h.state_mut().doc().project.diagram.underlay.is_none());
+
+    // The shaded relief as the background: georeferenced, to scale, with the grid.
+    h.state_mut().net.push(Reply { fetch: terrain_fetch(true), result: Ok(dem_reply(600.0, 400.0)) });
+    h.run_steps(3);
+    let project = h.state_mut().doc().project.clone();
+    let u = project.diagram.underlay.clone().expect("relief background");
+    assert!(u.file_name.starts_with("Lidar shaded relief, contours every"), "{}", u.file_name);
+    let raster = wavestorm_ui::underlay::rasterize(&u.bytes, 0, 150.0).unwrap();
+    let fpp = u.feet_per_unit.unwrap() * u.scale;
+    assert!((raster.width as f64 * fpp - 600.0).abs() < 4.0, "{} {fpp}", raster.width);
+    let at = |e: f64, n: f64| geo::from_lon_lat(&u, geo::offset_lon_lat(CENTER, [e, n])).unwrap();
+    let ground = |e: f64| wavestorm_core::terrain::elevation_at(&project, at(e, 0.0)).unwrap();
+    assert!((ground(0.0) - 1000.0).abs() < 0.01 && (ground(100.0) - 998.0).abs() < 0.01);
+
+    // A path drawn 150 ft west to 150 ft east: sheet flow for 100 ft, then shallow flow, each
+    // with the ground's 2 % slope.
+    let surface = wavestorm_core::terrain::Surface::new(&project);
+    let st = wavestorm_ui::dialogs::node::TcPathState::new(
+        vec![at(-150.0, 0.0), at(0.0, 0.0), at(150.0, 0.0)],
+        u.feet_per_unit,
+        &[],
+        surface,
+    );
+    let segs = st.segments(&[]);
+    assert_eq!(segs.len(), 2, "{segs:?}");
+    for s in &segs {
+        assert_eq!(s.kind.slope(), Some(0.02), "{s:?}");
+    }
+    assert!((segs[0].kind.length() - 100.0).abs() < 0.5 && (segs[1].kind.length() - 200.0).abs() < 0.5);
+    // Drawn uphill: flagged and given the smallest slope.
+    let mut up = wavestorm_ui::dialogs::node::TcPathState::new(
+        vec![at(100.0, 0.0), at(-100.0, 0.0)],
+        u.feet_per_unit,
+        &[],
+        wavestorm_core::terrain::Surface::new(&project),
+    );
+    assert_eq!(up.legs[0].slope, Some(wavestorm_core::terrain::MIN_SLOPE));
+    assert!(up.ground_note.contains("flat or rises"), "{}", up.ground_note);
+    // Off the grid: no slopes from the ground.
+    up = wavestorm_ui::dialogs::node::TcPathState::new(
+        vec![at(0.0, 0.0), at(900.0, 0.0)],
+        u.feet_per_unit,
+        &[],
+        wavestorm_core::terrain::Surface::new(&project),
+    );
+    assert!(up.legs.iter().all(|l| l.slope.is_none()) && up.ground_note.contains("outside"));
+}
+
+/// The real services (address lookup, NAIP and recent images and their dates, 3DEP elevations,
+/// Soil Data Access, NOAA), through the same request
 /// code the app uses. Needs the internet: `cargo test -p wavestorm-ui --test site -- --ignored`.
 #[test]
 #[ignore]
@@ -452,6 +535,34 @@ fn live_services() {
     let img = wait(&net).result.expect("map image");
     let r = wavestorm_ui::underlay::rasterize(&img, 0, 150.0).expect("decodes");
     assert_eq!((r.width, r.height), (req.width_px, req.height_px));
+
+    // Recent imagery comes at the size asked for, and says when it was captured.
+    let req = geo::map_request(MapSource::Recent, place, 1500.0, 1000.0).unwrap();
+    net.start(
+        &ctx,
+        Fetch::Map { source: MapSource::Recent, center: place, width_ft: 1500.0, height_ft: 1000.0, place: "x".into() },
+    );
+    let img = wait(&net).result.expect("recent image");
+    let r = wavestorm_ui::underlay::rasterize(&img, 0, 150.0).expect("decodes");
+    assert_eq!((r.width, r.height), (req.width_px, req.height_px));
+    for source in [MapSource::Recent, MapSource::Imagery] {
+        net.start(&ctx, Fetch::ImageryDate { source, center: place });
+        let body = wait(&net).result.expect("date reply");
+        let date = geo::parse_imagery_date(source, &String::from_utf8_lossy(&body)).expect("a date");
+        assert!(date.contains("captured 20"), "{date}");
+    }
+
+    // 3DEP elevations: a full grid of plausible ground (Ames is about 900 to 1000 ft).
+    net.start(
+        &ctx,
+        Fetch::Terrain { center: place, width_ft: 1500.0, height_ft: 1000.0, place: "x".into(), background: true },
+    );
+    let body = wait(&net).result.expect("elevations");
+    let req = wavestorm_core::terrain::dem_request(place, 1500.0, 1000.0).unwrap();
+    let grid = wavestorm_core::terrain::parse_dem(&body, &req, place, "today").expect("a grid");
+    let [lo, hi] = grid.range().unwrap();
+    assert!(grid.coverage() > 0.99 && lo > 850.0 && hi < 1050.0 && hi > lo, "{lo} {hi}");
+    assert!(wavestorm_core::terrain::render_relief(&grid, geo::MAX_MAP_PIXELS).is_some());
 
     let aoi: Vec<[f64; 2]> = [[-300.0, -300.0], [300.0, -300.0], [300.0, 300.0], [-300.0, 300.0]]
         .iter()

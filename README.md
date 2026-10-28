@@ -92,8 +92,13 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
   paths and CN labels.
 
 **Site location and soils** (United States; online only when you ask)
-- Aerial Photo: find the site by address or latitude/longitude and download a NAIP aerial
-  photo (or a topographic map) from USGS The National Map. It arrives placed and to scale.
+- Aerial Photo: find the site by address or latitude/longitude and download recent aerial
+  imagery (Esri World Imagery, usually captured within the last year or two), USDA NAIP
+  imagery or a topographic map. It arrives placed and to scale, and the app says when the
+  imagery was captured.
+- Lidar: download USGS 3DEP bare-earth elevations (1 m lidar in most of the country) as a
+  shaded-relief background with contours, or alongside an aerial photo. A Tc flow path drawn
+  on the diagram then takes each segment's slope from the ground.
 - Georeference your own site plan or PDF by giving two of its points their latitude and
   longitude. This sets the scale too.
 - Soils: draw an area of interest, or use the subcatchment outlines. WAVEStorm asks NRCS Soil

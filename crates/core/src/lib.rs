@@ -44,6 +44,7 @@ pub mod shapefile;
 pub mod soils;
 pub mod storage;
 pub mod tc;
+pub mod terrain;
 pub mod tr20;
 pub mod tr55;
 pub mod uh;

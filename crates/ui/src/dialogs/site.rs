@@ -11,17 +11,45 @@ use crate::windows::WindowAction;
 use egui::{Pos2, RichText};
 use wavestorm_core::drawing::{self, Pt};
 use wavestorm_core::geo::{self, LonLat, MapSource};
-use wavestorm_core::soils;
+use wavestorm_core::{soils, terrain};
 
 /// Web Soil Survey, for checking the soils by hand.
 pub const WSS_URL: &str = "https://websoilsurvey.nrcs.usda.gov/app/";
 
-/// "Aerial Photo": find the site and download a georeferenced background.
+/// What the downloaded background shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backdrop {
+    /// A map image.
+    Map(MapSource),
+    /// Shaded relief with contours, drawn from 3DEP lidar elevations.
+    Relief,
+}
+
+impl Backdrop {
+    pub const ALL: [Backdrop; 5] = [
+        Backdrop::Map(MapSource::Recent),
+        Backdrop::Map(MapSource::Imagery),
+        Backdrop::Relief,
+        Backdrop::Map(MapSource::ImageryLabels),
+        Backdrop::Map(MapSource::Topo),
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Backdrop::Map(s) => s.label(),
+            Backdrop::Relief => "Lidar shaded relief and contours (USGS 3DEP)",
+        }
+    }
+}
+
+/// "Aerial Photo": find the site and download a georeferenced background and its elevations.
 pub struct LocateState {
     pub query: String,
     /// The site found: its place and description.
     pub place: Option<(LonLat, String)>,
-    pub source: MapSource,
+    pub backdrop: Backdrop,
+    /// Also download the ground elevations (for Tc slopes) with a map image.
+    pub elevations: bool,
     /// Ground size of the image (ft).
     pub width: f64,
     pub height: f64,
@@ -39,7 +67,8 @@ impl LocateState {
         LocateState {
             query: place.as_ref().map(|p| p.1.clone()).unwrap_or_default(),
             place,
-            source: MapSource::Imagery,
+            backdrop: Backdrop::Map(MapSource::default()),
+            elevations: true,
             width: 1500.0,
             height: 1000.0,
             message: String::new(),
@@ -78,22 +107,44 @@ pub fn locate(ctx: &egui::Context, doc: &mut Doc, st: &mut LocateState, actions:
             None => ui.label(RichText::new("No site found yet.").color(t.text_dim)),
         };
         ui.add_space(4.0);
-        let options: Vec<(MapSource, String)> = MapSource::ALL.iter().map(|s| (*s, s.label().to_string())).collect();
-        widgets::combo_field(ui, "map-source", "Map:", &mut st.source, &options, 300.0);
+        let options: Vec<(Backdrop, String)> = Backdrop::ALL.iter().map(|s| (*s, s.label().to_string())).collect();
+        widgets::combo_field(ui, "map-source", "Map:", &mut st.backdrop, &options, 300.0);
         ui.horizontal(|ui| {
             let len = u.len_label();
             conv_field(ui, "aw", "Width:", len, &mut st.width, |x| u.len(x), |x| u.len_in(x), 0, 140.0);
             conv_field(ui, "ah", "Height:", len, &mut st.height, |x| u.len(x), |x| u.len_in(x), 0, 140.0);
         });
-        if let Ok(r) = geo::map_request(st.source, [0.0, 40.0], st.width, st.height) {
+        let size = match st.backdrop {
+            Backdrop::Map(source) => geo::map_request(source, [0.0, 40.0], st.width, st.height)
+                .map(|r| format!("{} x {} pixels, about {:.2} {} per pixel", r.width_px, r.height_px, u.len(r.feet_per_pixel), u.len_label())),
+            Backdrop::Relief => terrain::dem_request([0.0, 40.0], st.width, st.height).map(|r| {
+                format!("{} x {} elevations, {:.1} {} apart", r.width_px, r.height_px, u.len(r.feet_per_pixel), u.len_label())
+            }),
+        };
+        if let Ok(text) = size {
+            ui.label(RichText::new(text).color(t.text_dim));
+        }
+        match st.backdrop {
+            Backdrop::Map(_) => {
+                widgets::check(ui, &mut st.elevations, "Also get lidar ground elevations for Tc slopes").on_hover_text(
+                    "USGS 3DEP bare-earth elevations (1 m lidar where flown) for the same area: drawn Tc flow paths take \
+                     each segment's slope from the ground.",
+                );
+            }
+            Backdrop::Relief => {
+                ui.label(
+                    RichText::new("The elevations are kept too: drawn Tc flow paths take their slopes from them.")
+                        .color(t.text_dim),
+                );
+            }
+        }
+        if st.backdrop == Backdrop::Map(MapSource::Recent) {
             ui.label(
-                RichText::new(format!(
-                    "{} x {} pixels, about {:.2} {} per pixel",
-                    r.width_px,
-                    r.height_px,
-                    u.len(r.feet_per_pixel),
-                    u.len_label()
-                ))
+                RichText::new(
+                    "Esri World Imagery is the most recent in most places, but it is not public domain: keep the \
+                     credit with printed copies and check Esri's terms of use for your work.",
+                )
+                .small()
                 .color(t.text_dim),
             );
         }
@@ -112,10 +163,15 @@ pub fn locate(ctx: &egui::Context, doc: &mut Doc, st: &mut LocateState, actions:
             ui.label(&st.message);
         }
         ui.add_space(4.0);
+        let credit = match st.backdrop {
+            Backdrop::Map(source) => source.credit(),
+            Backdrop::Relief => terrain::CREDIT,
+        };
         ui.label(
-            RichText::new(
-                "Maps: USGS The National Map (public domain, United States). Addresses: © OpenStreetMap contributors.",
-            )
+            RichText::new(format!(
+                "Map: {credit}. Elevations: {} (public domain). Addresses: © OpenStreetMap contributors.",
+                terrain::CREDIT
+            ))
             .small()
             .color(t.text_dim),
         );
@@ -125,13 +181,54 @@ pub fn locate(ctx: &egui::Context, doc: &mut Doc, st: &mut LocateState, actions:
             if widgets::button_enabled(ui, "Download Background", 150.0, ready).clicked()
                 && let Some((center, place)) = st.place.clone()
             {
-                st.message = "Downloading the map image...".into();
-                actions.push(WindowAction::Fetch(Fetch::Map {
-                    source: st.source,
+                let (width_ft, height_ft) = (st.width, st.height);
+                match st.backdrop {
+                    Backdrop::Map(source) => {
+                        st.message = "Downloading the map image...".into();
+                        actions.push(WindowAction::Fetch(Fetch::Map {
+                            source,
+                            center,
+                            width_ft,
+                            height_ft,
+                            place: place.clone(),
+                        }));
+                        if st.elevations {
+                            actions.push(WindowAction::Fetch(Fetch::Terrain {
+                                center,
+                                width_ft,
+                                height_ft,
+                                place,
+                                background: false,
+                            }));
+                        }
+                    }
+                    Backdrop::Relief => {
+                        st.message = "Downloading the lidar elevations...".into();
+                        actions.push(WindowAction::Fetch(Fetch::Terrain {
+                            center,
+                            width_ft,
+                            height_ft,
+                            place,
+                            background: true,
+                        }));
+                    }
+                }
+            }
+            if widgets::button_enabled(ui, "Elevations Only", 120.0, ready)
+                .on_hover_text(
+                    "Get the ground elevations of this area for Tc slopes and keep the background (it must be \
+                     georeferenced)",
+                )
+                .clicked()
+                && let Some((center, place)) = st.place.clone()
+            {
+                st.message = "Downloading the lidar elevations...".into();
+                actions.push(WindowAction::Fetch(Fetch::Terrain {
                     center,
                     width_ft: st.width,
                     height_ft: st.height,
                     place,
+                    background: false,
                 }));
             }
             if widgets::button(ui, "Close", 80.0).clicked() {
