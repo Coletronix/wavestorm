@@ -89,6 +89,19 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 - Print or export the diagram as shown on screen: background, translucent area fills, Tc
   paths and CN labels.
 
+**Site location and soils** (United States; online only when you ask)
+- Aerial Photo: find the site by address or latitude/longitude and download a NAIP aerial
+  photo (or a topographic map) from USGS The National Map. It arrives placed and to scale.
+- Georeference your own site plan or PDF by giving two of its points their latitude and
+  longitude. This sets the scale too.
+- Soils: draw an area of interest, or use the subcatchment outlines. WAVEStorm asks NRCS Soil
+  Data Access (the data behind Web Soil Survey) for its soil map units and hydrologic soil
+  groups, and draws them on the diagram. Dual groups count as D unless the site is drained.
+- Apply the soils to subcatchments: each Area row is split by soil group, with the TR-55
+  curve number of its cover for each group.
+- Export the area of interest as a zipped shapefile for Web Soil Survey. Print a
+  Hydrologic Soil Group report with a soil map and per-subcatchment tables.
+
 **Projects and data exchange**
 - A start page (New, Open, Open Sample Project, recent projects) when no project is open.
   Recent projects are also listed under Project > Open….
@@ -224,6 +237,7 @@ The built-in help (**Help > Contents**) covers the dialogs and the calculation m
 | TR-20 input deck | ✓ | | Legacy card-format decks (Project > Import). Volumes match TR-20 output; reach-routed peaks can differ. |
 | `.csv` | ✓ | ✓ | Sub-areas, hydrographs, rating and pump tables |
 | `.pdf` / `.emf` / `.txt` | | ✓ | Reports and vector graphics |
+| `.zip` (shapefile) | | ✓ | Area of interest for Web Soil Survey's Import AOI (WGS 84 polygon) |
 
 Third-party rainfall libraries and project files are loaded at runtime from files you supply.
 None are bundled with WAVEStorm.

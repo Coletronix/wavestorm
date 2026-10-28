@@ -618,6 +618,15 @@ impl Default for PrintState {
     }
 }
 
+impl PrintState {
+    /// The soil group report is included when the project has soil survey data.
+    pub fn new(p: &Project) -> Self {
+        let mut st = PrintState::default();
+        st.opts.hsg_report = p.soils.is_some();
+        st
+    }
+}
+
 /// Today's date as m/d/yyyy.
 pub fn today() -> String {
     #[cfg(target_arch = "wasm32")]
@@ -654,6 +663,9 @@ pub fn print(ctx: &egui::Context, st: &mut PrintState) -> (bool, Option<wavestor
             widgets::check(ui, &mut st.opts.summaries, "Node summaries");
             widgets::check(ui, &mut st.opts.graphs, "Hydrograph graphs");
             widgets::check(ui, &mut st.opts.tables, "Tabular hydrographs");
+            widgets::check(ui, &mut st.opts.hsg_report, "Hydrologic soil group report").on_hover_text(
+                "Soil map of the area of interest and the soil groups of each subcatchment (Diagram > Soils)",
+            );
         });
         widgets::text_field(ui, "Date printed:", &mut st.opts.date, 160.0);
         ui.label(

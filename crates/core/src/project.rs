@@ -490,6 +490,9 @@ pub struct Underlay {
     pub visible: bool,
     #[serde(default)]
     pub locked: bool,
+    /// Where the background is in the real world (see `geo`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo: Option<crate::geo::GeoRef>,
 }
 
 /// Diagram display settings.
@@ -533,6 +536,9 @@ pub struct Project {
     /// Interchange-file data this model does not represent (see `hcp`).
     #[serde(default)]
     pub foreign: Vec<ForeignEntry>,
+    /// Soil survey map units fetched for an area of interest (see `soils`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soils: Option<crate::soils::SoilMap>,
 }
 
 pub const FORMAT_VERSION: u32 = 1;
@@ -553,6 +559,7 @@ impl Default for Project {
             land_use: crate::landuse::LandUseSettings::default(),
             next_id: 1,
             foreign: Vec::new(),
+            soils: None,
         }
     }
 }

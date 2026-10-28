@@ -10,6 +10,8 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "BSL-1.0",
+    # webpki-roots (Mozilla's CA certificates, for HTTPS on the desktop): a permissive data licence.
+    "CDLA-Permissive-2.0",
     "ISC",
     "MIT",
     "OFL-1.1",

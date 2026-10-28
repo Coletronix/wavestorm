@@ -650,7 +650,8 @@ fn subcat_tab(ui: &mut Ui, st: &mut EditState, u: &Units, tab: &str, doc: &Doc, 
             .enumerate()
             .map(|(i, a)| {
                 if a.outline.is_some() {
-                    Some(crate::diagram::subarea_color(i, &t))
+                    // Rows split by soil group share their drawing's colour.
+                    Some(crate::diagram::subarea_color(wavestorm_core::drawing::shape_row(sc, i), &t))
                 } else if a.remainder && drawn {
                     Some(t.subcat.1)
                 } else {

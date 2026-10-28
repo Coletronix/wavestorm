@@ -66,17 +66,26 @@ pub fn triangulate(p: &[Pt]) -> Vec<[usize; 3]> {
     if signed < 0.0 {
         idx.reverse();
     }
+    // Inside or on the edge: a reflex corner touching the diagonal also blocks an ear, or the
+    // clipped triangle would cover the notch beside it.
     let in_triangle = |q: Pt, a: Pt, b: Pt, c: Pt| {
         let (d1, d2, d3) = (cross(sub(b, a), sub(q, a)), cross(sub(c, b), sub(q, b)), cross(sub(a, c), sub(q, c)));
-        d1 > 1e-12 && d2 > 1e-12 && d3 > 1e-12
+        q != a && q != b && q != c && d1 >= -1e-12 && d2 >= -1e-12 && d3 >= -1e-12
     };
     let mut tris = Vec::with_capacity(n - 2);
     while idx.len() > 3 {
         let m = idx.len();
+        let reflex = |k: usize| {
+            let (a, b, c) = (idx[(k + m - 1) % m], idx[k], idx[(k + 1) % m]);
+            cross(sub(p[b], p[a]), sub(p[c], p[b])) <= 0.0
+        };
         let ear = (0..m).find(|&i| {
             let (a, b, c) = (idx[(i + m - 1) % m], idx[i], idx[(i + 1) % m]);
             cross(sub(p[b], p[a]), sub(p[c], p[b])) > 0.0
-                && !idx.iter().any(|&j| j != a && j != b && j != c && in_triangle(p[j], p[a], p[b], p[c]))
+                && !(0..m).any(|k| {
+                    let j = idx[k];
+                    j != a && j != b && j != c && reflex(k) && in_triangle(p[j], p[a], p[b], p[c])
+                })
         });
         let Some(i) = ear else { break };
         tris.push([idx[(i + m - 1) % m], idx[i], idx[(i + 1) % m]]);
@@ -331,10 +340,62 @@ pub fn feet_per_unit(p: &Project) -> f64 {
     p.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit).filter(|f| f.is_finite() && *f > 0.0).unwrap_or(1.0)
 }
 
+/// Shares `total` among the rows `idx` in proportion to their current areas (all to the first
+/// when they have none).
+fn share(areas: &mut [SubArea], idx: &[usize], total: f64) {
+    let sum: f64 = idx.iter().filter_map(|i| areas.get(*i)).map(|a| a.area.max(0.0)).sum();
+    for (k, i) in idx.iter().enumerate() {
+        if let Some(a) = areas.get_mut(*i) {
+            a.area = if sum > 0.0 {
+                total * a.area.max(0.0) / sum
+            } else if k == 0 {
+                total
+            } else {
+                0.0
+            };
+        }
+    }
+}
+
+/// The first Area row drawn with the same shape as row `i` (rows split by soil group share
+/// their drawing), or `i`.
+pub fn shape_row(sc: &Subcatchment, i: usize) -> usize {
+    let Some(o) = sc.areas.get(i).and_then(|a| a.outline.as_ref()) else { return i };
+    sc.areas.iter().position(|a| a.outline.as_ref() == Some(o)).unwrap_or(i)
+}
+
+/// The places to label with a curve number: each drawn shape (`Some`, once even when split by
+/// soil group) and, with drawn shapes, the remainder (`None`); each with the area-weighted CN
+/// of its rows.
+pub fn cn_regions(sc: &Subcatchment) -> Vec<(Option<&[Pt]>, f64)> {
+    let weighted = |rows: &mut dyn Iterator<Item = &SubArea>| {
+        let (a, w) = rows.fold((0.0, 0.0), |(a, w), r| (a + r.area, w + r.area * r.cn));
+        if a > 0.0 { w / a } else { 0.0 }
+    };
+    let mut out: Vec<(Option<&[Pt]>, f64)> = Vec::new();
+    for (i, a) in sc.areas.iter().enumerate() {
+        let Some(o) = a.outline.as_deref() else { continue };
+        if shape_row(sc, i) != i {
+            continue;
+        }
+        let cn = weighted(&mut sc.areas.iter().filter(|r| r.outline.as_deref() == Some(o)));
+        let cn = if cn > 0.0 { cn } else { a.cn };
+        out.push((Some(o), cn));
+    }
+    if !out.is_empty() && sc.areas.iter().any(|a| a.remainder) {
+        let cn = weighted(&mut sc.areas.iter().filter(|r| r.remainder));
+        let cn = if cn > 0.0 { cn } else { sc.areas.iter().find(|r| r.remainder).map_or(0.0, |r| r.cn) };
+        out.push((None, cn));
+    }
+    out
+}
+
 /// Recomputes a drawn subcatchment's areas: each drawn sub-area from its outline, and the
 /// remainder row (the flagged one, else the first row not drawn, else a new open-space row) as
-/// the outline's area less the drawn ones. Returns false, changing nothing, for subcatchments
-/// without an outline or without drawn sub-areas.
+/// the outline's area less the drawn ones. Rows split by soil group (several rows with the same
+/// drawing, or several remainder rows) share their shape's area in their current proportions.
+/// Returns false, changing nothing, for subcatchments without an outline or without drawn
+/// sub-areas.
 pub fn sync_subareas(sc: &mut Subcatchment, outline: Option<&[Pt]>, fpu: f64) -> bool {
     let Some(outline) = outline.filter(|o| o.len() >= 3) else { return false };
     if !sc.areas.iter().any(|a| a.outline.is_some()) {
@@ -342,23 +403,30 @@ pub fn sync_subareas(sc: &mut Subcatchment, outline: Option<&[Pt]>, fpu: f64) ->
     }
     let f2 = fpu * fpu;
     let mut drawn = 0.0;
-    for a in sc.areas.iter_mut() {
-        if let Some(o) = &a.outline {
-            a.area = polygon_area(o) * f2;
-            a.remainder = false;
-            drawn += a.area;
+    for i in 0..sc.areas.len() {
+        if shape_row(sc, i) != i {
+            continue;
         }
+        let Some(o) = sc.areas.get(i).and_then(|a| a.outline.clone()) else { continue };
+        let rows: Vec<usize> = (0..sc.areas.len()).filter(|j| sc.areas[*j].outline.as_ref() == Some(&o)).collect();
+        let area = polygon_area(&o) * f2;
+        share(&mut sc.areas, &rows, area);
+        drawn += area;
+    }
+    for a in sc.areas.iter_mut().filter(|a| a.outline.is_some()) {
+        a.remainder = false;
     }
     let rest = (polygon_area(outline) * f2 - drawn).max(0.0);
-    let idx = sc.areas.iter().position(|a| a.remainder).or_else(|| sc.areas.iter().position(|a| a.outline.is_none()));
-    match idx {
-        Some(i) => {
+    let mut rows: Vec<usize> = (0..sc.areas.len()).filter(|i| sc.areas[*i].remainder).collect();
+    if rows.is_empty() {
+        rows.extend(sc.areas.iter().position(|a| a.outline.is_none()));
+    }
+    match rows.first() {
+        Some(_) => {
             for (j, a) in sc.areas.iter_mut().enumerate() {
-                a.remainder = j == i;
+                a.remainder = rows.contains(&j);
             }
-            if let Some(a) = sc.areas.get_mut(i) {
-                a.area = rest;
-            }
+            share(&mut sc.areas, &rows, rest);
         }
         None => {
             let mut r = SubArea::new(rest, 61.0, "Open Space, Good, HSG B");
@@ -661,7 +729,9 @@ mod tests {
         assert_eq!(clamp_inside([3.0, 3.0], &r), [3.0, 3.0]);
         // Triangles of a concave polygon cover exactly its area.
         let l = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 4.0], [4.0, 4.0], [4.0, 10.0], [0.0, 10.0]];
-        for poly in [l.clone(), l.iter().rev().copied().collect()] {
+        // A symmetric L puts its reflex corner exactly on a diagonal; that ear must be refused.
+        let sym = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [5.0, 5.0], [5.0, 10.0], [0.0, 10.0]];
+        for poly in [l.clone(), l.iter().rev().copied().collect(), sym.clone(), sym.iter().rev().copied().collect()] {
             let tris = triangulate(&poly);
             assert_eq!(tris.len(), 4);
             let sum: f64 = tris.iter().map(|t| polygon_area(&[poly[t[0]], poly[t[1]], poly[t[2]]])).sum();
@@ -849,6 +919,7 @@ mod tests {
             opacity: 1.0,
             visible: true,
             locked: false,
+            geo: None,
         });
         sync_all(&mut p);
         let NodeData::Pond(pond) = &p.node(id).unwrap().data else { panic!() };

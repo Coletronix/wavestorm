@@ -47,6 +47,8 @@ pub struct Doc {
     pub underlay_tex: Option<TextureHandle>,
     /// Bytes length + page the texture was made from (to detect changes).
     pub underlay_key: Option<(usize, usize)>,
+    /// The soil map as drawn on the diagram (rebuilt when the map or background changes).
+    pub soil_layer: Option<crate::diagram::SoilLayer>,
     pub fit_pending: bool,
     /// Bumped by every recalculation; the app compares it with `announced` to report results.
     pub calc_serial: u64,
@@ -75,6 +77,7 @@ impl Doc {
             windows: Vec::new(),
             underlay_tex: None,
             underlay_key: None,
+            soil_layer: None,
             fit_pending: true,
             calc_serial: 1,
             announced: 0,

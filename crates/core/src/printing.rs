@@ -15,6 +15,8 @@ pub struct PrintOptions {
     pub summaries: bool,
     pub graphs: bool,
     pub tables: bool,
+    /// Hydrologic soil group report: the soil map and the map unit and subcatchment tables.
+    pub hsg_report: bool,
     /// Date string for the page headers (supplied by the caller).
     pub date: String,
     /// Print summaries for these nodes only (all nodes when empty).
@@ -43,6 +45,7 @@ impl Default for PrintOptions {
             summaries: true,
             graphs: true,
             tables: false,
+            hsg_report: false,
             date: String::new(),
             only: Vec::new(),
             background: None,
@@ -288,6 +291,10 @@ fn diagram_draw(c: &mut Ctx) -> Page {
         page.fill_alpha(SUBAREA_ALPHA);
         for (i, area) in sc.areas.iter().enumerate() {
             let Some(so) = area.outline.as_ref().filter(|o| o.len() >= 3) else { continue };
+            // Rows split by soil group share one drawing.
+            if crate::drawing::shape_row(sc, i) != i {
+                continue;
+            }
             let col = subarea_color(i);
             page.polygon(&pts_of(so), Some(col), Some((1.2, col)));
         }
@@ -297,14 +304,14 @@ fn diagram_draw(c: &mut Ctx) -> Page {
         // away from node symbols and Tc paths where they fit. Drawn after the Tc paths.
         let drawn: Vec<&[[f64; 2]]> =
             sc.areas.iter().filter_map(|a| a.outline.as_deref()).filter(|o| o.len() >= 3).collect();
-        for area in &sc.areas {
-            let (region, hard) = match &area.outline {
-                Some(so) => (so.as_slice(), &[][..]),
-                None if area.remainder && !drawn.is_empty() => (o.as_slice(), drawn.as_slice()),
-                None => continue,
+        for (shape, cn) in crate::drawing::cn_regions(sc) {
+            let (region, hard) = match shape {
+                Some(so) if so.len() >= 3 => (so, &[][..]),
+                Some(_) => continue,
+                None => (o.as_slice(), drawn.as_slice()),
             };
             // Every label is printed: at full size where it fits, else shrunk to its spot.
-            let label = format!("CN {}", crate::units::group(area.cn, 0));
+            let label = format!("CN {}", crate::units::group(cn, 0));
             let unit_width = crate::pdf::text_width(&label, Font::SansBold, 1.0);
             let fitting_size = |clear: f64| {
                 let clear = clear as f32 * s;
@@ -751,6 +758,9 @@ pub fn report_pdf(project: &Project, results: &Results, opts: &PrintOptions) -> 
         c.text_block(&mut page, BODY_TOP, Some("Area and Soil Listing"), &lines, 8.0);
         c.doc.add(page);
     }
+    if opts.hsg_report {
+        soil_pages(&mut c);
+    }
     if opts.summaries {
         let mut nodes: Vec<&Node> = project
             .nodes
@@ -773,6 +783,169 @@ pub fn report_pdf(project: &Project, results: &Results, opts: &PrintOptions) -> 
         }
     }
     c.doc.finish()
+}
+
+/// Hydrologic Soil Group report: a soil map page (map units coloured by group and labelled,
+/// subcatchment outlines, the area of interest, legend, north arrow and scale bar) when the
+/// background is georeferenced, then the tables of `soils::report_lines`.
+fn soil_pages(c: &mut Ctx) {
+    let project = c.project;
+    if let (Some(map), Some(soils)) = (&project.soils, crate::soils::project_soils(project)) {
+        let mut page = c.new_page(false);
+        let (w, h) = (page.width, page.height);
+        page.text(w / 2.0, BODY_TOP + 2.0, 11.0, Font::SansBold, Align::Center, Rgb::BLACK, "Hydrologic Soil Groups");
+        let to = project.diagram.underlay.as_ref().and_then(crate::geo::projector);
+        let aoi: Vec<[f64; 2]> = match &to {
+            Some(f) => map.aoi.iter().map(|q| f(*q)).collect(),
+            None => Vec::new(),
+        };
+        let outlines: Vec<(&Node, &Vec<[f64; 2]>)> = project
+            .nodes
+            .iter()
+            .filter(|n| n.node_type() == NodeType::Subcat)
+            .filter_map(|n| n.outline.as_ref().filter(|o| o.len() >= 3).map(|o| (n, o)))
+            .collect();
+        let all: Vec<[f64; 2]> = aoi.iter().chain(outlines.iter().flat_map(|(_, o)| o.iter())).copied().collect();
+        let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+        for p in &all {
+            x0 = x0.min(p[0]);
+            y0 = y0.min(p[1]);
+            x1 = x1.max(p[0]);
+            y1 = y1.max(p[1]);
+        }
+        let area = (MARGIN + 10.0, BODY_TOP + 24.0, w - MARGIN - 10.0, h - MARGIN - 70.0);
+        if x1 > x0 && y1 > y0 {
+            let s = ((area.2 - area.0) as f64 / (x1 - x0)).min((area.3 - area.1) as f64 / (y1 - y0));
+            let ox = area.0 as f64 + ((area.2 - area.0) as f64 - (x1 - x0) * s) / 2.0;
+            let oy = area.1 as f64 + ((area.3 - area.1) as f64 - (y1 - y0) * s) / 2.0;
+            let tp = |q: [f64; 2]| (((q[0] - x0) * s + ox) as f32, ((q[1] - y0) * s + oy) as f32);
+            let pts = |r: &[[f64; 2]]| r.iter().map(|q| tp(*q)).collect::<Vec<_>>();
+            page.rect(area.0, area.1, area.2 - area.0, area.3 - area.1, None, Some((0.8, Rgb::BLACK)));
+            // Map units, clipped to the AOI already; only those near the drawing are shown.
+            page.fill_alpha(0.45);
+            for soil in &soils {
+                let Some(outer) = soil.rings.first() else { continue };
+                let (r, g, b) = crate::soils::group_rgb(soil.group);
+                page.polygon(&pts(outer), Some(Rgb::from_u8(r, g, b)), None);
+            }
+            page.fill_alpha(1.0);
+            for soil in &soils {
+                let (r, g, b) = crate::soils::group_rgb(soil.group);
+                for ring in &soil.rings {
+                    page.polygon(&pts(ring), None, Some((0.6, Rgb::from_u8(r, g, b))));
+                }
+            }
+            for (n, o) in &outlines {
+                page.polygon(&pts(o), None, Some((1.2, Rgb::BLACK)));
+                let (cx, cy) = tp(crate::drawing::centroid(o));
+                halo_text(&mut page, cx, cy + 3.0, 9.0, Font::SansBold, Align::Center, Rgb::BLACK, &n.label());
+            }
+            if aoi.len() >= 3 {
+                page.dashed(5.0, 3.0);
+                page.polygon(&pts(&aoi), None, Some((1.4, Rgb::from_u8(200, 40, 160))));
+                page.solid();
+            }
+            for soil in &soils {
+                let Some(outer) = soil.rings.first() else { continue };
+                let holes: Vec<&[[f64; 2]]> = soil.rings.iter().skip(1).map(Vec::as_slice).collect();
+                if let Some((at, clear)) = crate::drawing::label_spot(outer, &holes)
+                    && clear * s > 8.0
+                {
+                    let symbol = map.unit(&soil.mukey).map(|u| u.symbol.as_str()).unwrap_or_default();
+                    let text = format!("{symbol} ({})", soil.group.map_or('-', |g| g.letter()));
+                    let (x, y) = tp(at);
+                    halo_text(&mut page, x, y + 2.5, 7.0, Font::Sans, Align::Center, Rgb::BLACK, &text);
+                }
+            }
+            // North arrow: the direction of north on the diagram.
+            if let (Some(u), Some(f)) = (project.diagram.underlay.as_ref(), &to)
+                && let Some(c0) = crate::geo::to_lon_lat(u, [(x0 + x1) / 2.0, (y0 + y1) / 2.0])
+            {
+                let a = f(c0);
+                let b = f(crate::geo::offset_lon_lat(c0, [0.0, 100.0]));
+                let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                let len = dx.hypot(dy);
+                if len > 0.0 {
+                    let (ux, uy) = ((dx / len) as f32, (dy / len) as f32);
+                    let (cx, cy) = (area.2 - 22.0, area.1 + 26.0);
+                    let tip = (cx + ux * 14.0, cy + uy * 14.0);
+                    let tail = (cx - ux * 14.0, cy - uy * 14.0);
+                    page.line(tail.0, tail.1, tip.0, tip.1, 1.2, Rgb::BLACK);
+                    let side = (-uy * 4.0, ux * 4.0);
+                    let back = (tip.0 - ux * 7.0, tip.1 - uy * 7.0);
+                    page.polygon(
+                        &[tip, (back.0 + side.0, back.1 + side.1), (back.0 - side.0, back.1 - side.1)],
+                        Some(Rgb::BLACK),
+                        None,
+                    );
+                    page.text(
+                        tip.0 + ux * 7.0,
+                        tip.1 + uy * 7.0 + 3.0,
+                        9.0,
+                        Font::SansBold,
+                        Align::Center,
+                        Rgb::BLACK,
+                        "N",
+                    );
+                }
+            }
+            // Scale bar.
+            let fpu = crate::drawing::feet_per_unit(project);
+            let ft_per_pt = fpu / s;
+            let target = ft_per_pt * 120.0;
+            let step = nice(target);
+            let bar = (step / ft_per_pt) as f32;
+            let (bx, by) = (area.0 + 12.0, area.3 - 14.0);
+            page.rect(bx - 4.0, by - 12.0, bar + 8.0 + 60.0, 20.0, Some(Rgb::WHITE), None);
+            page.line(bx, by, bx + bar, by, 2.0, Rgb::BLACK);
+            page.line(bx, by - 4.0, bx, by + 2.0, 1.0, Rgb::BLACK);
+            page.line(bx + bar, by - 4.0, bx + bar, by + 2.0, 1.0, Rgb::BLACK);
+            let u = &project.units;
+            page.text(
+                bx + bar + 6.0,
+                by + 3.0,
+                8.0,
+                Font::Sans,
+                Align::Left,
+                Rgb::BLACK,
+                &format!("{} {}", trim(u.len(step), u.len(step) / 10.0), u.len_label()),
+            );
+        }
+        // Legend.
+        let ly = h - MARGIN - 52.0;
+        let mut lx = MARGIN + 10.0;
+        let groups: [(Option<crate::cn::Hsg>, &str); 5] = [
+            (Some(crate::cn::Hsg::A), "HSG A"),
+            (Some(crate::cn::Hsg::B), "HSG B"),
+            (Some(crate::cn::Hsg::C), "HSG C"),
+            (Some(crate::cn::Hsg::D), "HSG D"),
+            (None, "Not rated"),
+        ];
+        for (g, name) in groups {
+            let (r, gg, b) = crate::soils::group_rgb(g);
+            page.fill_alpha(0.45);
+            page.rect(lx, ly, 14.0, 10.0, Some(Rgb::from_u8(r, gg, b)), None);
+            page.fill_alpha(1.0);
+            page.rect(lx, ly, 14.0, 10.0, None, Some((0.6, Rgb::from_u8(r, gg, b))));
+            page.text(lx + 18.0, ly + 8.5, 8.5, Font::Sans, Align::Left, Rgb::BLACK, name);
+            lx += 80.0;
+        }
+        page.dashed(5.0, 3.0);
+        page.line(lx, ly + 5.0, lx + 18.0, ly + 5.0, 1.4, Rgb::from_u8(200, 40, 160));
+        page.solid();
+        page.text(lx + 22.0, ly + 8.5, 8.5, Font::Sans, Align::Left, Rgb::BLACK, "Area of interest");
+        let note = format!(
+            "Soils: USDA NRCS SSURGO via Soil Data Access, retrieved {}. {}",
+            map.retrieved,
+            if map.drained { "Dual groups as drained (first letter)." } else { "Dual groups as undrained (D)." }
+        );
+        page.text(MARGIN + 10.0, ly + 26.0, 7.5, Font::Sans, Align::Left, Rgb::BLACK, &note);
+        c.doc.add(page);
+    }
+    let mut page = c.new_page(false);
+    let lines = crate::soils::report_lines(project);
+    c.text_block(&mut page, BODY_TOP, Some("Hydrologic Soil Group Report"), &lines, 7.6);
+    c.doc.add(page);
 }
 
 /// A PDF of monospace text lines under the usual page header (Project Reports listings).

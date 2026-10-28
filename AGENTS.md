@@ -73,6 +73,9 @@ gitignored.
 | `calc` | Calculation engine: topological order, per-node results, calculation messages |
 | `hcp` | Open/save the reference application's `.hcp` interchange files (Latin-1 aware, unmatched keys kept in `foreign` fields and written back) |
 | `base64` | Embedding background files in project JSON |
+| `geo` | Background georeference (pixel ↔ lat/lon on a tangent plane), two-point solve, map image / address request URLs |
+| `soils` | NRCS Soil Data Access query/parse (WKT), soil map on the diagram, polygon overlap areas, splitting sub-areas by HSG, HSG report |
+| `shapefile` | One-polygon zipped shapefile (AOI export for Web Soil Survey) |
 
 Internal units are US customary: ft, sq ft, cu ft, cfs, hours, inches of rain. Conversion to
 display units (English/metric, large/small units) happens only at the UI/report edge.
@@ -354,6 +357,36 @@ Keep this section updated at the end of every session.
   z·(depth − h), stages ~0.5 ft apart; `pond_max_depth` = where the sides meet. `sync_node`
   re-estimates that volume when the footprint is edited or the background recalibrated.
   `widgets::push_button` now carries an accessibility label (tests can `get_by_label("OK")`).
+- Site location and soils (2026-10-27, user request; branch `feature/geolocated-site-soils`).
+  User decisions: no tax-parcel maps (no free nationwide source); dual HSGs default to D with
+  a "Site is drained" box (first letter); a subcatchment over several soils has its Area rows
+  split by soil (option a), not a dominant-soil row. `Underlay::geo` (`geo::GeoRef`: anchor
+  pixel, lon/lat, bearing) + `feet_per_unit` place the diagram; stored per pixel so moving or
+  resizing the background keeps it. Background > Aerial Photo (`dialogs::site::locate`,
+  `Fetch::Map`): Nominatim address lookup, then USGS NAIP `ImageServer/exportImage` (the cached
+  basemap `USGSImageryOnly` is ~15 ft/px at site scale, so it is only used for the "roads and
+  names" option), Web Mercator bbox sized so the image is north-up at `feet_per_pixel`; the
+  reply must be exactly the requested size. Over an earlier north-up georeferenced background
+  the photo lines up with it. Background > Georeference (`Tool::Georef`, `geo::two_point`) also
+  sets the scale. Diagram > Soils (`dialogs::site::soils_window`): AOI drawn (`Tool::Aoi`) or
+  `soils::default_aoi` (hull of outlines + 10 %/50 ft); `Fetch::Soils` posts
+  `soils::sda_request` (`GetClippedMapunits` + `hydgrpdcd` + `STAsText`, AOI `MakeValid`, ≤
+  10,000 ac) to SDA; `parse_sda` keeps units/polygons in lon/lat in `Project::soils`.
+  `soils::split_subcat` merges earlier splits (`same_row`: description sans ", HSG x",
+  outline, remainder, C, land use), then splits each row by the soils under its own ground
+  (drawn outline / outline − drawn for remainder / whole outline when nothing is drawn),
+  drops groups < 1 %, shares unmapped ground pro rata, keeps one row when the cover's CN is
+  equal on all groups, leaves non-TR-55 descriptions alone. Split rows share an outline or
+  the remainder flag: `drawing::sync_subareas` shares a shape's area in current proportions,
+  `shape_row`/`cn_regions` draw a shared drawing once with a weighted CN label. Overlap areas:
+  `soils::Prepared` (ear-clip triangles × Sutherland–Hodgman). Fixed with it: `triangulate`
+  accepted ears touched by a reflex corner (symmetric L shapes overlapped). Network:
+  `ui::net` (ehttp; ureq+rustls on desktop, fetch on web; replies via inbox like
+  `platform`; headless apps never go online, tests push `net::Reply`s). SDA rejects two
+  Content-Type headers: replace ehttp's default. Print option "Hydrologic soil group report"
+  (`PrintOptions::hsg_report`, on by default when the project has soils): soil map page +
+  `soils::report_lines`. `webpki-roots` brought CDLA-Permissive-2.0 into `deny.toml`/
+  `about.toml`. Live check: `cargo test -p wavestorm-ui --test site -- --ignored`.
 - Session (`ui::recovery`, store key `session`; 0.3.0's `recovery` key is still read): `DELAY`
   (1 s) after any change the open projects are recorded — saved files by path, unsaved or
   file-less ones (always on the web) with their JSON, plus the front tab. At start (non-headless)

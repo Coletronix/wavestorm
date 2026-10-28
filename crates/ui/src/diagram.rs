@@ -30,6 +30,10 @@ pub enum Tool {
     SubArea { node: NodeId, points: Vec<Pos2> },
     /// Move the background (drag it) or resize it (drag a corner); drawings follow it.
     PlaceUnderlay,
+    /// Pick two points on the background, then enter their latitude and longitude.
+    Georef { points: Vec<Pos2> },
+    /// Click the corners of the soil survey's area of interest.
+    Aoi { points: Vec<Pos2> },
 }
 
 impl Tool {
@@ -44,6 +48,8 @@ impl Tool {
             Tool::TcPath { .. } => "Tc Flow Path",
             Tool::SubArea { .. } => "Draw Sub-Area",
             Tool::PlaceUnderlay => "Place Background",
+            Tool::Georef { .. } => "Georeference",
+            Tool::Aoi { .. } => "Area of Interest",
         }
     }
 }
@@ -131,6 +137,10 @@ pub enum CanvasAction {
     ContextNode(NodeId),
     /// Finished calibration: two world points.
     Calibrated(Pos2, Pos2),
+    /// Two world points picked for georeferencing.
+    Georef(Pos2, Pos2),
+    /// Finished area of interest (world coordinates).
+    AoiTraced(Vec<Pos2>),
     /// Finished trace: outline in world coordinates, for a new subcatchment or the given one.
     Traced(Option<NodeId>, Vec<Pos2>),
     /// Finished pond footprint (world coordinates), for the pond estimator.
@@ -269,6 +279,7 @@ pub fn show(
 
     draw_grid(&painter, doc, canvas, &t);
     draw_underlay(&painter, doc, canvas);
+    draw_soils(&painter, doc, canvas, &t);
     draw_outlines(&painter, doc, canvas, &t);
     // Tc flow paths: one being divided in an open edit dialog (lettered as it is now divided),
     // else the stored path of each selected subcatchment.
@@ -322,10 +333,11 @@ pub fn show(
     match tool {
         Tool::Select => select_tool(ui, doc, canvas, &resp, it, &mut actions),
         Tool::PlaceUnderlay => place_underlay(ui, doc, canvas, &resp, it, &painter, &t, &mut actions),
-        Tool::Calibrate { .. } | Tool::Measure { .. } => {
-            let calibrate = matches!(tool, Tool::Calibrate { .. });
+        Tool::Calibrate { .. } | Tool::Measure { .. } | Tool::Georef { .. } => {
+            let georef = matches!(tool, Tool::Georef { .. });
+            let calibrate = georef || matches!(tool, Tool::Calibrate { .. });
             let mut finished = None;
-            if let Tool::Calibrate { points } | Tool::Measure { points } = tool {
+            if let Tool::Calibrate { points } | Tool::Measure { points } | Tool::Georef { points } = tool {
                 let need = if calibrate { 2 } else { usize::MAX };
                 if resp.clicked()
                     && let Some(w) = world_ptr
@@ -338,7 +350,9 @@ pub fn show(
                         && points.len() >= 2);
                 draw_polyline(&painter, doc, canvas, points, world_ptr, false, Color32::from_rgb(220, 30, 30));
                 if finish {
-                    finished = Some(if calibrate {
+                    finished = Some(if georef {
+                        CanvasAction::Georef(points[0], points[1])
+                    } else if calibrate {
                         CanvasAction::Calibrated(points[0], points[1])
                     } else {
                         CanvasAction::Measured(points.clone())
@@ -391,6 +405,15 @@ pub fn show(
             draw_polyline(&painter, doc, canvas, points, if close { None } else { cursor }, true, t.pond.1);
             if close {
                 actions.push(CanvasAction::PondTraced(points.clone()));
+                *tool = Tool::Select;
+            }
+        }
+        Tool::Aoi { points } => {
+            let cursor = world_ptr.map(|w| snap_to_drawings(doc, canvas, w, None, None));
+            let close = closing(ui, doc, canvas, &resp, points, cursor) && points.len() >= 3;
+            draw_polyline(&painter, doc, canvas, points, if close { None } else { cursor }, true, AOI_COLOR);
+            if close {
+                actions.push(CanvasAction::AoiTraced(points.clone()));
                 *tool = Tool::Select;
             }
         }
@@ -767,6 +790,123 @@ fn draw_underlay(p: &egui::Painter, doc: &Doc, canvas: Rect) {
     p.image(tex.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
 }
 
+/// Outline colour of the soil survey's area of interest.
+pub const AOI_COLOR: Color32 = Color32::from_rgb(200, 40, 160);
+
+/// Map colour of a hydrologic soil group (green A to red D; grey when unrated).
+pub fn hsg_color(g: Option<wavestorm_core::cn::Hsg>) -> Color32 {
+    let (r, gr, b) = wavestorm_core::soils::group_rgb(g);
+    Color32::from_rgb(r, gr, b)
+}
+
+/// One soil map unit polygon ready to paint.
+pub struct SoilShape {
+    pub group: Option<wavestorm_core::cn::Hsg>,
+    pub label: String,
+    /// Outer ring then holes (diagram units).
+    pub rings: Vec<Vec<Pt>>,
+    tris: Vec<[usize; 3]>,
+    label_at: Option<Pt>,
+}
+
+/// The project's soil map projected onto the diagram, kept until the map or the background's
+/// placement changes (projecting and triangulating every frame would be wasteful).
+pub struct SoilLayer {
+    key: (wavestorm_core::project::Underlay, wavestorm_core::soils::SoilMap),
+    pub shapes: Vec<SoilShape>,
+    pub aoi: Vec<Pt>,
+}
+
+/// Rebuilds `doc.soil_layer` when the soil map or the background placement changed.
+pub fn sync_soil_layer(doc: &mut Doc) {
+    let (Some(map), Some(u)) = (&doc.project.soils, &doc.project.diagram.underlay) else {
+        doc.soil_layer = None;
+        return;
+    };
+    // The image bytes don't affect placement; leave them out of the key.
+    let mut u = u.clone();
+    u.bytes = Vec::new();
+    if doc.soil_layer.as_ref().is_some_and(|l| l.key.0 == u && l.key.1 == *map) {
+        return;
+    }
+    let Some(to) = wavestorm_core::geo::projector(&u) else {
+        doc.soil_layer = None;
+        return;
+    };
+    let shapes = map
+        .polygons
+        .iter()
+        .map(|poly| {
+            let rings: Vec<Vec<Pt>> = poly.rings.iter().map(|r| r.iter().map(|q| to(*q)).collect()).collect();
+            let outer = rings.first().cloned().unwrap_or_default();
+            let holes: Vec<&[Pt]> = rings.iter().skip(1).map(Vec::as_slice).collect();
+            let group = map.group_of(&poly.mukey);
+            let symbol = map.unit(&poly.mukey).map(|u| u.symbol.clone()).unwrap_or_default();
+            SoilShape {
+                group,
+                label: format!("{symbol} ({})", group.map_or('-', |g| g.letter())),
+                tris: drawing::triangulate(&outer),
+                label_at: drawing::label_spot(&outer, &holes).map(|(p, _)| p),
+                rings,
+            }
+        })
+        .collect();
+    let aoi = map.aoi.iter().map(|q| to(*q)).collect();
+    doc.soil_layer = Some(SoilLayer { key: (u.clone(), map.clone()), shapes, aoi });
+}
+
+/// The soil map units (coloured by soil group, labelled with symbol and group) and the area of
+/// interest: the fetched one, and one being prepared in the Soils window.
+fn draw_soils(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
+    let dashed = |pts: &[Pt]| {
+        let mut s: Vec<Pos2> = pts.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
+        if let Some(f) = s.first().copied() {
+            s.push(f);
+        }
+        p.extend(Shape::dashed_line(&s, Stroke::new(2.0, AOI_COLOR), 8.0, 5.0));
+    };
+    if let (Some(layer), Some(map)) = (&doc.soil_layer, &doc.project.soils)
+        && map.visible
+    {
+        for s in &layer.shapes {
+            let Some(outer) = s.rings.first() else { continue };
+            let c = hsg_color(s.group);
+            let fill = Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 60);
+            let mut mesh = egui::Mesh::default();
+            for q in outer {
+                mesh.colored_vertex(to_screen(&doc.view, canvas, wp(*q)), fill);
+            }
+            for [a, b, cc] in &s.tris {
+                mesh.add_triangle(*a as u32, *b as u32, *cc as u32);
+            }
+            p.add(Shape::mesh(mesh));
+            for r in &s.rings {
+                let pts: Vec<Pos2> = r.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
+                p.add(Shape::closed_line(pts, Stroke::new(1.2, c)));
+            }
+        }
+        for s in &layer.shapes {
+            let Some(at) = s.label_at else { continue };
+            let Some(outer) = s.rings.first() else { continue };
+            let r = Rect::from_points(&outer.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect::<Vec<_>>());
+            if r.width().min(r.height()) < 40.0 || !canvas.intersects(r) {
+                continue;
+            }
+            let at = to_screen(&doc.view, canvas, wp(at));
+            let ink = if t.is_dark() { Color32::WHITE } else { Color32::from_rgb(40, 40, 40) };
+            p.text(at, Align2::CENTER_CENTER, &s.label, FontId::proportional(11.0), ink);
+        }
+        dashed(&layer.aoi);
+    }
+    for w in &doc.windows {
+        if let crate::windows::Window::Soils(s) = w
+            && let Some(aoi) = &s.aoi
+        {
+            dashed(aoi);
+        }
+    }
+}
+
 /// Fills a simple (possibly concave) polygon given in diagram units.
 fn fill_polygon(p: &egui::Painter, doc: &Doc, canvas: Rect, poly: &[Pt], fill: Color32) {
     let mut mesh = egui::Mesh::default();
@@ -799,6 +939,10 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
         if let NodeData::Subcat(sc) = &n.data {
             for (i, area) in sc.areas.iter().enumerate() {
                 let Some(so) = &area.outline else { continue };
+                // Rows split by soil group share one drawing: paint it once.
+                if drawing::shape_row(sc, i) != i {
+                    continue;
+                }
                 let c = subarea_color(i, t);
                 fill_polygon(p, doc, canvas, so, a(c, if sel { 110 } else { 80 }));
                 let sp: Vec<Pos2> = so.iter().map(|q| to_screen(&doc.view, canvas, wp(*q))).collect();
@@ -807,11 +951,10 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
             // Curve-number labels: each drawn sub-area, and the remainder (placed clear of them),
             // away from node symbols and Tc paths where they fit.
             let drawn: Vec<&[Pt]> = sc.areas.iter().filter_map(|a| a.outline.as_deref()).collect();
-            for area in &sc.areas {
-                let (region, hard) = match &area.outline {
-                    Some(so) => (so.as_slice(), &[][..]),
-                    None if area.remainder && !drawn.is_empty() => (o.as_slice(), drawn.as_slice()),
-                    None => continue,
+            for (shape, cn) in drawing::cn_regions(sc) {
+                let (region, hard) = match shape {
+                    Some(so) => (so, &[][..]),
+                    None => (o.as_slice(), drawn.as_slice()),
                 };
                 // Skip the search for shapes too small (or too far off screen) to label.
                 let r =
@@ -819,7 +962,7 @@ fn draw_outlines(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
                 if r.width().min(r.height()) < 16.0 || !canvas.intersects(r) {
                     continue;
                 }
-                let label = format!("CN {}", wavestorm_core::units::group(area.cn, 0));
+                let label = format!("CN {}", wavestorm_core::units::group(cn, 0));
                 let font = FontId::proportional(11.0);
                 let width = p.layout_no_wrap(label.clone(), font.clone(), Color32::WHITE).size().x;
                 // The label must fit: its half-width (roughly) and half-height inside the clearance.

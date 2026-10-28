@@ -128,6 +128,31 @@ The Advanced tab adjusts the primary outflow: threshold (only flow above it), li
 The Elevation tab defines a fixed, tabular or tidal water level that upstream ponds see as tailwater with dynamic routing.",
     },
     Topic {
+        id: "site",
+        title: "Site location and soils",
+        body: "A background can be placed in the real world, so the soil survey can be read for the site.\n\n\
+Aerial Photo (Diagram > Background): type an address, or paste the site's latitude and longitude in decimal degrees (\"42.0312, -93.6178\", as \
+web maps copy them), press Find, choose the map (aerial imagery, imagery with roads and names, or the topographic map) and its width and height, \
+then Download Background. The image comes from USGS The National Map (public domain, United States only) and arrives placed and to scale, so \
+no calibration is needed. Over an earlier north-up georeferenced background it lines up with the old one; otherwise it fills the view, or keeps \
+the diagram's calibrated scale. Address lookup uses OpenStreetMap Nominatim.\n\n\
+Georeference (Diagram > Background): for your own site plan or PDF, click two points whose latitude and longitude you know (property corners, \
+road intersections, monuments; far apart is best) and enter them. This sets the background's position, its rotation from north, and its scale \
+(replacing a calibration; the dialog shows how much the scale changes, as a check).\n\n\
+Soils (Diagram menu): set the area of interest (AOI) by drawing it, or with Around Subcatchments (all subcatchment outlines with a margin), \
+then Get Soils. WAVEStorm sends the AOI to NRCS Soil Data Access, the service behind Web Soil Survey, and keeps the soil map units clipped to \
+it in the project, with each unit's hydrologic soil group (the dominant-condition rating Web Soil Survey shows). The map units are drawn on the \
+diagram coloured by group (A green to D red). Dual groups (A/D, B/D, C/D) count as D unless Site is drained is checked, when the first letter \
+applies. Export AOI saves the area as a zipped shapefile for Web Soil Survey's Import AOI, to check the soils there.\n\n\
+Apply to Subcatchments splits the Area rows of every subcatchment that has an outline by soil group, with the TR-55 curve number of the row's \
+cover for each group. A drawn sub-area uses the soils under its own drawing; the remainder uses the outline less the drawn sub-areas; in a \
+subcatchment without drawn sub-areas the typed covers are assumed spread evenly over its outline. Groups covering under 1 % of a row are left \
+out, ground the soil map does not cover is shared among the groups found (the result says how much), and a cover with the same curve number on \
+every group (pavement, roofs) stays one row on the main group. Rows whose description is not a TR-55 cover are kept as typed. Applying again \
+merges the split rows first, so it can be repeated after redrawing or changing the drained setting.\n\n\
+Print > Hydrologic soil group report adds a soil map page and tables of the map units and of each subcatchment's area by group.",
+    },
+    Topic {
         id: "background",
         title: "Background images and drawing on the diagram",
         body: "Diagram > Background > Load Image or PDF places a site plan, aerial photo or PDF sheet behind the diagram, sized to the part of the diagram in view. \

@@ -19,6 +19,7 @@ pub mod help;
 pub mod icons;
 pub mod library;
 pub mod logo;
+pub mod net;
 pub mod platform;
 pub mod prefs;
 pub mod recovery;
@@ -49,6 +50,8 @@ pub struct WaveStormApp {
     /// Save preference changes (off for headless runs).
     persist_prefs: bool,
     pub platform: Platform,
+    /// Web requests (address lookup, map images, soils).
+    pub net: net::Net,
     pub tool: Tool,
     pub interaction: Interaction,
     palette_drag: Option<NodeType>,
@@ -111,6 +114,8 @@ impl WaveStormApp {
             prefs,
             persist_prefs,
             platform,
+            // Automated runs never go online.
+            net: net::Net::new(persist_prefs),
             tool: Tool::Select,
             interaction: Interaction::default(),
             palette_drag: None,
@@ -149,6 +154,170 @@ impl WaveStormApp {
                 self.error = Some(e);
             }
         }
+        for reply in self.net.take() {
+            if self.docs.is_empty() {
+                continue;
+            }
+            if let Err(e) = self.handle_reply(reply) {
+                self.status = e.lines().next().unwrap_or_default().to_string();
+                self.error = Some(e);
+            }
+        }
+    }
+
+    /// A finished web request: an address found, a map image to place, or soils.
+    fn handle_reply(&mut self, reply: net::Reply) -> Result<(), String> {
+        let failed = reply.result.is_err();
+        let result = reply.result.and_then(|bytes| match &reply.fetch {
+            net::Fetch::Geocode(_) => {
+                let (place, name) = wavestorm_core::geo::parse_geocode(&String::from_utf8_lossy(&bytes))?;
+                for w in &mut self.doc().windows {
+                    if let Window::Locate(s) = w {
+                        s.found(place, name.clone());
+                    }
+                }
+                self.status = format!("Found {name}");
+                Ok(())
+            }
+            net::Fetch::Map { source, center, width_ft, height_ft, place } => {
+                self.load_map(*source, *center, *width_ft, *height_ft, place, bytes)
+            }
+            net::Fetch::Soils { aoi, drained } => {
+                let map = wavestorm_core::soils::parse_sda(
+                    &String::from_utf8_lossy(&bytes),
+                    aoi,
+                    *drained,
+                    &dialogs::misc::today(),
+                )?;
+                let units = map.units.len();
+                self.doc().edit("Get Soils", |p| p.soils = Some(map.clone()));
+                let msg = format!(
+                    "{units} soil map unit{} found. Apply to Subcatchments sets their soil groups.",
+                    if units == 1 { "" } else { "s" }
+                );
+                for w in &mut self.doc().windows {
+                    if let Window::Soils(s) = w {
+                        s.aoi = None;
+                        s.message = msg.clone();
+                    }
+                }
+                self.status = msg;
+                Ok(())
+            }
+        });
+        if let Err(e) = &result {
+            // Show the problem where the request was made, too.
+            for w in &mut self.doc().windows {
+                match w {
+                    Window::Locate(s) if !matches!(reply.fetch, net::Fetch::Soils { .. }) => s.message = e.clone(),
+                    Window::Soils(s) if matches!(reply.fetch, net::Fetch::Soils { .. }) => s.message = e.clone(),
+                    _ => {}
+                }
+            }
+            if !failed {
+                // A readable answer that says no: the window shows it; no error box.
+                self.status = e.clone();
+                return Ok(());
+            }
+        }
+        result
+    }
+
+    /// Makes a downloaded map image the background, georeferenced and to scale. A calibrated
+    /// diagram keeps its scale (the image is sized to it); otherwise the image fills the view.
+    fn load_map(
+        &mut self,
+        source: wavestorm_core::geo::MapSource,
+        center: wavestorm_core::geo::LonLat,
+        width_ft: f64,
+        height_ft: f64,
+        place: &str,
+        bytes: Vec<u8>,
+    ) -> Result<(), String> {
+        let req = wavestorm_core::geo::map_request(source, center, width_ft, height_ft)?;
+        let raster = underlay::rasterize(&bytes, 0, 150.0)?;
+        if raster.width != req.width_px || raster.height != req.height_px {
+            return Err(format!(
+                "The map image is {} x {} pixels, not the {} x {} asked for; it cannot be placed.",
+                raster.width, raster.height, req.width_px, req.height_px
+            ));
+        }
+        let canvas = self.canvas_rect;
+        let doc = self.doc();
+        let (w, h) = (raster.width as f64, raster.height as f64);
+        let old_fpu = doc.project.diagram.underlay.as_ref().and_then(|u| u.feet_per_unit);
+        let view = canvas.is_finite().then(|| {
+            (diagram::to_world(&doc.view, canvas, canvas.min), diagram::to_world(&doc.view, canvas, canvas.max))
+        });
+        let (c, fit_scale) = match view {
+            Some((a, b)) if b.x > a.x && b.y > a.y => (
+                [((a.x + b.x) / 2.0) as f64, ((a.y + b.y) / 2.0) as f64],
+                0.9 * ((b.x - a.x) as f64 / w).min((b.y - a.y) as f64 / h),
+            ),
+            _ => ([600.0, 400.0], 1200.0 / w),
+        };
+        let (scale, fpu) = match old_fpu {
+            Some(f) => (req.feet_per_pixel / f, f),
+            None => (fit_scale, req.feet_per_pixel / fit_scale),
+        };
+        // Over an earlier north-up georeferenced background the photo lines up with it, so the
+        // drawings keep their places.
+        let lined_up = doc
+            .project
+            .diagram
+            .underlay
+            .as_ref()
+            .filter(|u| u.geo.is_some_and(|g| g.bearing.abs() < 0.01))
+            .and_then(|u| wavestorm_core::geo::from_lon_lat(u, center));
+        let c = lined_up.unwrap_or(c);
+        let has_drawings = doc.project.nodes.iter().any(|n| n.outline.is_some() || n.tc_path.is_some());
+        let file_name = format!("{} - {}.jpg", source.label(), place.chars().take(60).collect::<String>());
+        doc.edit("Load Aerial Photo", |p| {
+            p.diagram.underlay = Some(wavestorm_core::project::Underlay {
+                file_name: file_name.clone(),
+                bytes: bytes.clone(),
+                page: 0,
+                origin: [c[0] - w * scale / 2.0, c[1] - h * scale / 2.0],
+                scale,
+                rotation: 0.0,
+                feet_per_unit: Some(fpu),
+                opacity: 0.85,
+                visible: true,
+                locked: false,
+                geo: Some(req.geo),
+            });
+            if old_fpu.is_none() {
+                wavestorm_core::drawing::sync_all(p);
+            }
+        });
+        doc.underlay_key = None;
+        doc.fit_pending = view.is_none();
+        let note = if lined_up.is_some() {
+            "Background loaded, lined up with the previous one."
+        } else if has_drawings {
+            "Background loaded. Existing drawings were not placed on it: to keep them where they are, \
+             undo and georeference your own background instead (Background > Georeference)."
+        } else {
+            "Background loaded and placed; trace subcatchments on it."
+        };
+        for w in &mut doc.windows {
+            if let Window::Locate(s) = w {
+                s.message = note.into();
+            }
+        }
+        self.status = format!(
+            "{} loaded and placed ({}). Credit: {}.",
+            source.label(),
+            wavestorm_core::geo::format_lat_lon(center),
+            source.credit()
+        );
+        Ok(())
+    }
+
+    /// Starts a web request and says so on the status line.
+    fn fetch(&mut self, ctx: &egui::Context, fetch: net::Fetch) {
+        self.status = fetch.busy_text().into();
+        self.net.start(ctx, fetch);
     }
 
     fn handle_incoming(&mut self, _ctx: &egui::Context, item: Incoming) -> Result<(), String> {
@@ -262,6 +431,7 @@ impl WaveStormApp {
                         opacity: 0.85,
                         visible: true,
                         locked: false,
+                        geo: None,
                     });
                 });
                 doc.underlay_key = None;
@@ -844,7 +1014,27 @@ impl WaveStormApp {
                         self.platform.pick(Purpose::Underlay);
                         ui.close();
                     }
+                    if ui
+                        .button("Aerial Photo...")
+                        .on_hover_text(
+                            "Find the site by address or coordinates and download a georeferenced aerial photo",
+                        )
+                        .clicked()
+                    {
+                        self.open_locate();
+                        ui.close();
+                    }
                     let has = self.doc().project.diagram.underlay.is_some();
+                    if ui
+                        .add_enabled(has, egui::Button::new("Georeference..."))
+                        .on_hover_text(
+                            "Give two points of the background their latitude and longitude (also sets the scale)",
+                        )
+                        .clicked()
+                    {
+                        self.start_georef();
+                        ui.close();
+                    }
                     if ui.add_enabled(has, egui::Button::new("Calibrate Scale")).clicked() {
                         self.tool = Tool::Calibrate { points: Vec::new() };
                         self.status = "Click two points a known distance apart on the background".into();
@@ -868,6 +1058,13 @@ impl WaveStormApp {
                 }
                 if ui.button("Pond Estimator").clicked() {
                     self.start_pond();
+                }
+                if ui
+                    .button("Soils...")
+                    .on_hover_text("Hydrologic soil groups from the NRCS soil survey for an area of interest")
+                    .clicked()
+                {
+                    self.open_soils();
                 }
                 if ui.button("Measure Length").clicked() {
                     self.tool = Tool::Measure { points: Vec::new() };
@@ -954,7 +1151,8 @@ impl WaveStormApp {
             });
             ui.menu_button("Print", |ui| {
                 if ui.button("Report (PDF)...").clicked() {
-                    self.open_window(Window::Print(dialogs::misc::PrintState::default()));
+                    let st = dialogs::misc::PrintState::new(&self.doc().project);
+                    self.open_window(Window::Print(st));
                     ui.close();
                 }
                 if ui.button("Diagram (PDF)...").clicked() {
@@ -965,6 +1163,7 @@ impl WaveStormApp {
                         summaries: false,
                         graphs: false,
                         tables: false,
+                        hsg_report: false,
                         date: dialogs::misc::today(),
                         only: Vec::new(),
                         background: None,
@@ -1340,7 +1539,10 @@ impl WaveStormApp {
                 self.open_window(Window::Compare(reports::CompareState::new(sel)));
             }
             Cmd::ProjectReports => self.open_window(Window::ProjectReport(reports::ProjectReportState::default())),
-            Cmd::Print => self.open_window(Window::Print(dialogs::misc::PrintState::default())),
+            Cmd::Print => {
+                let st = dialogs::misc::PrintState::new(&self.doc().project);
+                self.open_window(Window::Print(st));
+            }
             Cmd::PrintDiagram => {
                 let o = wavestorm_core::printing::PrintOptions {
                     diagram: true,
@@ -1349,6 +1551,7 @@ impl WaveStormApp {
                     summaries: false,
                     graphs: false,
                     tables: false,
+                    hsg_report: false,
                     date: dialogs::misc::today(),
                     only: Vec::new(),
                     background: None,
@@ -1659,6 +1862,23 @@ impl WaveStormApp {
                     let doc = self.doc();
                     doc.windows.push(Window::Calibrate(dialogs::misc::CalibrateState::distance(a, b)));
                 }
+                CanvasAction::Georef(a, b) => {
+                    let st = dialogs::site::GeorefState::new(self.doc(), a, b);
+                    self.open_window(Window::Georef(st));
+                }
+                CanvasAction::AoiTraced(points) => {
+                    let aoi: Vec<[f64; 2]> = points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
+                    if !self.doc().windows.iter().any(|w| matches!(w, Window::Soils(_))) {
+                        let st = dialogs::site::SoilsState::new(self.doc());
+                        self.open_window(Window::Soils(st));
+                    }
+                    for w in &mut self.doc().windows {
+                        if let Window::Soils(s) = w {
+                            s.aoi = Some(aoi.clone());
+                            s.message = "Area of interest drawn: Get Soils asks for its soils.".into();
+                        }
+                    }
+                }
                 CanvasAction::Traced(None, points) => self.finish_trace(points),
                 CanvasAction::Traced(Some(id), points) => self.redraw_outline(id, points),
                 CanvasAction::PondTraced(points) => {
@@ -1817,7 +2037,7 @@ impl WaveStormApp {
         self.refresh_drafts(id);
     }
 
-    fn window_actions(&mut self, actions: Vec<WindowAction>) {
+    fn window_actions(&mut self, actions: Vec<WindowAction>, ctx: &egui::Context) {
         for a in actions {
             match a {
                 WindowAction::OpenReport(id) => self.open_report(id),
@@ -1842,8 +2062,39 @@ impl WaveStormApp {
                 WindowAction::DrawOutline(id) => self.start_outline(Some(id)),
                 WindowAction::DrawSubArea(id) => self.start_subarea(id),
                 WindowAction::PlaceUnderlay => self.start_place_underlay(),
+                WindowAction::Fetch(f) => self.fetch(ctx, f),
+                WindowAction::DrawAoi => self.start_aoi(),
+                WindowAction::RefreshDrafts => {
+                    let ids: Vec<NodeId> = self.doc().project.nodes.iter().map(|n| n.id).collect();
+                    for id in ids {
+                        self.refresh_drafts(id);
+                    }
+                }
             }
         }
+    }
+
+    /// Starts drawing the soil survey's area of interest.
+    fn start_aoi(&mut self) {
+        self.tool = Tool::Aoi { points: Vec::new() };
+        self.status = "Click the corners of the area of interest (around the whole site); click the first point, double-click or press Enter to close".into();
+    }
+
+    /// Starts the two-point georeference: pick two points whose latitude and longitude are known.
+    fn start_georef(&mut self) {
+        self.tool = Tool::Georef { points: Vec::new() };
+        self.status =
+            "Click two points on the background whose latitude and longitude you know (far apart is best)".into();
+    }
+
+    fn open_soils(&mut self) {
+        let st = dialogs::site::SoilsState::new(self.doc());
+        self.open_window(Window::Soils(st));
+    }
+
+    fn open_locate(&mut self) {
+        let st = dialogs::site::LocateState::new(self.doc());
+        self.open_window(Window::Locate(st));
     }
 
     /// Starts drawing subcatchment `id`'s Tc flow path on the diagram.
@@ -2210,6 +2461,9 @@ impl WaveStormApp {
         let t = Tokens::get(&ctx);
         self.receive(&ctx);
         self.sync_underlay(&ctx);
+        if !self.docs.is_empty() {
+            diagram::sync_soil_layer(self.doc());
+        }
         self.autosave(&ctx);
         self.shortcuts(&ctx);
         if self.docs.is_empty() {
@@ -2227,7 +2481,7 @@ impl WaveStormApp {
             Some(doc) => windows::show_all(&ctx, doc),
             None => Vec::new(),
         };
-        self.window_actions(wactions);
+        self.window_actions(wactions, &ctx);
         self.announce_calculation();
         if let Some(topic) = widgets::take_help_request(&ctx) {
             self.open_window(Window::Help(help::HelpState::topic(topic)));
@@ -2761,7 +3015,13 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
         }
         "help" => app.open_window(Window::Help(help::HelpState::topic(if arg.is_empty() { "start" } else { arg }))),
         "about" => app.open_window(Window::About),
-        "print" => app.open_window(Window::Print(dialogs::misc::PrintState::default())),
+        "print" => {
+            let st = dialogs::misc::PrintState::new(&app.doc().project);
+            app.open_window(Window::Print(st));
+        }
+        "aerial" => app.open_locate(),
+        "georef" => app.start_georef(),
+        "soils" => app.open_soils(),
         "calibrate" => app.tool = Tool::Calibrate { points: Vec::new() },
         "measure" => app.tool = Tool::Measure { points: Vec::new() },
         _ => {}
