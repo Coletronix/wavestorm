@@ -387,6 +387,15 @@ Keep this section updated at the end of every session.
   (`PrintOptions::hsg_report`, on by default when the project has soils): soil map page +
   `soils::report_lines`. `webpki-roots` brought CDLA-Permissive-2.0 into `deny.toml`/
   `about.toml`. Live check: `cargo test -p wavestorm-ui --test site -- --ignored`.
+  Sub-area drawing snaps to soil boundaries while the soils are shown (`Doc::soil_snap`, on by
+  default, S key or Soils window): `diagram::snap_to_rings` after `snap_to_drawings`; a click
+  whose previous point is on the same ring inserts the ring corners between them
+  (`drawing::follow_ring`, shorter way round; skipped if a corner falls outside the outline),
+  also for the closing edge; the rubber band previews it.
+- Tabs and the window title show the project's file name once it has one (`Doc::title`), so
+  Save As renames the tab; the printed title is still `Project::title`.
+- `tests/window_growth.rs` checks heights too (the curve viewers used to grow 1 px a frame
+  from guessed tab/button heights; they now use the height left / last frame's button rows).
 - Session (`ui::recovery`, store key `session`; 0.3.0's `recovery` key is still read): `DELAY`
   (1 s) after any change the open projects are recorded — saved files by path, unsaved or
   file-less ones (always on the web) with their JSON, plus the front tab. At start (non-headless)

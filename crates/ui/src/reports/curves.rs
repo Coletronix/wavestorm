@@ -417,9 +417,11 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, acti
             let body_w = widgets::body_width(ui, col_key, 210.0);
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
-                    let size = vec2(body_w, (avail.y - 26.0).max(160.0));
-                    ui.set_width(size.x);
+                    ui.set_width(body_w);
                     widgets::tabs(ui, &["Graph", "Table"], &mut st.tab);
+                    // The height left under the tabs, so the body never asks for more than the
+                    // window has (which would grow the window every frame).
+                    let size = vec2(body_w, ui.available_height().max(160.0));
                     if st.tab == 1 {
                         let (heads, cols) = table(doc, st);
                         if cols.is_empty() {
@@ -445,7 +447,10 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, acti
                 });
                 let col = ui.vertical(|ui| {
                     ui.set_width(200.0);
-                    let h = (avail.y - 66.0).max(100.0);
+                    // The list takes what the button rows (measured last frame) leave.
+                    let buttons_key = ui.id().with("curve-buttons-h");
+                    let buttons_h = ui.data(|d| d.get_temp::<f32>(buttons_key)).unwrap_or(60.0);
+                    let h = (avail.y - buttons_h - ui.spacing().item_spacing.y).max(100.0);
                     egui::ScrollArea::vertical().max_height(h).min_scrolled_height(h).auto_shrink([false, false]).show(
                         ui,
                         |ui| {
@@ -455,7 +460,11 @@ pub fn show_curves(ctx: &egui::Context, doc: &mut Doc, st: &mut CurveState, acti
                             curve_tree(ui, st, &names);
                         },
                     );
-                    buttons(ui, doc, st, actions, &mut ok);
+                    let rows = ui.scope(|ui| buttons(ui, doc, st, actions, &mut ok)).response.rect.height();
+                    if ui.data(|d| d.get_temp::<f32>(buttons_key)) != Some(rows) {
+                        ui.data_mut(|d| d.insert_temp(buttons_key, rows));
+                        ui.ctx().request_repaint();
+                    }
                 });
                 widgets::remember_column(ui, col_key, col.response.rect);
             });

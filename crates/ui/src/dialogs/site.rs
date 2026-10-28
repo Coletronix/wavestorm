@@ -400,6 +400,13 @@ pub fn soils_window(ctx: &egui::Context, doc: &mut Doc, st: &mut SoilsState, act
                         }
                     });
                 }
+                ui.add_enabled_ui(visible, |ui| {
+                    widgets::check(ui, &mut doc.soil_snap, "Sub-areas snap to and follow soil boundaries")
+                        .on_hover_text(
+                            "While drawing a sub-area, points snap to soil boundaries; two points on the same \
+                             boundary are joined along it. Press S while drawing to switch.",
+                        );
+                });
             });
             ui.horizontal(|ui| {
                 if widgets::button_enabled(ui, "Apply to Subcatchments", 170.0, placed)

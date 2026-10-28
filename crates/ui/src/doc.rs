@@ -49,6 +49,8 @@ pub struct Doc {
     pub underlay_key: Option<(usize, usize)>,
     /// The soil map as drawn on the diagram (rebuilt when the map or background changes).
     pub soil_layer: Option<crate::diagram::SoilLayer>,
+    /// Sub-areas being drawn snap to and follow soil boundaries (while the soils are shown).
+    pub soil_snap: bool,
     pub fit_pending: bool,
     /// Bumped by every recalculation; the app compares it with `announced` to report results.
     pub calc_serial: u64,
@@ -78,6 +80,7 @@ impl Doc {
             underlay_tex: None,
             underlay_key: None,
             soil_layer: None,
+            soil_snap: true,
             fit_pending: true,
             calc_serial: 1,
             announced: 0,
@@ -86,8 +89,14 @@ impl Doc {
         }
     }
 
+    /// The name on the project's tab and the window title: the file name (without extension)
+    /// once the project has a file, else the project title.
     pub fn title(&self) -> String {
-        self.project.title.clone()
+        let stem = self.path.as_deref().and_then(|p| std::path::Path::new(p).file_stem()).and_then(|s| s.to_str());
+        match stem {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => self.project.title.clone(),
+        }
     }
 
     /// Applies an edit as one undo step and recalculates.
@@ -162,5 +171,21 @@ impl Doc {
 
     pub fn is_selected(&self, id: NodeId) -> bool {
         self.selection.contains(&id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tab_shows_the_file_name_once_saved() {
+        let mut d = Doc::new(Project { title: "Untitled 1".into(), ..Project::default() }, None);
+        assert_eq!(d.title(), "Untitled 1");
+        // Save As to a new name: the tab follows the file.
+        d.path = Some("/home/me/projects/Mill Creek.waves".into());
+        assert_eq!(d.title(), "Mill Creek");
+        d.path = Some("C:\\work\\site.hcp".into());
+        assert!(d.title() == "site" || d.title() == "C:\\work\\site", "{}", d.title());
     }
 }

@@ -424,12 +424,57 @@ pub fn show(
                 actions.push(CanvasAction::Message("Draw the subcatchment's outline before its sub-areas.".into()));
                 *tool = Tool::Select;
             } else {
-                // Points stay inside the outline and snap to nearby corners and edges.
-                let cursor = world_ptr
-                    .map(|w| wp(drawing::clamp_inside(pt(snap_to_drawings(doc, canvas, w, Some(id), None)), &outline)));
+                if ui.input(|i| i.key_pressed(Key::S) && i.modifiers.is_none()) && soil_rings(doc, true).is_some() {
+                    doc.soil_snap = !doc.soil_snap;
+                    actions.push(CanvasAction::Message(
+                        if doc.soil_snap {
+                            "Snapping to soil boundaries (S turns it off)"
+                        } else {
+                            "Not snapping to soil boundaries (S turns it on)"
+                        }
+                        .into(),
+                    ));
+                }
+                let soils = soil_rings(doc, false);
+                // Points stay inside the outline and snap to nearby corners and edges: of the
+                // drawings first, then of the soil map units.
+                let cursor = world_ptr.map(|w| {
+                    let s = snap_to_drawings(doc, canvas, w, Some(id), None);
+                    let s = match &soils {
+                        Some(rings) if s == w => snap_to_rings(doc, canvas, w, rings),
+                        _ => s,
+                    };
+                    wp(drawing::clamp_inside(pt(s), &outline))
+                });
+                // Two points on the same soil boundary: the edge between them follows it.
+                let tol = 1.0 / doc.view.zoom as f64;
+                let follow = |a: Pos2, b: Pos2| -> Vec<Pos2> {
+                    let Some(rings) = &soils else { return Vec::new() };
+                    let inside =
+                        |q: &Pt| drawing::point_in_polygon(*q, &outline) || drawing::on_boundary(*q, &outline, tol);
+                    rings
+                        .iter()
+                        .filter_map(|r| drawing::follow_ring(r, pt(a), pt(b), tol))
+                        .filter(|path| path.iter().all(inside))
+                        .min_by_key(|path| path.len())
+                        .map(|path| path.into_iter().map(wp).collect())
+                        .unwrap_or_default()
+                };
+                let before = points.len();
                 let mut close = closing(ui, doc, canvas, &resp, points, cursor);
+                if points.len() == before + 1 && before >= 1 {
+                    let arc = follow(points[before - 1], points[before]);
+                    for (k, q) in arc.into_iter().enumerate() {
+                        points.insert(before + k, q);
+                    }
+                }
+                // Closing back to the first point can follow a boundary too.
+                let closing_arc = match (points.last(), points.first()) {
+                    (Some(l), Some(f)) if close && points.len() >= 3 => follow(*l, *f),
+                    _ => Vec::new(),
+                };
                 if close {
-                    let shape: Vec<Pt> = points.iter().map(|q| pt(*q)).collect();
+                    let shape: Vec<Pt> = points.iter().chain(&closing_arc).map(|q| pt(*q)).collect();
                     let others = subarea_outlines(doc, id, None);
                     let others: Vec<&[Pt]> = others.iter().map(Vec::as_slice).collect();
                     if let Some(problem) = drawing::subarea_problem(&shape, &outline, &others) {
@@ -437,17 +482,24 @@ pub fn show(
                             "{problem} Adjust the points (Backspace removes the last) or press Esc."
                         )));
                         close = false;
+                    } else {
+                        points.extend(closing_arc);
                     }
                 }
                 let next = match doc.project.node(id).map(|n| &n.data) {
                     Some(NodeData::Subcat(sc)) => sc.areas.len(),
                     _ => 0,
                 };
+                // The rubber band to the pointer shows the boundary it would follow.
+                let mut shown = points.clone();
+                if !close && let (Some(l), Some(c)) = (points.last(), cursor) {
+                    shown.extend(follow(*l, c));
+                }
                 draw_polyline(
                     &painter,
                     doc,
                     canvas,
-                    points,
+                    &shown,
                     if close { None } else { cursor },
                     true,
                     subarea_color(next, &t),
@@ -614,6 +666,31 @@ fn snap_to_drawings(
         }
     }
     best.map_or(w, |(_, q)| q)
+}
+
+/// The soil map unit boundaries (outer rings and holes, diagram units) that drawing snaps to:
+/// while the soils are shown and snapping is on (or regardless of the setting with `any`).
+fn soil_rings(doc: &Doc, any: bool) -> Option<Vec<&Vec<Pt>>> {
+    let shown = doc.project.soils.as_ref().is_some_and(|m| m.visible);
+    let layer = doc.soil_layer.as_ref().filter(|_| shown && (any || doc.soil_snap))?;
+    Some(layer.shapes.iter().flat_map(|s| s.rings.iter()).collect())
+}
+
+/// `w` snapped to the nearest ring corner within 8 px, else the nearest ring edge within 6 px.
+fn snap_to_rings(doc: &Doc, canvas: Rect, w: Pos2, rings: &[&Vec<Pt>]) -> Pos2 {
+    let s = to_screen(&doc.view, canvas, w);
+    let near = |q: Pt| (to_screen(&doc.view, canvas, wp(q)) - s).length();
+    let corner = rings.iter().flat_map(|r| r.iter()).map(|q| (near(*q), *q)).filter(|(d, _)| *d < 8.0);
+    if let Some((_, q)) = corner.min_by(|a, b| a.0.total_cmp(&b.0)) {
+        return wp(q);
+    }
+    rings
+        .iter()
+        .map(|r| drawing::nearest_on_boundary(pt(w), r))
+        .map(|q| (near(q), q))
+        .filter(|(d, _)| *d < 6.0)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map_or(w, |(_, q)| wp(q))
 }
 
 /// The background image's rectangle in diagram units.

@@ -150,6 +150,10 @@ subcatchment without drawn sub-areas the typed covers are assumed spread evenly 
 out, ground the soil map does not cover is shared among the groups found (the result says how much), and a cover with the same curve number on \
 every group (pavement, roofs) stays one row on the main group. Rows whose description is not a TR-55 cover are kept as typed. Applying again \
 merges the split rows first, so it can be repeated after redrawing or changing the drained setting.\n\n\
+Drawing sub-areas along soil lines: while the soils are shown, the points of a sub-area being drawn snap to soil boundaries (their corners \
+within 8 pixels, their edges within 6), and two points on the same boundary are joined along it, the shorter way round, so a sub-area can \
+follow a soil line with two clicks. The line to the pointer shows the boundary it will follow; Backspace removes points. Press S while drawing, \
+or use the box in the Soils window, to turn this on or off.\n\n\
 Print > Hydrologic soil group report adds a soil map page and tables of the map units and of each subcatchment's area by group.",
     },
     Topic {

@@ -216,6 +216,84 @@ fn georeference_two_points_of_own_background() {
     assert!(g.bearing.abs() < 0.02, "{}", g.bearing);
 }
 
+#[test]
+fn sub_area_snaps_to_and_follows_a_soil_boundary() {
+    use wavestorm_core::project::Underlay;
+    use wavestorm_core::soils::{MapUnit, SoilMap, SoilPolygon};
+    let mut h = harness();
+    h.run_steps(3);
+    script(h.state_mut(), "new");
+    // A north-up background, 1 ft per diagram unit, with its anchor at CENTER.
+    let u = Underlay {
+        file_name: "site.png".into(),
+        bytes: png(200, 200),
+        page: 0,
+        origin: [0.0, 0.0],
+        scale: 1.0,
+        rotation: 0.0,
+        feet_per_unit: Some(1.0),
+        opacity: 1.0,
+        visible: true,
+        locked: false,
+        geo: Some(geo::GeoRef { pixel: [100.0, 100.0], lon_lat: CENTER, bearing: 0.0 }),
+    };
+    let ll = |e: f64, n: f64| geo::offset_lon_lat(CENTER, [e, n]);
+    let at = |e: f64, n: f64| geo::from_lon_lat(&u, ll(e, n)).unwrap();
+    // Two soils meeting along a kinked line: (20,-80) to (40,0) to (20,80) (east, north in ft).
+    let west = vec![ll(-100.0, -80.0), ll(20.0, -80.0), ll(40.0, 0.0), ll(20.0, 80.0), ll(-100.0, 80.0)];
+    let east = vec![ll(20.0, -80.0), ll(100.0, -80.0), ll(100.0, 80.0), ll(20.0, 80.0), ll(40.0, 0.0)];
+    let mut id = 0;
+    h.state_mut().doc().edit("Test Site", |p| {
+        p.diagram.underlay = Some(u.clone());
+        p.soils = Some(SoilMap {
+            aoi: vec![ll(-100.0, -80.0), ll(100.0, -80.0), ll(100.0, 80.0), ll(-100.0, 80.0)],
+            units: vec![
+                MapUnit { mukey: "1".into(), symbol: "W".into(), name: "West".into(), hydgrp: "B".into() },
+                MapUnit { mukey: "2".into(), symbol: "E".into(), name: "East".into(), hydgrp: "D".into() },
+            ],
+            polygons: vec![
+                SoilPolygon { mukey: "1".into(), rings: vec![west] },
+                SoilPolygon { mukey: "2".into(), rings: vec![east] },
+            ],
+            drained: false,
+            retrieved: String::new(),
+            visible: true,
+        });
+        id = p.add_node(NodeType::Subcat, at(-60.0, 0.0));
+        p.node_mut(id).unwrap().outline =
+            Some(vec![at(-90.0, -70.0), at(90.0, -70.0), at(90.0, 70.0), at(-90.0, 70.0)]);
+    });
+    let label = h.state_mut().doc().project.node(id).unwrap().label();
+    h.run_steps(3);
+    // Zoom so a foot is three pixels and the site is in view.
+    h.state_mut().doc().view.zoom = 3.0;
+    h.state_mut().doc().view.offset = vec2(200.0, 0.0);
+    h.state_mut().doc().fit_pending = false;
+    // Nothing covers the canvas (the Messages window opens after calculating).
+    h.state_mut().doc().windows.clear();
+    script(h.state_mut(), &format!("subarea:{label}"));
+    h.run_steps(2);
+    let screen = |h: &mut egui_kittest::Harness<'static, WaveStormApp>, q: [f64; 2]| {
+        h.state_mut().world_to_screen(Pos2::new(q[0] as f32, q[1] as f32))
+    };
+    // A corner west of the line, then two points near (not on) the boundary, either side of
+    // the kink: they snap onto it and the edge between them follows it through (40, 0).
+    for q in [at(-50.0, -40.0), at(30.5, -40.0), at(30.5, 40.0), at(-50.0, 40.0)] {
+        let s = screen(&mut h, q);
+        click(&mut h, s);
+    }
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    let NodeData::Subcat(sc) = &h.state_mut().doc().project.node(id).unwrap().data.clone() else { unreachable!() };
+    let drawn = sc.areas.iter().find_map(|a| a.outline.clone()).expect("sub-area drawn");
+    assert_eq!(drawn.len(), 5, "{drawn:?}");
+    let kink = at(40.0, 0.0);
+    assert!(drawn.iter().any(|q| (q[0] - kink[0]).hypot(q[1] - kink[1]) < 0.01), "{drawn:?}");
+    // The clicks half a foot off the line were snapped onto it.
+    let snapped = at(30.0, -40.0);
+    assert!(drawn.iter().any(|q| (q[0] - snapped[0]).hypot(q[1] - snapped[1]) < 0.2), "{drawn:?}");
+}
+
 /// The real services (address lookup, NAIP image, Soil Data Access), through the same request
 /// code the app uses. Needs the internet: `cargo test -p wavestorm-ui --test site -- --ignored`.
 #[test]

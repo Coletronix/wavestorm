@@ -1290,7 +1290,17 @@ impl WaveStormApp {
     fn start_subarea(&mut self, id: NodeId) {
         self.doc().selection = vec![id];
         self.tool = Tool::SubArea { node: id, points: Vec::new() };
-        self.status = "Click the sub-area's corners inside the outline (they snap to nearby corners and edges); click the first point, double-click or press Enter to close".into();
+        let doc = self.doc();
+        let soils = doc.project.soils.as_ref().is_some_and(|m| m.visible) && doc.soil_layer.is_some();
+        self.status = if soils {
+            format!(
+                "Click the sub-area's corners inside the outline; click the first point, double-click or press Enter to close. \
+                 Soil boundaries: {} (S switches; two points on one boundary follow it)",
+                if doc.soil_snap { "snapping" } else { "off" }
+            )
+        } else {
+            "Click the sub-area's corners inside the outline (they snap to nearby corners and edges); click the first point, double-click or press Enter to close".into()
+        };
     }
 
     /// Starts moving / resizing the background.

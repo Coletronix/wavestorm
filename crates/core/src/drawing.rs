@@ -119,6 +119,56 @@ pub fn nearest_on_boundary(p: Pt, poly: &[Pt]) -> Pt {
         .unwrap_or(p)
 }
 
+/// Distance of `p` along closed ring `ring`'s perimeter from its first point, when `p` lies
+/// within `tol` of the ring (on the nearest edge).
+fn ring_position(ring: &[Pt], p: Pt, tol: f64) -> Option<f64> {
+    let n = ring.len();
+    let mut along = 0.0;
+    let mut best: Option<(f64, f64)> = None;
+    for i in 0..n {
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        let q = nearest_on_segment(p, a, b);
+        let d = dist(p, q);
+        if d <= tol && best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, along + dist(a, q)));
+        }
+        along += dist(a, b);
+    }
+    best.map(|(_, s)| s)
+}
+
+/// The corners of closed ring `ring` passed when going from `a` to `b` along it the shorter
+/// way round, in order (`a` and `b` themselves excluded). `None` when either point is not on
+/// the ring (within `tol`). Used to make a drawn edge follow a boundary, such as a soil line.
+pub fn follow_ring(ring: &[Pt], a: Pt, b: Pt, tol: f64) -> Option<Vec<Pt>> {
+    let n = ring.len();
+    if n < 3 {
+        return None;
+    }
+    let (sa, sb) = (ring_position(ring, a, tol)?, ring_position(ring, b, tol)?);
+    let mut cum = Vec::with_capacity(n);
+    let mut per = 0.0;
+    for i in 0..n {
+        cum.push(per);
+        per += dist(ring[i], ring[(i + 1) % n]);
+    }
+    if per <= 0.0 {
+        return None;
+    }
+    let fwd = (sb - sa).rem_euclid(per);
+    let forward = fwd <= per - fwd;
+    let span = if forward { fwd } else { per - fwd };
+    let mut out: Vec<(f64, Pt)> = (0..n)
+        .map(|k| {
+            let off = if forward { (cum[k] - sa).rem_euclid(per) } else { (sa - cum[k]).rem_euclid(per) };
+            (off, ring[k])
+        })
+        .filter(|(off, _)| *off > tol && *off < span - tol)
+        .collect();
+    out.sort_by(|x, y| x.0.total_cmp(&y.0));
+    Some(out.into_iter().map(|(_, q)| q).collect())
+}
+
 /// Distance tolerance for a polygon: a millionth of its size.
 fn tolerance(poly: &[Pt]) -> f64 {
     let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
@@ -737,6 +787,28 @@ mod tests {
             let sum: f64 = tris.iter().map(|t| polygon_area(&[poly[t[0]], poly[t[1]], poly[t[2]]])).sum();
             assert!((sum - polygon_area(&poly)).abs() < 1e-9, "{sum}");
         }
+    }
+
+    #[test]
+    fn following_a_ring_takes_the_shorter_way() {
+        // A 100 x 10 strip: from the middle of the bottom edge to the middle of the left edge
+        // the short way passes the bottom-left corner only.
+        let ring = rect(0.0, 0.0, 100.0, 10.0);
+        assert_eq!(follow_ring(&ring, [50.0, 0.0], [0.0, 5.0], 1e-6), Some(vec![[0.0, 0.0]]));
+        // The other direction lists the same corner.
+        assert_eq!(follow_ring(&ring, [0.0, 5.0], [50.0, 0.0], 1e-6), Some(vec![[0.0, 0.0]]));
+        // Bottom middle to top middle: either way passes two corners; the order follows the walk.
+        let path = follow_ring(&ring, [40.0, 0.0], [40.0, 10.0], 1e-6).unwrap();
+        assert_eq!(path, vec![[0.0, 0.0], [0.0, 10.0]]);
+        // Points on corners are not repeated; off-ring points give None.
+        assert_eq!(follow_ring(&ring, [0.0, 0.0], [100.0, 0.0], 1e-6), Some(vec![]));
+        assert_eq!(follow_ring(&ring, [50.0, 3.0], [0.0, 5.0], 1e-6), None);
+        // A wiggly boundary: every vertex between is kept, in order.
+        let wiggle = vec![[0.0, 0.0], [10.0, 2.0], [20.0, -2.0], [30.0, 2.0], [40.0, 0.0], [40.0, 50.0], [0.0, 50.0]];
+        assert_eq!(
+            follow_ring(&wiggle, [0.0, 0.0], [40.0, 0.0], 1e-6),
+            Some(vec![[10.0, 2.0], [20.0, -2.0], [30.0, 2.0]])
+        );
     }
 
     #[test]
