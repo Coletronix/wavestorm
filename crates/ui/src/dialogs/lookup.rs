@@ -82,6 +82,11 @@ impl EventLookup {
         }
     }
 
+    /// Shows a note or problem above the event list.
+    pub fn set_message(&mut self, m: &str) {
+        self.message = m.to_string();
+    }
+
     /// Loads a file chosen by the user: a `*-Rain.txt` table, an IDF file, or a NOAA Atlas 14 CSV.
     pub fn load_file(&mut self, file_name: &str, bytes: &[u8]) -> Result<(), String> {
         let text = String::from_utf8_lossy(bytes);
@@ -100,7 +105,7 @@ impl EventLookup {
             self.source = Some(Source::Table(table.name.clone()));
             self.ext_tables.retain(|t| t.name != table.name);
             self.ext_tables.push(table);
-        } else if lower.ends_with(".idf") {
+        } else if lower.ends_with(".hci") || lower.ends_with(".idf") {
             let mut idf = parse_idf(&text)?;
             if idf.name == "IDF" || idf.name == "NOAA Atlas 14" {
                 idf.name = stem;
@@ -166,8 +171,25 @@ pub fn event_lookup(ctx: &egui::Context, doc: &mut Doc, st: &mut EventLookup, ac
                     if widgets::button(ui, "Load File...", 90.0).on_hover_text("Load a lookup table (*-Rain.txt), an IDF file or a NOAA Atlas 14 CSV for this session").clicked() {
                         actions.push(WindowAction::PickFile(Purpose::NoaaCsv));
                     }
-                    if widgets::button(ui, "Import Library...", 110.0).on_hover_text("Import several rainfall files (.hcr, .huh, .idf, *-Rain.txt) into the rainfall library").clicked() {
+                    if widgets::button(ui, "Import Library...", 110.0).on_hover_text("Import several rainfall files (.hcr, .huh, .hci, *-Rain.txt) into the rainfall library").clicked() {
                         actions.push(WindowAction::PickFile(Purpose::RainLib));
+                    }
+                    // NOAA Atlas 14 for the site: the centre of the georeferenced background.
+                    let site = doc.project.diagram.underlay.as_ref().and_then(|u| {
+                        let c = wavestorm_core::geo::pixel_to_diagram(u, [0.0, 0.0]);
+                        let size = doc.underlay_tex.as_ref().map(|t| t.size_vec2()).unwrap_or(egui::Vec2::ZERO);
+                        let d = [c[0] + size.x as f64 * u.scale / 2.0, c[1] + size.y as f64 * u.scale / 2.0];
+                        wavestorm_core::geo::to_lon_lat(u, d)
+                    });
+                    let tip = match site {
+                        Some(ll) => format!("Download the NOAA Atlas 14 depths for the site ({})", wavestorm_core::geo::format_lat_lon(ll)),
+                        None => "Place the background in the real world first (Diagram > Background > Aerial Photo or Georeference)".into(),
+                    };
+                    if widgets::button_enabled(ui, "NOAA for Site", 110.0, site.is_some()).on_hover_text(tip).clicked()
+                        && let Some(ll) = site
+                    {
+                        st.message = "Asking NOAA for the site's precipitation frequency estimates...".into();
+                        actions.push(WindowAction::Fetch(crate::net::Fetch::Noaa { lon_lat: ll }));
                     }
                 });
             });
@@ -198,8 +220,9 @@ pub fn event_lookup(ctx: &egui::Context, doc: &mut Doc, st: &mut EventLookup, ac
         if st.source.is_none() || (candidates.is_none() && sources.is_empty()) {
             ui.add_space(8.0);
             ui.label("Choose a lookup table above. Set the rainfall library folder in Settings > General (desktop),");
-            ui.label("or use Import Library... to add the rainfall files (*-Rain.txt, .idf, .hcr) from your computer.");
-            ui.label("A NOAA Atlas 14 depth CSV from the Precipitation Frequency Data Server can be loaded with Load File...");
+            ui.label("or use Import Library... to add the rainfall files (*-Rain.txt, .hci, .hcr) from your computer.");
+            ui.label("NOAA for Site downloads the NOAA Atlas 14 depths for a placed background (desktop); a CSV saved");
+            ui.label("from the Precipitation Frequency Data Server can be loaded with Load File...");
         }
         let mut events: Vec<RainEvent> = Vec::new();
         if let Some(c) = &candidates {
@@ -351,7 +374,6 @@ fn table_pane(ui: &mut Ui, st: &mut EventLookup, table: &RainTable, storm_names:
 /// IDF file: depth = intensity at the storm duration x duration, for every event in the file.
 fn idf_pane(ui: &mut Ui, st: &mut EventLookup, idf: &IdfFile, storm_opts: &[(String, String)]) -> Candidates {
     let t = Tokens::get(ui.ctx());
-    ui.label(RichText::new(format!("PROVISIONAL: {}", wavestorm_core::rainlib::IDF_PROVISIONAL)).color(t.warning));
     ui.label(
         RichText::new(if idf.comment.is_empty() { idf.name.clone() } else { format!("{}: {}", idf.name, idf.comment) })
             .color(t.text_dim),

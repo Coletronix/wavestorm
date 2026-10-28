@@ -7,7 +7,7 @@ use egui::{Event, Modifiers, PointerButton, Pos2, vec2};
 use egui_kittest::kittest::Queryable;
 use wavestorm_core::cn::SubArea;
 use wavestorm_core::geo::{self, MapSource};
-use wavestorm_core::project::{NodeData, NodeType};
+use wavestorm_core::project::{NodeData, NodeId, NodeType};
 use wavestorm_ui::net::{Fetch, Reply};
 use wavestorm_ui::platform::{Incoming, Purpose};
 use wavestorm_ui::windows::Window;
@@ -218,6 +218,154 @@ fn georeference_two_points_of_own_background() {
 
 #[test]
 fn sub_area_snaps_to_and_follows_a_soil_boundary() {
+    let (mut h, u, id) = kinked_site();
+    let at = |e: f64, n: f64| site_point(&u, e, n);
+    let label = h.state_mut().doc().project.node(id).unwrap().label();
+    script(h.state_mut(), &format!("subarea:{label}"));
+    h.run_steps(2);
+    // A corner west of the line, then two points near (not on) the boundary, either side of
+    // the kink: they snap onto it and the edge between them follows it through (40, 0).
+    for q in [at(-50.0, -40.0), at(30.5, -40.0), at(30.5, 40.0), at(-50.0, 40.0)] {
+        let s = screen(&mut h, q);
+        click(&mut h, s);
+    }
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    let drawn = drawn_shapes(&mut h, id);
+    let drawn = drawn.first().expect("sub-area drawn");
+    assert_eq!(drawn.len(), 5, "{drawn:?}");
+    let kink = at(40.0, 0.0);
+    assert!(drawn.iter().any(|q| (q[0] - kink[0]).hypot(q[1] - kink[1]) < 0.01), "{drawn:?}");
+    // The clicks half a foot off the line were snapped onto it.
+    let snapped = at(30.0, -40.0);
+    assert!(drawn.iter().any(|q| (q[0] - snapped[0]).hypot(q[1] - snapped[1]) < 0.2), "{drawn:?}");
+}
+
+/// Backspace after a followed edge removes the whole click; a boundary running through an
+/// existing sub-area is not followed, and the shape still closes.
+#[test]
+fn followed_edges_undo_as_one_and_never_cross_other_sub_areas() {
+    let (mut h, u, id) = kinked_site();
+    let at = |e: f64, n: f64| site_point(&u, e, n);
+    let label = h.state_mut().doc().project.node(id).unwrap().label();
+    script(h.state_mut(), &format!("subarea:{label}"));
+    h.run_steps(2);
+    for q in [at(-50.0, -40.0), at(30.0, -40.0), at(30.0, 40.0)] {
+        let s = screen(&mut h, q);
+        click(&mut h, s);
+    }
+    let count = |h: &mut egui_kittest::Harness<'static, WaveStormApp>| match &h.state().tool {
+        wavestorm_ui::diagram::Tool::SubArea { points, .. } => points.len(),
+        _ => usize::MAX,
+    };
+    assert_eq!(count(&mut h), 4, "the kink was inserted");
+    h.key_press(egui::Key::Backspace);
+    h.run_steps(2);
+    assert_eq!(count(&mut h), 2, "Backspace removes the kink with its click");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+
+    // A sub-area over the kink; a new one whose clicks lie on the boundary either side of it
+    // must not follow the boundary through it, and still closes.
+    h.state_mut().doc().edit("Roof", |p| {
+        if let NodeData::Subcat(sc) = &mut p.node_mut(id).unwrap().data {
+            let mut a = SubArea::new(0.0, 98.0, "Roofs");
+            a.outline = Some(vec![at(30.0, -10.0), at(60.0, -10.0), at(60.0, 10.0), at(30.0, 10.0)]);
+            sc.areas.push(a);
+        }
+    });
+    script(h.state_mut(), &format!("subarea:{label}"));
+    h.run_steps(2);
+    for q in [at(-50.0, -40.0), at(30.0, -40.0), at(30.0, 40.0), at(-50.0, 40.0)] {
+        let s = screen(&mut h, q);
+        click(&mut h, s);
+    }
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(h.state().tool, wavestorm_ui::diagram::Tool::Select, "{}", h.state().status());
+    let shapes = drawn_shapes(&mut h, id);
+    assert_eq!(shapes.len(), 2);
+    assert_eq!(shapes[1].len(), 4, "straight edge, no kink through the roof: {:?}", shapes[1]);
+}
+
+/// After soils split a drawn sub-area into rows sharing its drawing, its points can still be
+/// dragged (all rows follow), and a point dropped on its neighbour merges with it.
+#[test]
+fn split_sub_areas_stay_editable_and_dropped_points_merge() {
+    let (mut h, u, id) = kinked_site();
+    let at = |e: f64, n: f64| site_point(&u, e, n);
+    // A drawn sub-area straddling the soil line, split by Apply.
+    h.state_mut().doc().edit("Woods", |p| {
+        if let NodeData::Subcat(sc) = &mut p.node_mut(id).unwrap().data {
+            let mut a = SubArea::new(0.0, 55.0, "Woods, Good, HSG B");
+            a.outline = Some(vec![at(-20.0, -20.0), at(60.0, -20.0), at(60.0, 20.0), at(10.0, 20.0), at(-20.0, 20.0)]);
+            sc.areas.push(a);
+        }
+        wavestorm_core::soils::apply(p).unwrap();
+    });
+    let shapes = drawn_shapes(&mut h, id);
+    assert_eq!(shapes.len(), 2, "two rows share the drawing");
+    assert_eq!(shapes[0], shapes[1]);
+    let label = h.state_mut().doc().project.node(id).unwrap().label();
+    script(h.state_mut(), &format!("select:{label}"));
+    // The recalculation reopens the Messages window; keep the canvas clear.
+    h.run_steps(2);
+    h.state_mut().doc().windows.clear();
+    h.run_steps(2);
+    // Drag the corner at (10, 20) onto its neighbour at (-20, 20).
+    let from = screen(&mut h, at(10.0, 20.0));
+    let to = screen(&mut h, at(-20.0, 20.0));
+    drag(&mut h, from, to);
+    let shapes = drawn_shapes(&mut h, id);
+    assert_eq!(shapes[0], shapes[1], "the rows still share one drawing");
+    assert_eq!(shapes[0].len(), 4, "the dropped point merged: {:?}  status {}", shapes[0], h.state().status());
+}
+
+fn drag(h: &mut egui_kittest::Harness<'static, WaveStormApp>, from: Pos2, to: Pos2) {
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.step();
+    h.input_mut().events.push(Event::PointerButton {
+        pos: from,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    h.step();
+    for k in 1..=10 {
+        let p = from + (to - from) * (k as f32 / 10.0);
+        h.input_mut().events.push(Event::PointerMoved(p));
+        h.step();
+    }
+    h.input_mut().events.push(Event::PointerButton {
+        pos: to,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.run_steps(3);
+}
+
+fn screen(h: &mut egui_kittest::Harness<'static, WaveStormApp>, q: [f64; 2]) -> Pos2 {
+    h.state_mut().world_to_screen(Pos2::new(q[0] as f32, q[1] as f32))
+}
+
+/// The diagram point `e` ft east and `n` ft north of CENTER.
+fn site_point(u: &wavestorm_core::project::Underlay, e: f64, n: f64) -> [f64; 2] {
+    geo::from_lon_lat(u, geo::offset_lon_lat(CENTER, [e, n])).unwrap()
+}
+
+/// The drawn sub-area outlines of subcatchment `id`, by Area row.
+fn drawn_shapes(h: &mut egui_kittest::Harness<'static, WaveStormApp>, id: NodeId) -> Vec<Vec<[f64; 2]>> {
+    match &h.state_mut().doc().project.node(id).unwrap().data {
+        NodeData::Subcat(sc) => sc.areas.iter().filter_map(|a| a.outline.clone()).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A georeferenced site (1 ft per unit) with two soils meeting along a kinked line from
+/// (20,-80) to (40,0) to (20,80) (ft east, north), and a 180 x 140 ft subcatchment over it,
+/// zoomed to three pixels per foot with nothing covering the canvas.
+fn kinked_site() -> (egui_kittest::Harness<'static, WaveStormApp>, wavestorm_core::project::Underlay, NodeId) {
     use wavestorm_core::project::Underlay;
     use wavestorm_core::soils::{MapUnit, SoilMap, SoilPolygon};
     let mut h = harness();
@@ -263,7 +411,6 @@ fn sub_area_snaps_to_and_follows_a_soil_boundary() {
         p.node_mut(id).unwrap().outline =
             Some(vec![at(-90.0, -70.0), at(90.0, -70.0), at(90.0, 70.0), at(-90.0, 70.0)]);
     });
-    let label = h.state_mut().doc().project.node(id).unwrap().label();
     h.run_steps(3);
     // Zoom so a foot is three pixels and the site is in view.
     h.state_mut().doc().view.zoom = 3.0;
@@ -271,27 +418,8 @@ fn sub_area_snaps_to_and_follows_a_soil_boundary() {
     h.state_mut().doc().fit_pending = false;
     // Nothing covers the canvas (the Messages window opens after calculating).
     h.state_mut().doc().windows.clear();
-    script(h.state_mut(), &format!("subarea:{label}"));
     h.run_steps(2);
-    let screen = |h: &mut egui_kittest::Harness<'static, WaveStormApp>, q: [f64; 2]| {
-        h.state_mut().world_to_screen(Pos2::new(q[0] as f32, q[1] as f32))
-    };
-    // A corner west of the line, then two points near (not on) the boundary, either side of
-    // the kink: they snap onto it and the edge between them follows it through (40, 0).
-    for q in [at(-50.0, -40.0), at(30.5, -40.0), at(30.5, 40.0), at(-50.0, 40.0)] {
-        let s = screen(&mut h, q);
-        click(&mut h, s);
-    }
-    h.key_press(egui::Key::Enter);
-    h.run_steps(3);
-    let NodeData::Subcat(sc) = &h.state_mut().doc().project.node(id).unwrap().data.clone() else { unreachable!() };
-    let drawn = sc.areas.iter().find_map(|a| a.outline.clone()).expect("sub-area drawn");
-    assert_eq!(drawn.len(), 5, "{drawn:?}");
-    let kink = at(40.0, 0.0);
-    assert!(drawn.iter().any(|q| (q[0] - kink[0]).hypot(q[1] - kink[1]) < 0.01), "{drawn:?}");
-    // The clicks half a foot off the line were snapped onto it.
-    let snapped = at(30.0, -40.0);
-    assert!(drawn.iter().any(|q| (q[0] - snapped[0]).hypot(q[1] - snapped[1]) < 0.2), "{drawn:?}");
+    (h, u, id)
 }
 
 /// The real services (address lookup, NAIP image, Soil Data Access), through the same request
@@ -337,4 +465,13 @@ fn live_services() {
     let c = wavestorm_core::soils::center(&aoi);
     let covered: f64 = map.polygons.iter().map(|p| wavestorm_core::soils::lon_lat_area(&p.rings[0], c)).sum();
     assert!((covered / 360_000.0 - 1.0).abs() < 0.02, "{covered}");
+
+    // NOAA Atlas 14 depths for the site read as event depths and as an IDF curve.
+    net.start(&ctx, Fetch::Noaa { lon_lat: place });
+    let text = String::from_utf8_lossy(&wait(&net).result.expect("NOAA reply")).into_owned();
+    let t = wavestorm_core::noaa::parse_pfds_csv(&text).expect("NOAA table");
+    assert!(t.rows.iter().any(|r| r.hours == 24.0) && t.aris.contains(&100.0));
+    let idf = wavestorm_core::rainlib::parse_idf(&text).expect("as IDF");
+    let i = idf.events.iter().find(|e| e.name == "10-Year").unwrap().intensity(60.0).unwrap();
+    assert!(i > 1.0 && i < 4.0, "{i}");
 }

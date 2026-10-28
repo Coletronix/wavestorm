@@ -68,8 +68,10 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 
 **Rainfall data**
 - Rainfall Event Lookup from county rainfall tables, NOAA Atlas 14 CSV downloads and IDF files.
+  NOAA for Site downloads the NOAA Atlas 14 estimates for a placed background directly
+  (desktop).
 - A rainfall library folder of storm distribution (`.hcr`), unit hydrograph (`.huh`) and IDF
-  files. Storms a project uses are copied into it, so project files stay self-contained.
+  (`.hci`) files. Storms a project uses are copied into it, so project files stay self-contained.
 
 **Working on the diagram**
 - Drag-and-drop nodes, multiple projects in tabs, undo history, notes and pop-up field tips
@@ -232,7 +234,7 @@ The built-in help (**Help > Contents**) covers the dialogs and the calculation m
 | `.hcr` | ✓ | ✓ | Rainfall distribution |
 | `.huh` | ✓ | ✓ | Dimensionless unit hydrograph |
 | `*-Rain.txt` | ✓ | | County rainfall tables for Rainfall Event Lookup |
-| `.idf` | ✓ | ✓ | **Provisional**: our own layout, not yet verified against real `.idf` files |
+| `.hci` | ✓ | ✓ | IDF curves: intensity or depth tables, coefficient equations, or a NOAA Atlas 14 CSV saved as `.hci` (current and pre-2012 layouts). Checked against published sample files. WAVEStorm's earlier `.idf` files are still read. |
 | NOAA Atlas 14 `.csv` | ✓ | | Precipitation frequency downloads for event lookup |
 | TR-20 input deck | ✓ | | Legacy card-format decks (Project > Import). Volumes match TR-20 output; reach-routed peaks can differ. |
 | `.csv` | ✓ | ✓ | Sub-areas, hydrographs, rating and pump tables |
@@ -268,9 +270,9 @@ Key calibration choices, each covered by tests:
 - Stor-Ind+Trans reaches are level-pool routed, then translated by length over the maximum
   velocity.
 
-Known limitations: there is no rock-fill outlet yet, metric `.hcp` files are not read, the
-`.idf` layout is unverified, and Stor-Ind+Trans attenuation differed from the reference
-application by about 2 % against 4 % on one published example.
+Known limitations: there is no rock-fill outlet yet, metric `.hcp` files are not read, and
+Stor-Ind+Trans attenuation differed from the reference application by about 2 % against 4 %
+on one published example.
 
 WAVEStorm is engineering software provided without warranty. Check its results
 independently before relying on them for design.

@@ -16,6 +16,8 @@ pub enum Fetch {
     Map { source: MapSource, center: LonLat, width_ft: f64, height_ft: f64, place: String },
     /// Soil map units clipped to an area of interest (longitude/latitude).
     Soils { aoi: Vec<LonLat>, drained: bool },
+    /// NOAA Atlas 14 precipitation frequency depths at a point.
+    Noaa { lon_lat: LonLat },
 }
 
 impl Fetch {
@@ -25,6 +27,7 @@ impl Fetch {
             Fetch::Geocode(_) => "Looking up the address...",
             Fetch::Map { .. } => "Downloading the map image from USGS The National Map...",
             Fetch::Soils { .. } => "Asking NRCS Soil Data Access for the soils of the area of interest...",
+            Fetch::Noaa { .. } => "Asking NOAA for the site's precipitation frequency estimates...",
         }
     }
 }
@@ -98,6 +101,15 @@ fn build(fetch: &Fetch) -> Result<ehttp::Request, String> {
             // server rejects a request with two.
             ehttp::Request::post(soils::SDA_URL, body.into_bytes())
                 .with_headers(ehttp::Headers::new(&[("Accept", "*/*"), ("Content-Type", "application/json")]))
+        }
+        Fetch::Noaa { lon_lat } => {
+            // The NOAA server does not allow web pages to read its answers (no CORS header).
+            if cfg!(target_arch = "wasm32") {
+                return Err("NOAA's server cannot be reached from the browser version. Download the CSV from the \
+                            Precipitation Frequency Data Server (hdsc.nws.noaa.gov) and use Load File..."
+                    .into());
+            }
+            ehttp::Request::get(wavestorm_core::noaa::pfds_url(lon_lat[1], lon_lat[0], true))
         }
     };
     // Nominatim's usage policy asks applications to identify themselves (browsers send their

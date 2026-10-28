@@ -95,6 +95,9 @@ pub struct Interaction {
     pub rubber: Option<(Pos2, Pos2)>,
     pub hover_world: Option<Pos2>,
     pub hover_node: Option<NodeId>,
+    /// While drawing a sub-area: the number of points after each click (a click that follows a
+    /// soil boundary adds several), so Backspace removes a whole click.
+    pub clicks: Vec<usize>,
 }
 
 pub enum Drag {
@@ -446,44 +449,64 @@ pub fn show(
                     };
                     wp(drawing::clamp_inside(pt(s), &outline))
                 });
-                // Two points on the same soil boundary: the edge between them follows it.
+                // Two points on the same soil boundary: the edge between them follows it, the
+                // shortest way that stays inside the outline, clear of the other sub-areas and
+                // of the line drawn so far (otherwise the edge stays straight).
                 let tol = 1.0 / doc.view.zoom as f64;
-                let follow = |a: Pos2, b: Pos2| -> Vec<Pos2> {
+                let others = subarea_outlines(doc, id, None);
+                let others: Vec<&[Pt]> = others.iter().map(Vec::as_slice).collect();
+                let follow = |a: Pos2, b: Pos2, drawn: &[Pos2]| -> Vec<Pos2> {
                     let Some(rings) = &soils else { return Vec::new() };
-                    let inside =
-                        |q: &Pt| drawing::point_in_polygon(*q, &outline) || drawing::on_boundary(*q, &outline, tol);
+                    let drawn: Vec<Pt> = drawn.iter().map(|q| pt(*q)).collect();
                     rings
                         .iter()
                         .filter_map(|r| drawing::follow_ring(r, pt(a), pt(b), tol))
-                        .filter(|path| path.iter().all(inside))
-                        .min_by_key(|path| path.len())
-                        .map(|path| path.into_iter().map(wp).collect())
+                        .filter(|arc| !arc.is_empty())
+                        .map(|arc| {
+                            let chain: Vec<Pt> =
+                                std::iter::once(pt(a)).chain(arc.iter().copied()).chain([pt(b)]).collect();
+                            (drawing::polyline_length(&chain), arc, chain)
+                        })
+                        .filter(|(_, _, chain)| drawing::path_clear(chain, &outline, &others, &drawn))
+                        .min_by(|x, y| x.0.total_cmp(&y.0))
+                        .map(|(_, arc, _)| arc.into_iter().map(wp).collect())
                         .unwrap_or_default()
                 };
+                if points.is_empty() {
+                    it.clicks.clear();
+                }
                 let before = points.len();
                 let mut close = closing(ui, doc, canvas, &resp, points, cursor);
-                if points.len() == before + 1 && before >= 1 {
-                    let arc = follow(points[before - 1], points[before]);
-                    for (k, q) in arc.into_iter().enumerate() {
-                        points.insert(before + k, q);
+                if points.len() == before + 1 {
+                    if before >= 1 {
+                        // The drawn line so far, without the new point's own leg.
+                        let arc = follow(points[before - 1], points[before], &points[..before]);
+                        for (k, q) in arc.into_iter().enumerate() {
+                            points.insert(before + k, q);
+                        }
                     }
+                    it.clicks.push(points.len());
+                } else if points.len() + 1 == before {
+                    // Backspace: remove the whole last click (a followed run, not just its end).
+                    it.clicks.retain(|c| *c <= points.len());
+                    points.truncate(it.clicks.last().copied().unwrap_or(0));
                 }
-                // Closing back to the first point can follow a boundary too.
-                let closing_arc = match (points.last(), points.first()) {
-                    (Some(l), Some(f)) if close && points.len() >= 3 => follow(*l, *f),
-                    _ => Vec::new(),
-                };
                 if close {
-                    let shape: Vec<Pt> = points.iter().chain(&closing_arc).map(|q| pt(*q)).collect();
-                    let others = subarea_outlines(doc, id, None);
-                    let others: Vec<&[Pt]> = others.iter().map(Vec::as_slice).collect();
-                    if let Some(problem) = drawing::subarea_problem(&shape, &outline, &others) {
+                    let shape: Vec<Pt> = points.iter().map(|q| pt(*q)).collect();
+                    // Closing back to the first point can follow a boundary too, when the result
+                    // is a valid sub-area; otherwise the straight closing edge is used.
+                    let arc = match (points.last(), points.first()) {
+                        (Some(l), Some(f)) => follow(*l, *f, points),
+                        _ => Vec::new(),
+                    };
+                    let followed: Vec<Pt> = shape.iter().copied().chain(arc.iter().map(|q| pt(*q))).collect();
+                    if !arc.is_empty() && drawing::subarea_problem(&followed, &outline, &others).is_none() {
+                        points.extend(arc);
+                    } else if let Some(problem) = drawing::subarea_problem(&shape, &outline, &others) {
                         actions.push(CanvasAction::Message(format!(
-                            "{problem} Adjust the points (Backspace removes the last) or press Esc."
+                            "{problem} Adjust the points (Backspace removes the last click) or press Esc."
                         )));
                         close = false;
-                    } else {
-                        points.extend(closing_arc);
                     }
                 }
                 let next = match doc.project.node(id).map(|n| &n.data) {
@@ -493,7 +516,7 @@ pub fn show(
                 // The rubber band to the pointer shows the boundary it would follow.
                 let mut shown = points.clone();
                 if !close && let (Some(l), Some(c)) = (points.last(), cursor) {
-                    shown.extend(follow(*l, c));
+                    shown.extend(follow(*l, c, points));
                 }
                 draw_polyline(
                     &painter,
@@ -573,13 +596,18 @@ pub fn subarea_color(i: usize, t: &Tokens) -> Color32 {
 /// The drawn sub-area outlines of subcatchment `id`, except row `skip`.
 fn subarea_outlines(doc: &Doc, id: NodeId, skip: Option<usize>) -> Vec<Vec<Pt>> {
     match doc.project.node(id).map(|n| &n.data) {
-        Some(NodeData::Subcat(sc)) => sc
-            .areas
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| Some(*i) != skip)
-            .filter_map(|(_, a)| a.outline.clone())
-            .collect(),
+        Some(NodeData::Subcat(sc)) => {
+            // Rows split by soil group share a drawing: each drawing counts once, and skipping a
+            // row skips its twins too.
+            let skipped = skip.and_then(|i| sc.areas.get(i)).and_then(|a| a.outline.as_ref());
+            let mut out: Vec<Vec<Pt>> = Vec::new();
+            for o in sc.areas.iter().filter_map(|a| a.outline.as_ref()) {
+                if Some(o) != skipped && !out.contains(o) {
+                    out.push(o.clone());
+                }
+            }
+            out
+        }
         _ => Vec::new(),
     }
 }
@@ -596,14 +624,31 @@ pub fn shape_points(n: &wavestorm_core::project::Node, s: ShapeRef) -> Option<&V
     }
 }
 
-fn shape_points_mut(n: &mut wavestorm_core::project::Node, s: ShapeRef) -> Option<&mut Vec<Pt>> {
+/// Applies `f` to the points of one of a node's shapes and returns its result. A sub-area split
+/// by soil group has the same drawing on several Area rows: they all change together, so the
+/// copies never drift apart.
+fn edit_shape<R>(
+    n: &mut wavestorm_core::project::Node,
+    s: ShapeRef,
+    mut f: impl FnMut(&mut Vec<Pt>) -> R,
+) -> Option<R> {
     match s {
-        ShapeRef::Outline => n.outline.as_mut(),
-        ShapeRef::TcPath => n.tc_path.as_mut(),
-        ShapeRef::SubArea(i) => match &mut n.data {
-            NodeData::Subcat(sc) => sc.areas.get_mut(i).and_then(|a| a.outline.as_mut()),
-            _ => None,
-        },
+        ShapeRef::Outline => n.outline.as_mut().map(f),
+        ShapeRef::TcPath => n.tc_path.as_mut().map(f),
+        ShapeRef::SubArea(i) => {
+            let NodeData::Subcat(sc) = &mut n.data else { return None };
+            let shared = sc.areas.get(i)?.outline.clone()?;
+            let mut out = None;
+            for (j, a) in sc.areas.iter_mut().enumerate() {
+                if let Some(o) = a.outline.as_mut().filter(|o| **o == shared) {
+                    let r = f(o);
+                    if j == i {
+                        out = Some(r);
+                    }
+                }
+            }
+            out
+        }
     }
 }
 
@@ -1449,14 +1494,15 @@ fn draw_polyline(
     }
     if closed_preview && s.len() >= 3 {
         let fill = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 40);
-        let c = polygon_centroid(&s);
+        // Ear-clipped like the finished fills: a fan from the centre overlaps itself (and
+        // spills outside) on concave shapes.
         let mut mesh = egui::Mesh::default();
-        mesh.colored_vertex(c, fill);
         for q in &s {
             mesh.colored_vertex(*q, fill);
         }
-        for i in 0..s.len() as u32 {
-            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % s.len() as u32);
+        let poly: Vec<Pt> = s.iter().map(|q| pt(*q)).collect();
+        for [a, b, c] in drawing::triangulate(&poly) {
+            mesh.add_triangle(a as u32, b as u32, c as u32);
         }
         p.add(Shape::mesh(mesh));
         p.add(Shape::closed_line(s.clone(), Stroke::new(2.0, color)));
@@ -1544,11 +1590,53 @@ fn draw_shape_handles(p: &egui::Painter, doc: &Doc, canvas: Rect, t: &Tokens) {
 pub fn drawings_problem(n: &wavestorm_core::project::Node) -> Option<&'static str> {
     let NodeData::Subcat(sc) = &n.data else { return None };
     let outline = n.outline.as_deref()?;
-    let shapes: Vec<&[Pt]> = sc.areas.iter().filter_map(|a| a.outline.as_deref()).collect();
+    // Each drawing once: rows split by soil group share theirs.
+    let mut shapes: Vec<&[Pt]> = Vec::new();
+    for s in sc.areas.iter().filter_map(|a| a.outline.as_deref()) {
+        if !shapes.contains(&s) {
+            shapes.push(s);
+        }
+    }
     (0..shapes.len()).find_map(|i| {
         let others: Vec<&[Pt]> = shapes.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, s)| *s).collect();
         drawing::subarea_problem(shapes[i], outline, &others)
     })
+}
+
+/// A point dropped on (or within 3 pixels of) the point before or after it in its shape is
+/// the same corner twice: the dragged one is removed, as long as the shape keeps enough points.
+fn merge_dropped_point(doc: &mut Doc, canvas: Rect, node: NodeId, shape: ShapeRef, index: usize) -> bool {
+    let Some(pts) = doc.project.node(node).and_then(|n| shape_points(n, shape)).cloned() else { return false };
+    let n = pts.len();
+    let (min, closed) = if shape == ShapeRef::TcPath { (2, false) } else { (3, true) };
+    if n <= min || index >= n {
+        return false;
+    }
+    let s = |q: Pt| to_screen(&doc.view, canvas, wp(q));
+    let at = s(pts[index]);
+    let mut neighbours = Vec::new();
+    if index > 0 {
+        neighbours.push(index - 1);
+    } else if closed {
+        neighbours.push(n - 1);
+    }
+    if index + 1 < n {
+        neighbours.push(index + 1);
+    } else if closed {
+        neighbours.push(0);
+    }
+    if !neighbours.iter().any(|j| (s(pts[*j]) - at).length() <= 3.0) {
+        return false;
+    }
+    let Some(nd) = doc.project.node_mut(node) else { return false };
+    if shape == ShapeRef::TcPath {
+        drawing::remove_path_point(nd, index)
+    } else {
+        edit_shape(nd, shape, |p| {
+            p.remove(index);
+        })
+        .is_some()
+    }
 }
 
 /// Settles an edit of a drawn shape: undoes it if a sub-area would leave the outline or
@@ -1621,8 +1709,8 @@ fn select_tool(
                     if let Some(nd) = doc.project.node_mut(n) {
                         if s == ShapeRef::TcPath {
                             drawing::insert_path_point(nd, edge, pt(start_world));
-                        } else if let Some(pts) = shape_points_mut(nd, s) {
-                            pts.insert(edge + 1, pt(start_world));
+                        } else {
+                            edit_shape(nd, s, |pts| pts.insert(edge + 1, pt(start_world)));
                         }
                     }
                     (n, s, edge + 1)
@@ -1710,9 +1798,11 @@ fn select_tool(
                 };
                 let fpu = drawing::feet_per_unit(&doc.project);
                 if let Some(n) = doc.project.node_mut(node) {
-                    if let Some(q) = shape_points_mut(n, shape).and_then(|pts| pts.get_mut(index)) {
-                        *q = placed;
-                    }
+                    edit_shape(n, shape, |pts| {
+                        if let Some(q) = pts.get_mut(index) {
+                            *q = placed;
+                        }
+                    });
                     // Live feedback for drawn sub-areas and Tc lengths; outlines settle on release.
                     if shape != ShapeRef::Outline {
                         drawing::sync_node(n, fpu);
@@ -1739,7 +1829,13 @@ fn select_tool(
     // Drag end.
     if resp.drag_stopped() || (it.drag.is_some() && !ui.input(|i| i.pointer.any_down())) {
         match it.drag.take() {
-            Some(Drag::Vertex { node, shape, before, .. }) => finish_shape_edit(doc, node, shape, before, actions),
+            Some(Drag::Vertex { node, shape, before, index }) => {
+                let merged = merge_dropped_point(doc, canvas, node, shape, index);
+                finish_shape_edit(doc, node, shape, before, actions);
+                if merged {
+                    actions.push(CanvasAction::Message("Points dropped on each other were merged into one".into()));
+                }
+            }
             Some(Drag::Nodes { before, cloned, .. }) => {
                 if doc.project.diagram.snap_to_grid {
                     let sel = doc.selection.clone();
@@ -1818,13 +1914,14 @@ fn select_tool(
         let before = doc.project.clone();
         let removed = doc.project.node_mut(node).is_some_and(|n| match shape {
             ShapeRef::TcPath => drawing::remove_path_point(n, index),
-            _ => shape_points_mut(n, shape).is_some_and(|pts| {
+            _ => edit_shape(n, shape, |pts| {
                 let ok = pts.len() > 3 && index < pts.len();
                 if ok {
                     pts.remove(index);
                 }
                 ok
-            }),
+            })
+            .unwrap_or(false),
         });
         if removed {
             finish_shape_edit(doc, node, shape, before, actions);

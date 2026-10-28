@@ -133,6 +133,11 @@ impl WaveStormApp {
         }
     }
 
+    /// The status line text (for tests and automation).
+    pub fn status(&self) -> &str {
+        &self.status
+    }
+
     pub fn doc(&mut self) -> &mut Doc {
         if self.docs.is_empty() {
             self.docs.push(Doc::new(Project::default(), None));
@@ -182,6 +187,21 @@ impl WaveStormApp {
             net::Fetch::Map { source, center, width_ft, height_ft, place } => {
                 self.load_map(*source, *center, *width_ft, *height_ft, place, bytes)
             }
+            net::Fetch::Noaa { lon_lat } => {
+                let name = format!("NOAA Atlas 14 ({}).csv", wavestorm_core::geo::format_lat_lon(*lon_lat));
+                let doc = self.doc();
+                if !doc.windows.iter().any(|w| matches!(w, Window::EventLookup(_))) {
+                    let s = dialogs::storm::EventLookup::new(doc);
+                    doc.windows.push(Window::EventLookup(s));
+                }
+                for w in &mut doc.windows {
+                    if let Window::EventLookup(s) = w {
+                        s.load_file(&name, &bytes)?;
+                    }
+                }
+                self.status = format!("Loaded {name}");
+                Ok(())
+            }
             net::Fetch::Soils { aoi, drained } => {
                 let map = wavestorm_core::soils::parse_sda(
                     &String::from_utf8_lossy(&bytes),
@@ -209,8 +229,11 @@ impl WaveStormApp {
             // Show the problem where the request was made, too.
             for w in &mut self.doc().windows {
                 match w {
-                    Window::Locate(s) if !matches!(reply.fetch, net::Fetch::Soils { .. }) => s.message = e.clone(),
+                    Window::Locate(s) if matches!(reply.fetch, net::Fetch::Geocode(_) | net::Fetch::Map { .. }) => {
+                        s.message = e.clone()
+                    }
                     Window::Soils(s) if matches!(reply.fetch, net::Fetch::Soils { .. }) => s.message = e.clone(),
+                    Window::EventLookup(s) if matches!(reply.fetch, net::Fetch::Noaa { .. }) => s.set_message(e),
                     _ => {}
                 }
             }

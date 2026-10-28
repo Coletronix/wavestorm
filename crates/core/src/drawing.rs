@@ -371,10 +371,69 @@ pub fn tc_leg_flows(n: &Node) -> Vec<Option<crate::tc::PathFlow>> {
         .collect()
 }
 
+/// Whether a closed polygon's edges cross or touch only where neighbouring edges meet (no
+/// self-intersection), so its area and fill are well defined.
+pub fn polygon_is_simple(p: &[Pt]) -> bool {
+    let tol = tolerance(p);
+    // A repeated point (two corners dragged together) is one corner.
+    let mut p: Vec<Pt> = p.to_vec();
+    p.dedup_by(|a, b| dist(*a, *b) <= tol);
+    while p.len() > 1 && p.first().zip(p.last()).is_some_and(|(a, b)| dist(*a, *b) <= tol) {
+        p.pop();
+    }
+    let n = p.len();
+    if n < 3 {
+        return false;
+    }
+    let e: Vec<(Pt, Pt)> = edges(&p).collect();
+    for i in 0..n {
+        for j in i + 1..n {
+            // Neighbouring edges share a corner.
+            if j == i + 1 || (i == 0 && j == n - 1) {
+                continue;
+            }
+            let ((a, b), (c, d)) = (e[i], e[j]);
+            if proper_cross(a, b, c, d, tol)
+                || dist(nearest_on_segment(a, c, d), a) <= tol
+                || dist(nearest_on_segment(c, a, b), c) <= tol
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Whether the polyline `path` (being added to a shape that is drawn so far as `drawn`) stays
+/// inside `outline`, clear of the shapes `others` (it may run along their edges) and does not
+/// cross the drawn polyline. Used before letting a drawn edge follow a boundary.
+pub fn path_clear(path: &[Pt], outline: &[Pt], others: &[&[Pt]], drawn: &[Pt]) -> bool {
+    let tol = tolerance(outline);
+    let segs: Vec<(Pt, Pt)> = path.windows(2).map(|w| (w[0], w[1])).collect();
+    let samples =
+        segs.iter().flat_map(|(a, b)| [0.25, 0.5, 0.75].map(|f| [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]));
+    let probes: Vec<Pt> = path.iter().copied().chain(samples).collect();
+    if !probes.iter().all(|q| inside_or_on(*q, outline, tol)) {
+        return false;
+    }
+    if others.iter().any(|o| probes.iter().any(|q| strictly_inside(*q, o, tol))) {
+        return false;
+    }
+    let mut walls: Vec<(Pt, Pt)> = edges(outline).collect();
+    for o in others {
+        walls.extend(edges(o));
+    }
+    walls.extend(drawn.windows(2).map(|w| (w[0], w[1])));
+    segs.iter().all(|(a, b)| !walls.iter().any(|(c, d)| proper_cross(*a, *b, *c, *d, tol)))
+}
+
 /// Why a drawn sub-area cannot be used, if it cannot.
 pub fn subarea_problem(shape: &[Pt], outline: &[Pt], others: &[&[Pt]]) -> Option<&'static str> {
     if shape.len() < 3 || polygon_area(shape) <= 0.0 {
         return Some("A sub-area needs at least three points around some area.");
+    }
+    if !polygon_is_simple(shape) {
+        return Some("A sub-area's edges cannot cross or touch each other.");
     }
     if !polygon_within(shape, outline) {
         return Some("A sub-area must lie inside its subcatchment's outline.");
@@ -787,6 +846,32 @@ mod tests {
             let sum: f64 = tris.iter().map(|t| polygon_area(&[poly[t[0]], poly[t[1]], poly[t[2]]])).sum();
             assert!((sum - polygon_area(&poly)).abs() < 1e-9, "{sum}");
         }
+    }
+
+    #[test]
+    fn simple_polygons_and_clear_paths() {
+        assert!(polygon_is_simple(&rect(0.0, 0.0, 10.0, 10.0)));
+        // A bow tie crosses itself; a pinched shape touches itself.
+        assert!(!polygon_is_simple(&[[0.0, 0.0], [10.0, 10.0], [10.0, 0.0], [0.0, 10.0]]));
+        assert!(!polygon_is_simple(&[[0.0, 0.0], [10.0, 0.0], [5.0, 5.0], [10.0, 10.0], [0.0, 10.0], [5.0, 5.0]]));
+        // A repeated corner is still simple.
+        assert!(polygon_is_simple(&[[0.0, 0.0], [10.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]));
+        assert_eq!(
+            subarea_problem(&[[1.0, 1.0], [9.0, 9.0], [9.0, 1.0], [1.0, 5.0]], &rect(0.0, 0.0, 10.0, 10.0), &[]),
+            Some("A sub-area's edges cannot cross or touch each other.")
+        );
+
+        let outline = rect(0.0, 0.0, 100.0, 100.0);
+        let roof = rect(40.0, 40.0, 60.0, 60.0);
+        // Along the roof's edge is fine; through it is not.
+        assert!(path_clear(&[[40.0, 30.0], [40.0, 40.0], [40.0, 60.0], [40.0, 70.0]], &outline, &[&roof], &[]));
+        assert!(!path_clear(&[[30.0, 50.0], [50.0, 50.0], [70.0, 50.0]], &outline, &[&roof], &[]));
+        // Outside the outline is not.
+        assert!(!path_clear(&[[90.0, 50.0], [110.0, 50.0], [90.0, 60.0]], &outline, &[], &[]));
+        // Nor across the line drawn so far.
+        let drawn = [[10.0, 10.0], [10.0, 90.0]];
+        assert!(!path_clear(&[[5.0, 50.0], [20.0, 50.0]], &outline, &[], &drawn));
+        assert!(path_clear(&[[10.0, 90.0], [30.0, 90.0]], &outline, &[], &drawn));
     }
 
     #[test]

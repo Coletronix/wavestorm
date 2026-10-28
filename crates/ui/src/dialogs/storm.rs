@@ -234,14 +234,14 @@ pub fn idf(
                     }
                 });
                 if widgets::button(ui, "Save File...", 100.0)
-                    .on_hover_text("Save this curve as an IDF (.idf) file")
+                    .on_hover_text("Save this curve as an IDF (.hci) file")
                     .clicked()
                 {
                     let file = wavestorm_core::rainlib::IdfFile::from_curve(&st.draft);
                     actions.push(crate::windows::WindowAction::SaveFile {
-                        name: format!("{}.idf", st.draft.name),
+                        name: format!("{}.hci", st.draft.name),
                         bytes: wavestorm_core::rainlib::write_idf(&file).into_bytes(),
-                        ext: "idf",
+                        ext: "hci",
                     });
                 }
             });

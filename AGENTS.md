@@ -21,7 +21,7 @@ Read this file first. Keep it current: it is the hand-off between sessions.
    published in the reference application's public sample reports, under neutral test names.
    Exception (user decision, 2026-10-23): for interoperability we read and write the
    reference application's project (`.hcp`), rainfall (`.hcr`), unit-hydrograph (`.huh`),
-   IDF (`.idf`) and county rainfall-table (`*-Rain.txt`) text formats. Their data files are
+   IDF (`.hci`) and county rainfall-table (`*-Rain.txt`) text formats. Their data files are
    loaded at runtime from files the user supplies; never commit or bundle them. Tests use small
    fixtures written by us, or the gitignored samples in `reference_images/expert_reference/`
    and skip when those are absent. The `.hcp` header section carries the product name: build
@@ -58,7 +58,7 @@ gitignored.
 |---|---|
 | `hydrograph` | `Hydrograph` (t0, dt, cfs), parabolic peak interpolation (TR-20 convention), volume, centroid |
 | `rainfall`, `rainfall_data` | NRCS Type I/IA/II/III 24-hr mass curves (WinTR-55 v2, smoothed by monotone cubic), 6/12-hr trims, custom/Chicago storms, events, AMC, back-to-back storms |
-| `rainlib` | Rainfall library files: `.hcr`/`.huh`/`.idf` parsers and writers, `*-Rain.txt` county tables, storm-code mapping |
+| `rainlib` | Rainfall library files: `.hcr`/`.huh`/`.hci` (IDF) parsers and writers, `*-Rain.txt` county tables, storm-code mapping |
 | `uh` | NRCS dimensionless UH (NEH 630 Table 16-1), gamma UHs for any peak factor |
 | `runoff` | SCS runoff equation, TR-20 unit-hydrograph runoff, SBUH, Rational |
 | `cn` | TR-55 Table 2-2 lookup, composite CN, unconnected-impervious adjustment |
@@ -133,10 +133,21 @@ Keep this section updated at the end of every session.
   timedepth/timeincr, `curve=` multi-storm files, units, inline expressions), `.huh` unit
   hydrographs (peak ordinate = t/Tp 1), `*-Rain.txt` county tables (quoted CSV, several storm codes
   per row, `storm_for_code` maps "NOAA_C", "MSE3", "N10_D"... to library storm names) and
-  `.idf` files. The `.idf` text layout is OUR ASSUMPTION (no sample): `name/comment/timeunits/
-  depthunits`, then per event `curve=`, optional `factor=`, `coef= a b c` (i = a/(b+t)^c) or
-  `idf= t1 i1 t2 i2 ...` points (log-log interpolation); a NOAA Atlas 14 depth CSV is also
-  accepted. Writers: `write_hcr/huh/idf`. Library folder pref (Settings > General, desktop),
+  IDF files. Resolved 2026-10-28 (user request): the reference application's IDF files are
+  `.hci`, NOT `.idf`; its public IDF.txt spec and ~19 public sample `.hci` files (gitignored
+  copies in `reference_images/research/idf/`, read by
+  `rainlib::tests::published_hci_samples_when_present`) define the layout `rainlib::parse_idf`
+  follows: NAME/COMMENT/DEPTHUNITS(INCHES|MM)/TIMEUNITS (intensity time base, default
+  HOURS)/DURATUNITS (default MINUTES), one DURATION line (expressions like `24*60`), events
+  EVENT/Cf/INTEN (`2x` = first INTEN line × 2)/DEPTH/coef1/coef2/coef3; coefficient events
+  are sampled (64 log points) over the DURATION range and held beyond it, as the spec says.
+  Real files contain `event==25-Year`, tabs and trailing spaces. A NOAA PFDS CSV saved as
+  `.hci` is also an IDF file (current layout and the pre-2012 transposed one,
+  `noaa::parse_pfds`). Our earlier provisional `.idf` layout is still read
+  (`parse_legacy_idf`); `write_idf` writes `.hci`. NOAA PFDS for a point:
+  `noaa::pfds_url` (`cgi-bin/new/fe_text_mean.csv`; no CORS, desktop only), "NOAA for Site" in
+  Event Lookup (`Fetch::Noaa`, centre of the georeferenced background). Writers:
+  `write_hcr/huh/idf`. Library folder pref (Settings > General, desktop),
   "Import Rainfall Files..." (desktop and web; web imports persist in localStorage up to 2.5 MB).
   Library storms/UHs used by events, the default UH or a subcatchment UH are copied into the
   project (`library::adopt`) so projects stay self-contained. The full-library test runs when
@@ -238,9 +249,8 @@ Keep this section updated at the end of every session.
   1. (done) Project Reports: reference tab set, All/Selected Nodes, Show Totals, button
      column; tables from `core::listings` (script `project-report:N`).
   2. (done) Storm / UH / IDF viewers (`reports/curves.rs`; IDF graph on a log duration axis,
-     `ChartSpec::log_x`) and the Event Depth(s) option (script `storms-events`). `.idf` support is
-     marked PROVISIONAL in the UI and in written files (`rainlib::IDF_PROVISIONAL`) until a
-     real `.idf` sample is available; remove the marker once the layout is verified.
+     `ChartSpec::log_x`) and the Event Depth(s) option (script `storms-events`). IDF files are
+     `.hci` (verified against public samples, 2026-10-28; see the rainfall library entry).
   3. (done) Calculation Settings Rainfall tab. (done) Resize tab: automatic sizing
      (`core::resize`) of round pipe reaches and round culverts marked `auto_size`, smallest
      listed diameter keeping the current event's peak depth ≤ 0.98 D (reach) or pond peak ≤
@@ -390,8 +400,17 @@ Keep this section updated at the end of every session.
   Sub-area drawing snaps to soil boundaries while the soils are shown (`Doc::soil_snap`, on by
   default, S key or Soils window): `diagram::snap_to_rings` after `snap_to_drawings`; a click
   whose previous point is on the same ring inserts the ring corners between them
-  (`drawing::follow_ring`, shorter way round; skipped if a corner falls outside the outline),
-  also for the closing edge; the rubber band previews it.
+  (`drawing::follow_ring`; among rings the geometrically shortest run that passes
+  `drawing::path_clear`: inside the outline, clear of other sub-areas, not crossing the line
+  so far), also for the closing edge (dropped if the shape would then be invalid, so Enter
+  always closes a valid shape); the rubber band previews it; Backspace removes a whole click
+  (`Interaction::clicks`). Fixed with it (user report 2026-10-28): split rows share one
+  drawing, so `edit_shape` applies point edits to every row with that drawing and
+  `drawings_problem`/`subarea_outlines` count each drawing once (twins used to "overlap",
+  undoing every edit); `subarea_problem` rejects self-crossing shapes
+  (`drawing::polygon_is_simple`); a dragged point dropped within 3 px of a neighbour merges
+  with it (`merge_dropped_point`); the drawing preview fill is ear-clipped (the centre fan
+  spilled outside concave shapes).
 - Tabs and the window title show the project's file name once it has one (`Doc::title`), so
   Save As renames the tab; the printed title is still `Project::title`.
 - `tests/window_growth.rs` checks heights too (the curve viewers used to grow 1 px a frame
