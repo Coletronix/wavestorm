@@ -410,7 +410,10 @@ Keep this section updated at the end of every session.
   undoing every edit); `subarea_problem` rejects self-crossing shapes
   (`drawing::polygon_is_simple`); a dragged point dropped within 3 px of a neighbour merges
   with it (`merge_dropped_point`); the drawing preview fill is ear-clipped (the centre fan
-  spilled outside concave shapes).
+  spilled outside concave shapes). A sub-area drawn on one soil group (`soils::single_group`:
+  everything else < `MIN_PART`) gets `SubArea::hsg` set (user request 2026-10-29); the Area
+  tab passes the selected row's `hsg` to `CnLookup::soil`, so clicking a cover name picks that
+  group's CN (other columns still override). Test: `tests/site.rs::sub_area_on_one_soil_gets_its_group`.
 - Recent imagery and lidar (2026-10-28, user request: "more current aerial maps", lidar
   background, elevation surface for Tc slopes). Findings: the USGS NAIP service serves
   2022–2023; USDA APFO's NAIP server resets connections; Esri's NAIP needs a token. Esri World

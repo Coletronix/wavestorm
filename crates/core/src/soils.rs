@@ -516,6 +516,19 @@ pub fn group_areas(shape: &[Pt], soils: &[DiagramSoil]) -> [f64; 5] {
     out
 }
 
+/// The one soil group under `shape`, when it lies on a single rated group: every other group,
+/// and unrated or unmapped ground, covers less than [`MIN_PART`] of it.
+pub fn single_group(shape: &[Pt], soils: &[DiagramSoil]) -> Option<Hsg> {
+    let parts = group_areas(shape, soils);
+    let total: f64 = parts.iter().sum();
+    if total <= 0.0 {
+        return None;
+    }
+    let (i, main) = parts.iter().take(4).enumerate().max_by(|a, b| a.1.total_cmp(b.1))?;
+    let others = total - main;
+    (others / total < MIN_PART).then(|| Hsg::ALL.get(i).copied()).flatten()
+}
+
 /// The TR-55 table row for a sub-area description ("Woods, Good, HSG B" → "Woods, Good").
 pub fn cover_row(description: &str) -> Option<&'static CnRow> {
     let base = strip_hsg(description);
@@ -943,6 +956,20 @@ mod tests {
     fn rows(p: &Project, id: crate::project::NodeId) -> Vec<(String, f64, f64, bool, bool)> {
         let NodeData::Subcat(sc) = &p.node(id).unwrap().data else { panic!() };
         sc.areas.iter().map(|a| (a.description.clone(), a.area, a.cn, a.outline.is_some(), a.remainder)).collect()
+    }
+
+    #[test]
+    fn single_group_only_on_one_soil() {
+        let p = site();
+        let soils = project_soils(&p).unwrap();
+        assert_eq!(single_group(&rect(110.0, 0.0, 200.0, 100.0), &soils), Some(Hsg::C));
+        assert_eq!(single_group(&rect(0.0, 0.0, 90.0, 100.0), &soils), Some(Hsg::D));
+        // Under 1 % on the other soil still counts as one soil; more does not.
+        assert_eq!(single_group(&rect(99.5, 0.0, 200.0, 100.0), &soils), Some(Hsg::C));
+        assert_eq!(single_group(&rect(50.0, 0.0, 200.0, 100.0), &soils), None);
+        // Partly off the soil map: unmapped ground.
+        assert_eq!(single_group(&rect(200.0, 0.0, 300.0, 100.0), &soils), None);
+        assert_eq!(single_group(&[], &soils), None);
     }
 
     #[test]

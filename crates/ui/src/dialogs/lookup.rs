@@ -498,6 +498,9 @@ pub const ENTRANCES: &[(&str, f64)] = &[
 pub struct CnLookup {
     pub open: bool,
     pub group: String,
+    /// The soil group of the line being looked up, when known (a sub-area drawn on one soil):
+    /// clicking a cover then uses that group's value.
+    pub soil: Option<Hsg>,
 }
 
 /// Shows the curve-number table; returns (CN, description) when the user picks a cell.
@@ -528,12 +531,20 @@ pub fn cn_lookup(ctx: &egui::Context, st: &mut CnLookup) -> Option<(f64, String)
                 }
             });
             let group = if st.group.is_empty() { groups.first().copied().unwrap_or("") } else { st.group.as_str() };
-            ui.label(RichText::new("Click a soil-group value to use it.").color(t.text_dim));
+            let hint = match st.soil {
+                Some(g) => format!(
+                    "This line is on HSG {0} soil: click a cover to use its HSG {0} value, or another soil-group value to override.",
+                    g.letter()
+                ),
+                None => "Click a soil-group value to use it.".into(),
+            };
+            ui.label(RichText::new(hint).color(t.text_dim));
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::Grid::new("cn-grid").striped(true).spacing(vec2(10.0, 3.0)).show(ui, |ui| {
                     ui.label(RichText::new("Cover description").strong());
                     for h in Hsg::ALL {
-                        ui.label(RichText::new(format!("HSG {}", h.letter())).strong());
+                        let head = RichText::new(format!("HSG {}", h.letter())).strong();
+                        ui.label(if st.soil == Some(h) { head.underline() } else { head });
                     }
                     ui.end_row();
                     for row in CN_TABLE.iter().filter(|r| r.group == group) {
@@ -542,15 +553,28 @@ pub fn cn_lookup(ctx: &egui::Context, st: &mut CnLookup) -> Option<(f64, String)
                             .filter(|p| *p > 0.0 && *p < 100.0)
                             .map(|p| format!(" ({p}% imp)"))
                             .unwrap_or_default();
-                        ui.label(format!("{}{imp}", row.cover));
+                        let cover = format!("{}{imp}", row.cover);
+                        match st.soil.and_then(|g| row.cn_for(g).map(|cn| (g, cn))) {
+                            Some((g, cn)) => {
+                                if ui
+                                    .add(egui::Label::new(cover).sense(Sense::click()))
+                                    .on_hover_text(row.description(g))
+                                    .clicked()
+                                {
+                                    picked = Some((cn as f64, row.description(g)));
+                                }
+                            }
+                            None => {
+                                ui.label(cover);
+                            }
+                        }
                         for h in Hsg::ALL {
                             match row.cn_for(h) {
                                 Some(cn) => {
+                                    let text = RichText::new(format!("{cn}")).color(t.select);
+                                    let text = if st.soil == Some(h) { text.strong() } else { text };
                                     if ui
-                                        .add(
-                                            egui::Label::new(RichText::new(format!("{cn}")).color(t.select))
-                                                .sense(Sense::click()),
-                                        )
+                                        .add(egui::Label::new(text).sense(Sense::click()))
                                         .on_hover_text(row.description(h))
                                         .clicked()
                                     {

@@ -5,7 +5,7 @@
 
 use egui::{Event, Modifiers, PointerButton, Pos2, vec2};
 use egui_kittest::kittest::Queryable;
-use wavestorm_core::cn::SubArea;
+use wavestorm_core::cn::{Hsg, SubArea};
 use wavestorm_core::geo::{self, MapSource};
 use wavestorm_core::project::{NodeData, NodeId, NodeType};
 use wavestorm_ui::net::{Fetch, Reply};
@@ -239,6 +239,40 @@ fn sub_area_snaps_to_and_follows_a_soil_boundary() {
     // The clicks half a foot off the line were snapped onto it.
     let snapped = at(30.0, -40.0);
     assert!(drawn.iter().any(|q| (q[0] - snapped[0]).hypot(q[1] - snapped[1]) < 0.2), "{drawn:?}");
+}
+
+/// A sub-area drawn on one soil gets that soil group; one drawn across two does not.
+#[test]
+fn sub_area_on_one_soil_gets_its_group() {
+    let (mut h, u, id) = kinked_site();
+    let at = |e: f64, n: f64| site_point(&u, e, n);
+    let label = h.state_mut().doc().project.node(id).unwrap().label();
+    for (shape, want) in [
+        ([at(-60.0, -30.0), at(-10.0, -30.0), at(-10.0, 30.0), at(-60.0, 30.0)], Some(Hsg::B)),
+        ([at(50.0, -30.0), at(80.0, -30.0), at(80.0, 30.0), at(50.0, 30.0)], Some(Hsg::D)),
+        ([at(0.0, -60.0), at(60.0, -60.0), at(60.0, -40.0), at(0.0, -40.0)], None),
+    ] {
+        script(h.state_mut(), &format!("subarea:{label}"));
+        h.run_steps(2);
+        for q in shape {
+            let s = screen(&mut h, q);
+            click(&mut h, s);
+        }
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        let doc = h.state_mut().doc();
+        let NodeData::Subcat(sc) = &doc.project.node(id).unwrap().data else { panic!() };
+        let row = sc.areas.iter().rev().find(|a| a.outline.is_some()).unwrap();
+        assert_eq!(row.hsg, want, "{}", row.description);
+        // The CN lookup opened on the new row knows its soil.
+        let soil = doc.windows.iter().find_map(|w| match w {
+            Window::Edit(e) if e.node == id => Some(e.cn_lookup.soil),
+            _ => None,
+        });
+        assert_eq!(soil, Some(want));
+        h.state_mut().doc().windows.clear();
+        h.run_steps(2);
+    }
 }
 
 /// Backspace after a followed edge removes the whole click; a boundary running through an

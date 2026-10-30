@@ -1509,17 +1509,25 @@ impl WaveStormApp {
     }
 
     /// Adds a drawn sub-area to subcatchment `id` (CN 98 to start) and opens the Area tab with
-    /// the new row selected and the curve-number lookup open, to pick its cover.
+    /// the new row selected and the curve-number lookup open, to pick its cover. A sub-area on
+    /// one soil group of the soil map gets that group, so the lookup only needs the cover.
     fn add_subarea(&mut self, id: NodeId, points: Vec<Pos2>) {
         let outline: Vec<[f64; 2]> = points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
         let doc = self.doc();
         let fpu = wavestorm_core::drawing::feet_per_unit(&doc.project);
+        let soil = wavestorm_core::soils::project_soils(&doc.project)
+            .and_then(|s| wavestorm_core::soils::single_group(&outline, &s));
         let mut row = 0;
         doc.edit("Draw Sub-Area", |p| {
             if let Some(n) = p.node_mut(id) {
                 let main = n.outline.clone();
                 if let NodeData::Subcat(sc) = &mut n.data {
-                    let mut a = wavestorm_core::cn::SubArea::new(0.0, 98.0, "Drawn sub-area (choose its cover)");
+                    let desc = match soil {
+                        Some(g) => format!("Drawn sub-area on HSG {} (choose its cover)", g.letter()),
+                        None => "Drawn sub-area (choose its cover)".into(),
+                    };
+                    let mut a = wavestorm_core::cn::SubArea::new(0.0, 98.0, &desc);
+                    a.hsg = soil;
                     a.outline = Some(outline.clone());
                     sc.areas.push(a);
                     row = sc.areas.len() - 1;
@@ -1538,8 +1546,14 @@ impl WaveStormApp {
                 e.cn_lookup.open = true;
             }
         }
-        self.status =
-            "Sub-area added: pick its ground cover. The remainder row is the outline less the drawn sub-areas.".into();
+        self.status = match soil {
+            Some(g) => format!(
+                "Sub-area added on HSG {} soil: pick its ground cover. The remainder row is the outline less the drawn sub-areas.",
+                g.letter()
+            ),
+            None => "Sub-area added: pick its ground cover. The remainder row is the outline less the drawn sub-areas."
+                .into(),
+        };
     }
 
     /// Refreshes open edit dialogs of node `id` after its drawings changed on the diagram.

@@ -437,7 +437,12 @@ pub fn show(ctx: &egui::Context, doc: &mut Doc, st: &mut EditState, actions: &mu
                 Buttons::None => {}
             }
         });
-    // Sub-dialogs.
+    // Sub-dialogs. The lookup offers the selected line's soil group (set for a sub-area drawn
+    // on one soil).
+    st.cn_lookup.soil = match (&st.draft.data, st.sel_row) {
+        (NodeData::Subcat(sc), Some(i)) => sc.areas.get(i).and_then(|a| a.hsg),
+        _ => None,
+    };
     if let Some((cn, desc)) = lookup::cn_lookup(ctx, &mut st.cn_lookup)
         && let NodeData::Subcat(sc) = &mut st.draft.data
     {
