@@ -226,6 +226,27 @@ impl Surface {
     pub fn at(&self, d: Pt) -> Option<f64> {
         self.terrain.elevation_at(self.place.to_lon_lat(d))
     }
+
+    /// Lowest and highest ground (ft) along the closed `outline` (diagram points), sampled about
+    /// twice per grid cell. The lowest is where water held inside would spill: the top of a pond
+    /// dug there. None when part of the outline is off the grid.
+    pub fn rim(&self, outline: &[Pt]) -> Option<[f64; 2]> {
+        let step = 0.5 * self.terrain.feet_per_pixel / self.place.feet_per_unit();
+        if !(step.is_finite() && step > 0.0) || outline.len() < 3 {
+            return None;
+        }
+        let mut range: Option<[f64; 2]> = None;
+        for (i, a) in outline.iter().enumerate() {
+            let b = outline.get(i + 1).or(outline.first())?;
+            let n = ((b[0] - a[0]).hypot(b[1] - a[1]) / step).ceil().clamp(1.0, 100_000.0) as usize;
+            for k in 0..n {
+                let t = k as f64 / n as f64;
+                let z = self.at([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])?;
+                range = Some(range.map_or([z, z], |[lo, hi]| [lo.min(z), hi.max(z)]));
+            }
+        }
+        range
+    }
 }
 
 /// Ground elevation (ft) under diagram point `d`, when the project has elevations there.
@@ -546,6 +567,34 @@ mod tests {
         let before = legs.clone();
         assert!(path_slopes(&mut legs, &[Some(1.0), None, Some(1.0), Some(1.0), Some(1.0)]).is_none());
         assert_eq!(legs, before);
+    }
+
+    #[test]
+    fn rim_is_the_ground_along_an_outline() {
+        // North-up background, 2 ft per pixel and 0.5 units per pixel: 4 ft per diagram unit,
+        // the centre pixel (100, 100) at the grid's centre.
+        let ul = crate::project::Underlay {
+            file_name: "x.png".into(),
+            bytes: Vec::new(),
+            page: 0,
+            origin: [0.0, 0.0],
+            scale: 0.5,
+            rotation: 0.0,
+            feet_per_unit: Some(4.0),
+            opacity: 1.0,
+            visible: true,
+            locked: false,
+            geo: Some(GeoRef { pixel: [100.0, 100.0], lon_lat: CENTER, bearing: 0.0 }),
+        };
+        let s = Surface { terrain: plane(100, 100, 3.0, 0.02), place: Placement::new(&ul).unwrap() };
+        // A 40 x 20 ft rectangle centred on the grid (10 x 5 units around (50, 50)): ground
+        // falls 0.02 east, so the rim runs 900.4 (west edge) to 899.6 (east edge).
+        let rect = [[45.0, 47.5], [55.0, 47.5], [55.0, 52.5], [45.0, 52.5]];
+        let [lo, hi] = s.rim(&rect).unwrap();
+        assert!((lo - 899.6).abs() < 0.01 && (hi - 900.4).abs() < 0.01, "{lo} {hi}");
+        // Off the grid (the grid is 300 ft = 75 units across).
+        assert!(s.rim(&[[0.0, 0.0], [200.0, 0.0], [200.0, 10.0]]).is_none());
+        assert!(s.rim(&rect[..2]).is_none());
     }
 
     #[test]

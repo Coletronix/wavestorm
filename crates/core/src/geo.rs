@@ -88,6 +88,11 @@ impl Placement {
         })
     }
 
+    /// Ground feet per diagram unit.
+    pub fn feet_per_unit(&self) -> f64 {
+        self.feet_per_pixel / self.scale
+    }
+
     /// Longitude/latitude of diagram point `d`.
     pub fn to_lon_lat(&self, d: Pt) -> LonLat {
         let (g, fpp) = (self.geo, self.feet_per_pixel);

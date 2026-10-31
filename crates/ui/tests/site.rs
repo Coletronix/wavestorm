@@ -536,6 +536,26 @@ fn lidar_relief_background_and_tc_slopes_from_the_ground() {
         wavestorm_core::terrain::Surface::new(&project),
     );
     assert!(up.legs.iter().all(|l| l.slope.is_none()) && up.ground_note.contains("outside"));
+
+    // The pond estimator's top starts at the lowest ground on the drawn outline (its east
+    // edge, 50 ft east: 999 ft), not the made-up datum.
+    let top: Vec<egui::Pos2> = [(-50.0, -20.0), (50.0, -20.0), (50.0, 20.0), (-50.0, 20.0)]
+        .iter()
+        .map(|(e, n)| {
+            let d = at(*e, *n);
+            egui::pos2(d[0] as f32, d[1] as f32)
+        })
+        .collect();
+    let pond = wavestorm_ui::dialogs::misc::PondEstimateState::new(&top, &project);
+    let [lo, hi] = pond.rim.expect("ground along the outline");
+    assert!((lo - 999.0).abs() < 0.02 && (hi - 1001.0).abs() < 0.02, "{lo} {hi}");
+    assert_eq!(pond.est.top, (lo * 100.0).round() / 100.0);
+    // Without elevations the default stays.
+    let mut bare = project.clone();
+    bare.terrain = None;
+    let pond = wavestorm_ui::dialogs::misc::PondEstimateState::new(&top, &bare);
+    assert!(pond.rim.is_none());
+    assert_eq!(pond.est, wavestorm_core::drawing::PondEstimate::default());
 }
 
 /// The real services (address lookup, NAIP and recent images and their dates, 3DEP elevations,

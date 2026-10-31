@@ -2073,7 +2073,7 @@ impl WaveStormApp {
                 CanvasAction::Traced(None, points) => self.finish_trace(points),
                 CanvasAction::Traced(Some(id), points) => self.redraw_outline(id, points),
                 CanvasAction::PondTraced(points) => {
-                    let st = dialogs::misc::PondEstimateState::new(&points);
+                    let st = dialogs::misc::PondEstimateState::new(&points, &self.doc().project);
                     self.open_window(Window::PondEstimate(st));
                 }
                 CanvasAction::SubArea(id, points) => self.add_subarea(id, points),
@@ -3200,7 +3200,8 @@ pub fn script(app: &mut WaveStormApp, cmd: &str) {
             match v.as_slice() {
                 [x0, y0, x1, y1] => {
                     let pts = [pos2(*x0, *y0), pos2(*x1, *y0), pos2(*x1, *y1), pos2(*x0, *y1)];
-                    app.open_window(Window::PondEstimate(dialogs::misc::PondEstimateState::new(&pts)));
+                    let st = dialogs::misc::PondEstimateState::new(&pts, &app.doc().project);
+                    app.open_window(Window::PondEstimate(st));
                 }
                 _ => app.start_pond(),
             }

@@ -366,6 +366,9 @@ Keep this section updated at the end of every session.
   A − P·r + K·r² (K = Σ tan(turn/2); exact for convex outlines until an edge vanishes), r =
   z·(depth − h), stages ~0.5 ft apart; `pond_max_depth` = where the sides meet. `sync_node`
   re-estimates that volume when the footprint is edited or the background recalibrated.
+  With lidar elevations (issue #2, 2026-10-31) `PondEstimateState::new` reads
+  `terrain::Surface::rim` (lowest/highest ground sampled every half cell along the outline)
+  and starts the top at the lowest, the spill point; "Use Lowest" restores it.
   `widgets::push_button` now carries an accessibility label (tests can `get_by_label("OK")`).
 - Site location and soils (2026-10-27, user request; branch `feature/geolocated-site-soils`).
   User decisions: no tax-parcel maps (no free nationwide source); dual HSGs default to D with

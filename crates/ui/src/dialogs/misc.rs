@@ -10,6 +10,7 @@ use egui::{Pos2, RichText, vec2};
 use wavestorm_core::drawing::{self, PondEstimate};
 use wavestorm_core::landuse::ImperviousBasis;
 use wavestorm_core::project::{DiagramSettings, NodeData, NodeType, Project};
+use wavestorm_core::terrain;
 use wavestorm_core::units::{UnitSystem, Units};
 
 pub struct UnitsState {
@@ -371,14 +372,21 @@ pub struct PondEstimateState {
     /// The drawn top of the pond (diagram units).
     pub points: Vec<[f64; 2]>,
     pub est: PondEstimate,
+    /// Lowest and highest ground along the drawn top, when the project has lidar elevations.
+    pub rim: Option<[f64; 2]>,
 }
 
 impl PondEstimateState {
-    pub fn new(points: &[Pos2]) -> Self {
-        PondEstimateState {
-            points: points.iter().map(|p| [p.x as f64, p.y as f64]).collect(),
-            est: PondEstimate::default(),
+    /// With lidar elevations under the outline the top elevation starts at the lowest ground on
+    /// it, where the pond would spill.
+    pub fn new(points: &[Pos2], p: &Project) -> Self {
+        let points: Vec<[f64; 2]> = points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
+        let rim = terrain::Surface::new(p).and_then(|s| s.rim(&points));
+        let mut est = PondEstimate::default();
+        if let Some([lo, _]) = rim {
+            est.top = (lo * 100.0).round() / 100.0;
         }
+        PondEstimateState { points, est, rim }
     }
 }
 
@@ -412,6 +420,20 @@ pub fn pond_estimate(
             u.elev_dp(),
             260.0,
         );
+        if let Some([lo, hi]) = st.rim {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("Ground on the outline (lidar): {} to {}", u.fmt_elev(lo), u.fmt_elev(hi)))
+                        .small(),
+                );
+                if widgets::button(ui, "Use Lowest", 90.0)
+                    .on_hover_text("Set the top to the lowest ground on the drawn outline, where the pond would spill.")
+                    .clicked()
+                {
+                    st.est.top = (lo * 100.0).round() / 100.0;
+                }
+            });
+        }
         conv_field(
             ui,
             "pe-depth",
