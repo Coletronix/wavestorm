@@ -28,6 +28,7 @@ assets = [
     ["target/release/wavestorm", "usr/bin/", "755"],
     ["wavestorm.desktop", "usr/share/applications/", "644"],
     ["../../crates/ui/assets/icon.png", "usr/share/icons/hicolor/512x512/apps/wavestorm.png", "644"],
+    ["../../crates/ui/assets/icon-dark.svg", "usr/share/icons/hicolor/scalable/apps/wavestorm.svg", "644"],
     ["../../README.md", "usr/share/doc/wavestorm/README.md", "644"],
     ["../../LICENSE-MIT", "usr/share/doc/wavestorm/", "644"],
     ["../../LICENSE-APACHE", "usr/share/doc/wavestorm/", "644"],
@@ -37,3 +38,6 @@ assets = [
 
 [lints]
 workspace = true
+
+[build-dependencies]
+winresource = { version = "0.1.34", default-features = false }

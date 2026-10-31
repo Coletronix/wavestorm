@@ -525,7 +525,12 @@ Semantic versioning: the single source of truth is `version` in the workspace `C
   package ships `THIRD-PARTY-LICENSES.html` (cargo-about: `about.toml` + `about.hbs`; the
   egui font notices are pinned by checksum in `about.toml` and the workflow fails if they
   drop out). Workspace crates are `publish = false` so they are not listed as third-party.
-- App icon: `crates/ui/assets/icon.png` (512 px, written by the `logo_png` example, used for
-  the window, the `.desktop` entry, AppImage and macOS bundle). Linux desktop entry:
-  `apps/wavestorm/wavestorm.desktop`.
+- App icons (issue #3, 2026-10-31): the user's masters `crates/ui/assets/icon-dark.svg` and
+  `icon-light.svg` (1024 px). `assets/render-icons.sh` (rsvg-convert + ImageMagick) writes
+  `icon.png` (512 px, dark: window, `.desktop` entry, .deb/AppImage, macOS bundle),
+  `icon-light.png` and `icon.ico` (dark, 16-256 px). The dark icon is the one packages use;
+  the web favicon follows the browser's colour scheme. `apps/wavestorm/build.rs` embeds
+  `icon.ico` in the Windows executable with `winresource` (only when targeting Windows; a
+  missing resource compiler is a warning). The .deb and AppImage also install the dark SVG as
+  the scalable hicolor icon. Linux desktop entry: `apps/wavestorm/wavestorm.desktop`.
 - Project files must stay readable by later versions: new fields get `#[serde(default)]`.

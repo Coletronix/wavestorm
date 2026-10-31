@@ -92,6 +92,7 @@ jobs:
           install -Dm755 target/release/wavestorm "$app/usr/bin/wavestorm"
           install -Dm644 apps/wavestorm/wavestorm.desktop "$app/usr/share/applications/wavestorm.desktop"
           install -Dm644 crates/ui/assets/icon.png "$app/usr/share/icons/hicolor/512x512/apps/wavestorm.png"
+          install -Dm644 crates/ui/assets/icon-dark.svg "$app/usr/share/icons/hicolor/scalable/apps/wavestorm.svg"
           install -Dm644 -t "$app/usr/share/doc/wavestorm" LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html
           ln -s usr/share/applications/wavestorm.desktop "$app/wavestorm.desktop"
           ln -s usr/share/icons/hicolor/512x512/apps/wavestorm.png "$app/wavestorm.png"

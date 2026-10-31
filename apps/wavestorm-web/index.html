@@ -6,6 +6,12 @@
   <title>WAVEStorm</title>
   <link data-trunk rel="rust" data-bin="wavestorm-web" data-cargo-profile="wasm-release" data-wasm-opt="z" />
   <link data-trunk rel="copy-file" href="../../crates/ui/assets/logo.png" />
+  <link data-trunk rel="copy-file" href="../../crates/ui/assets/icon.png" />
+  <link data-trunk rel="copy-file" href="../../crates/ui/assets/icon-light.png" />
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="icon" type="image/png" href="icon-light.png" media="(prefers-color-scheme: light)">
+  <link rel="icon" type="image/png" href="icon.png" media="(prefers-color-scheme: dark)">
+  <link rel="apple-touch-icon" href="icon.png">
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #d4d0c8; }
     #wavestorm_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
