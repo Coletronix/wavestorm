@@ -473,7 +473,15 @@ Keep this section updated at the end of every session.
 
 `README.md` is maintained with the code (user request, 2026-10-23): update its feature list,
 file-format table and installation steps (release asset names must match `release.yml`)
-whenever those change. It is for users and human contributors: never put agent instructions
+whenever those change. **Every commit that adds or changes a user-visible feature updates the
+relevant README section in the same commit** (user request, 2026-10-31). The Features section
+is split (user request, 2026-10-31): "New in WAVEStorm" lists what the established
+routing-diagram programs don't do (cross-platform/web, open source, `.hcp` interchange, drawing
+on a scaled background, Tc paths, pond estimator, site location/lidar/soils, tabs, session
+restore, themes); "Familiar features" lists what engineers know from them (hydrology,
+routing, outlets, reports, rainfall data). Put a new feature in the right half; when unsure
+whether the reference application has it, check the gitignored research pages
+(`reference_images/research/web/`) and never name the reference application. It is for users and human contributors: never put agent instructions
 in it or link this file from it (user request, 2026-10-25). Regenerate the
 screenshots in `docs/screenshots/` after visible UI changes, from the built-in sample project
 only (never the user's private files or rainfall library):

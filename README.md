@@ -17,6 +17,8 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 ## Contents
 
 - [Features](#features)
+  - [New in WAVEStorm](#new-in-wavestorm)
+  - [Familiar features](#familiar-features)
 - [Screenshots](#screenshots)
 - [Installation](#installation)
   - [Prebuilt binaries](#prebuilt-binaries)
@@ -31,6 +33,76 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 - [License](#license)
 
 ## Features
+
+WAVEStorm does the job of the established commercial routing-diagram stormwater programs, and
+an engineer who knows them will find the same nodes, dialogs, methods and reports here. On top
+of that it adds things those programs don't do: it runs anywhere, it is free and open source,
+and it lets you build the model by drawing on a real, scaled map of the site.
+
+### New in WAVEStorm
+
+**Runs anywhere, free**
+- Native on Linux, Windows and macOS, and in any modern browser (WebAssembly) with nothing to
+  install. One codebase, one project format.
+- Free and open source (MIT or Apache-2.0). No licence keys, no seat limits.
+- Opens and saves the `.hcp` interchange projects of a widely used commercial package. Settings
+  WAVEStorm does not model are kept and written back unchanged (see
+  [File formats](#file-formats)).
+
+**Build the model by drawing on the site**
+- A background image or PDF with two-point scale calibration. Move and resize it on the
+  diagram; your drawings follow it and keep their measured sizes.
+- Trace subcatchment outlines on it, and the areas are measured automatically. Draw sub-areas
+  inside an outline: each is measured and coloured, and the remainder row is the outline less
+  the drawn sub-areas, so the rows always add up.
+- Edit any drawing: drag its points, drag an edge's middle to add a point, or right-click a
+  point to delete it. Areas and Tc lengths update to match.
+- Draw a subcatchment's time-of-concentration flow path on the diagram. Its points are lettered
+  A, B, C… and the Tc segments ("A to B", "B to D", …) are measured from it (sheet flow is
+  capped at 100 ft by default). A new segment starts only where the flow type or slope changes.
+- Pond estimator: draw the top of a pond, enter its approximate depth and side slope, and a
+  pond is created with its stage-area storage (prismatic) already filled in. Editing the
+  footprint re-estimates it.
+- Print or export the diagram as shown on screen: background, translucent area fills, Tc
+  paths and CN labels placed clear of each other.
+
+**Site location, lidar and soils** (United States; online only when you ask)
+- Aerial Photo: find the site by address or latitude/longitude and download recent aerial
+  imagery (Esri World Imagery, usually captured within the last year or two), USDA NAIP
+  imagery or a topographic map. It arrives placed and to scale, and the app says when the
+  imagery was captured.
+- Georeference your own site plan or PDF by giving two of its points their latitude and
+  longitude. This sets the scale too.
+- Lidar: download USGS 3DEP bare-earth elevations (1 m lidar in most of the country) as a
+  shaded-relief background with contours, or alongside an aerial photo. Tc flow paths then
+  take each segment's slope from the ground (flat or uphill runs are flagged), and the pond
+  estimator takes the pond's top from the lowest ground along its outline.
+- Soils: draw an area of interest, or use the subcatchment outlines. WAVEStorm asks NRCS Soil
+  Data Access (the data behind Web Soil Survey) for its soil map units and hydrologic soil
+  groups, and draws them on the diagram. Dual groups count as D unless the site is drained.
+- Apply the soils to subcatchments: each Area row is split by soil group, with the TR-55
+  curve number of its cover for each group. Sub-areas you draw snap to and follow soil
+  boundaries, and one drawn on a single soil gets that soil's group for its CN lookup.
+- NOAA for Site downloads the NOAA Atlas 14 rainfall estimates for the placed site (desktop).
+- Export the area of interest as a zipped shapefile for Web Soil Survey. Print a Hydrologic
+  Soil Group report with a soil map and per-subcatchment tables.
+
+**Working comfortably**
+- Several projects open at once in tabs.
+- The projects you had open come back the next time you start, including unsaved changes
+  (kept in browser storage on the web) if the page or program closed before you saved or
+  exported. The desktop version can also autosave projects to their files on a timer
+  (Settings > General).
+- Themes (View > Theme): **Classic** keeps the familiar bevelled-grey engineering look;
+  **Modern Light** and **Modern Dark** are flat versions of the same layout; **Iridescent
+  Glass** is a dark theme with its own modernised layout (a single header bar, glass rails, a
+  floating tool dock), where panels are raised glass slabs, fields and the diagram are sunken
+  wells, nodes are cut glass and routing arrows are lit glass tubes.
+
+### Familiar features
+
+These match what engineers already know from the established programs, checked against their
+published results where possible (see [Methods and validation](#methods-and-validation)).
 
 **Hydrology**
 - SCS/NRCS runoff with the curvilinear unit hydrograph (TR-20), SBUH, and the Rational method.
@@ -68,65 +140,18 @@ WAVEStorm is written entirely in Rust. The same code runs natively on Linux, Win
 
 **Rainfall data**
 - Rainfall Event Lookup from county rainfall tables, NOAA Atlas 14 CSV downloads and IDF files.
-  NOAA for Site downloads the NOAA Atlas 14 estimates for a placed background directly
-  (desktop).
 - A rainfall library folder of storm distribution (`.hcr`), unit hydrograph (`.huh`) and IDF
   (`.hci`) files. Storms a project uses are copied into it, so project files stay self-contained.
+- Storm distribution, unit hydrograph and IDF viewers.
 
-**Working on the diagram**
-- Drag-and-drop nodes, multiple projects in tabs, undo history, notes and pop-up field tips
+**Projects and the diagram**
+- Drag-and-drop nodes and routing arrows, undo history, notes, and pop-up field tips
   (switchable in Settings > General).
-- A background image or PDF underlay with two-point scale calibration. Move and resize it
-  on the diagram; your drawings follow it and keep their measured sizes.
-- Trace subcatchment outlines on it, and the areas are measured automatically. Draw
-  sub-areas inside an outline: each is measured and coloured, and the remainder row is
-  the outline less the drawn sub-areas, so the rows always add up.
-- Pond estimator: draw the top of a pond, enter its approximate depth and side slope, and a
-  pond is created with its stage-area storage (prismatic) already filled in. With lidar
-  elevations loaded, the top elevation is read from the ground along the drawn outline.
-- Edit any drawing: drag its points, drag an edge's middle to add a point, or right-click a
-  point to delete it. Areas and Tc lengths update to match.
-- Draw a subcatchment's time-of-concentration flow path on the diagram. Its points are lettered
-  A, B, C… and the Tc segments ("A to B", "B to D", …) are measured from it (sheet flow is
-  capped at 100 ft by default); you only enter slope and surface.
-- Print or export the diagram as shown on screen: background, translucent area fills, Tc
-  paths and CN labels.
-
-**Site location and soils** (United States; online only when you ask)
-- Aerial Photo: find the site by address or latitude/longitude and download recent aerial
-  imagery (Esri World Imagery, usually captured within the last year or two), USDA NAIP
-  imagery or a topographic map. It arrives placed and to scale, and the app says when the
-  imagery was captured.
-- Lidar: download USGS 3DEP bare-earth elevations (1 m lidar in most of the country) as a
-  shaded-relief background with contours, or alongside an aerial photo. A Tc flow path drawn
-  on the diagram then takes each segment's slope from the ground.
-- Georeference your own site plan or PDF by giving two of its points their latitude and
-  longitude. This sets the scale too.
-- Soils: draw an area of interest, or use the subcatchment outlines. WAVEStorm asks NRCS Soil
-  Data Access (the data behind Web Soil Survey) for its soil map units and hydrologic soil
-  groups, and draws them on the diagram. Dual groups count as D unless the site is drained.
-- Apply the soils to subcatchments: each Area row is split by soil group, with the TR-55
-  curve number of its cover for each group.
-- Export the area of interest as a zipped shapefile for Web Soil Survey. Print a
-  Hydrologic Soil Group report with a soil map and per-subcatchment tables.
-
-**Projects and data exchange**
 - A start page (New, Open, Open Sample Project, recent projects) when no project is open.
   Recent projects are also listed under Project > Open….
-- The projects you had open come back the next time you start, including unsaved changes
-  (kept in browser storage on the web) if the page or program closed before you saved or
-  exported. The desktop version can also autosave projects to their files on a timer
-  (Settings > General).
-- Open and save `.hcp` interchange projects, import legacy TR-20 input decks, and read
+- Import legacy TR-20 input decks, CSV import/export of sub-areas and hydrographs, and read
   and write rainfall library files (see [File formats](#file-formats)).
-
-**Themes** (View > Theme)
-- **Classic**: the familiar engineering-software look, with bevelled grey dialogs.
-- **Modern Light** and **Modern Dark**: flat versions of the same layout.
-- **Iridescent Glass**: a dark theme where every surface has depth. Panels and buttons are raised
-  glass slabs, fields and the diagram are sunken wells, and nodes are extruded glass blocks.
-  Routing arrows and icons are lit glass tubes with iridescent rims. It uses its own
-  modernised layout: a single header bar, glass rails and a floating tool dock on the diagram.
+- Calculation, units, land-use, diagram and print settings in the familiar tabbed dialogs.
 
 ## Screenshots
 
@@ -146,7 +171,7 @@ The screenshots are rendered from the built-in sample project
 
 Download the package for your system from the
 [latest release](https://github.com/Coletronix/wavestorm/releases/latest). In the file names,
-`VERSION` is the release number, for example `0.7.0`.
+`VERSION` is the release number, for example `0.8.0`.
 
 | Platform | Download | How to use it |
 |---|---|---|
