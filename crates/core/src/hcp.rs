@@ -138,6 +138,17 @@ impl Rec {
     }
 }
 
+/// Whether `key` is an event's storm-curve key. Its exact spelling is not documented, so any
+/// key naming a curve counts.
+fn is_curve_key(key: &str) -> bool {
+    key.to_ascii_lowercase().contains("curve")
+}
+
+/// The storm curve named by an event's entries, if any and not blank.
+fn storm_curve<'a>(mut entries: impl Iterator<Item = (&'a String, &'a String)>) -> Option<&'a str> {
+    entries.find(|(k, _)| is_curve_key(k)).map(|(_, v)| v.trim()).filter(|v| !v.is_empty())
+}
+
 fn keep_unknown_section(s: &RawSection, foreign: &mut Vec<ForeignEntry>, index: usize) {
     let scope = format!("?{index}:{}", s.name);
     foreign.push(ForeignEntry { scope: scope.clone(), key: SECTION_MARK.into(), value: String::new() });
@@ -328,7 +339,14 @@ pub fn import(text: &str) -> Result<(Project, Vec<String>), String> {
     for (i, s) in events.iter().enumerate() {
         let mut r = Rec::new(s);
         let name = r.take("RainEvent").unwrap_or_else(|| format!("Event {}", i + 1));
-        let storm = r.take("StormType").unwrap_or_else(|| "Type II 24-hr".into());
+        let family = r.take("StormType").unwrap_or_else(|| "Type II 24-hr".into());
+        // A storm family with several curves (such as the four NOAA regions) names the curve in
+        // its own key; library storms carry the curve after the family name ("NOAA 24-hr C").
+        // The key stays in the foreign data so export can split the name again.
+        let storm = match storm_curve(r.e.iter().filter(|(_, _, t)| !*t).map(|(k, v, _)| (k, v))) {
+            Some(c) => format!("{family} {c}"),
+            None => family,
+        };
         let depth_in = r.num("StormDepth").map(|d| r10(d * 12.0)).unwrap_or(0.0);
         let mut ev = RainEvent::new(&name, &storm, depth_in);
         if let Some(sec) = r.num("StormDurat") {
@@ -968,14 +986,33 @@ pub fn export(project: &Project) -> String {
     for (i, e) in st.events.iter().enumerate() {
         o.section("EVENT");
         o.kv("RainEvent", &e.name);
-        o.kv("StormType", &e.storm);
+        let scope = format!("EVENT:{i}");
+        let kept = project.foreign.iter().filter(|f| f.scope == scope);
+        // The curve key read on import is written back only while the event still uses that
+        // curve; the family name goes in StormType.
+        let family = storm_curve(kept.map(|f| (&f.key, &f.value)))
+            .and_then(|c| e.storm.strip_suffix(c))
+            .filter(|f| f.ends_with(' '))
+            .map(str::trim_end);
+        o.kv("StormType", family.unwrap_or(&e.storm));
         let duration = match (e.duration_mode, project.storm(&e.storm)) {
             (DurationMode::Default, Some(s)) => s.duration,
             _ => e.duration,
         };
         o.num("StormDurat", duration * 3600.0);
         o.num("StormDepth", e.depth / 12.0);
-        o.foreign(&project.foreign, &format!("EVENT:{i}"));
+        for f in project.foreign.iter().filter(|f| f.scope == scope && f.key != SECTION_MARK) {
+            // A curve the event no longer uses is dropped.
+            if is_curve_key(&f.key) && !f.value.trim().is_empty() && family.is_none() {
+                continue;
+            }
+            if f.key.is_empty() {
+                o.s.push_str(&clean(&f.value));
+                o.s.push_str(NEWLINE);
+            } else {
+                o.kv(&f.key, &f.value);
+            }
+        }
     }
     for n in &project.nodes {
         export_node(&mut o, project, n);
@@ -1608,6 +1645,29 @@ mod tests {
             let _ = import_bytes(&bytes);
         }
         assert!(import("hello").is_err());
+    }
+
+    #[test]
+    fn storm_curve_joins_the_family_name() {
+        let text = format!(
+            "{}\r\nName=Curves\r\n[EVENT]\r\nRainEvent=2-Year\r\nStormType=NOAA10 24-hr\r\nStormCurve=D\r\n\
+             StormDurat=86400\r\nStormDepth=0.25\r\n[EVENT]\r\nRainEvent=10-Year\r\nStormType=Type II 24-hr\r\n\
+             StormCurve=\r\nStormDurat=86400\r\nStormDepth=0.375\r\n",
+            header()
+        );
+        let (p, _) = import(&text).unwrap();
+        let storms: Vec<&str> = p.settings.events.iter().map(|e| e.storm.as_str()).collect();
+        assert_eq!(storms, ["NOAA10 24-hr D", "Type II 24-hr"]);
+        let out = export(&p);
+        assert!(out.contains("StormType=NOAA10 24-hr\r\n"), "{out}");
+        assert!(out.contains("StormCurve=D\r\n"), "{out}");
+        let (q, _) = import(&out).unwrap();
+        assert_eq!(p.settings.events, q.settings.events);
+        // Switching to another storm drops the stale curve.
+        let mut p2 = p.clone();
+        p2.settings.events[0].storm = "Type III 24-hr".into();
+        let out = export(&p2);
+        assert!(out.contains("StormType=Type III 24-hr\r\n") && !out.contains("StormCurve=D"), "{out}");
     }
 
     #[test]

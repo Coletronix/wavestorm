@@ -260,9 +260,13 @@ pub fn adopt(p: &mut Project) -> usize {
     let storms: Vec<String> = p.settings.events.iter().map(|e| e.storm.clone()).collect();
     for name in storms {
         if p.storm(&name).is_none()
-            && let Some(s) = lib.storms.iter().find(|s| s.name == name)
+            && let Some(s) = lib.storms.iter().find(|s| s.name == name).or_else(|| {
+                // Library files pad names for sorting; the copy takes the event's spelling so the
+                // calculation finds it.
+                lib.storms.iter().find(|s| same_name(&s.name, &name))
+            })
         {
-            p.storms.push(s.clone());
+            p.storms.push(Storm { name: name.clone(), ..s.clone() });
             copied += 1;
         }
     }
@@ -303,6 +307,12 @@ mod tests {
         assert_eq!(p.storms.len(), 1);
         assert_eq!(adopt(&mut p), 0, "already in the project");
         assert!(p.storm("Mine 3-hr").is_some());
+        // A curve of a multi-curve file whose name is padded is found by the event's spelling.
+        let fam = b"name=Fam  24-hr\nduration=24\ncurve=A\ndepth= 0 .5 1\ncurve=B\ndepth= 0 .2 1\n";
+        assert!(import("Fam.hcr", fam).starts_with("Imported"));
+        p.settings.events.push(RainEvent::new("10-Year", "Fam 24-hr B", 4.0));
+        assert_eq!(adopt(&mut p), 1);
+        assert!(p.storm("Fam 24-hr B").is_some());
         clear_imports();
         assert!(!storm_names(&Project::default()).contains(&"Mine 3-hr".to_string()));
     }

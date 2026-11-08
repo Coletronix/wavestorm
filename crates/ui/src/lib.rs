@@ -490,7 +490,11 @@ impl WaveStormApp {
     fn handle_incoming(&mut self, _ctx: &egui::Context, item: Incoming) -> Result<(), String> {
         match item.purpose {
             Purpose::OpenProject => {
-                let (project, is_hcp, warnings) = project_from_bytes(&item.name, item.bytes)?;
+                let (mut project, is_hcp, mut warnings) = project_from_bytes(&item.name, item.bytes)?;
+                // Library storms the events use become part of the project, so a project made
+                // elsewhere (or imported) calculates without first visiting Calculation Settings.
+                let adopted = library::adopt(&mut project);
+                warnings.retain(|w| !project.storms.iter().any(|s| w.contains(&format!("storm \"{}\"", s.name))));
                 // Replace an untouched empty first project.
                 if self.docs.len() == 1 && !self.docs[0].dirty && self.docs[0].project.nodes.is_empty() {
                     self.docs.clear();
@@ -506,6 +510,9 @@ impl WaveStormApp {
                 platform::recent::push(&item.name, item.path.as_deref(), &project);
                 let mut doc = Doc::new(project, item.path);
                 doc.hcp = is_hcp;
+                // An interchange file names its storms instead of storing them, so only a
+                // `.waves` project has changed.
+                doc.dirty |= adopted > 0 && !is_hcp;
                 self.docs.push(doc);
                 self.active = self.docs.len() - 1;
                 self.status = format!("Opened {}", item.name);
