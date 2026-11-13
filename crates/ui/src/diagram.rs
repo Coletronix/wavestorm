@@ -138,6 +138,8 @@ pub enum CanvasAction {
     OpenEdit(NodeId),
     Delete,
     ContextNode(NodeId),
+    /// Right-click on empty diagram space.
+    ContextCanvas,
     /// Finished calibration: two world points.
     Calibrated(Pos2, Pos2),
     /// Two world points picked for georeferencing.
@@ -160,6 +162,19 @@ pub enum CanvasAction {
     Message(String),
     Convert(NodeId, NodeType),
     ClearOutflows(NodeId),
+}
+
+/// Moves node `n` by (`dx`, `dy`) diagram units, with its drawings: a subcatchment's outline,
+/// Tc flow path and drawn sub-areas travel with its symbol.
+pub fn move_node(n: &mut wavestorm_core::project::Node, dx: f64, dy: f64) {
+    n.pos[0] += dx;
+    n.pos[1] += dy;
+    let mv = |pts: &mut Vec<Pt>| pts.iter_mut().for_each(|q| *q = [q[0] + dx, q[1] + dy]);
+    n.outline.as_mut().map(mv);
+    n.tc_path.as_mut().map(mv);
+    if let NodeData::Subcat(sc) = &mut n.data {
+        sc.areas.iter_mut().filter_map(|a| a.outline.as_mut()).for_each(mv);
+    }
 }
 
 pub fn to_screen(view: &View, canvas: Rect, w: Pos2) -> Pos2 {
@@ -1770,15 +1785,7 @@ fn select_tool(
                 let (dx, dy) = (delta.x as f64, delta.y as f64);
                 for id in sel {
                     if let Some(n) = doc.project.node_mut(id) {
-                        n.pos[0] += dx;
-                        n.pos[1] += dy;
-                        // A subcatchment's drawings travel with its symbol.
-                        let mv = |pts: &mut Vec<Pt>| pts.iter_mut().for_each(|q| *q = [q[0] + dx, q[1] + dy]);
-                        n.outline.as_mut().map(mv);
-                        n.tc_path.as_mut().map(mv);
-                        if let NodeData::Subcat(sc) = &mut n.data {
-                            sc.areas.iter_mut().filter_map(|a| a.outline.as_mut()).for_each(mv);
-                        }
+                        move_node(n, dx, dy);
                     }
                 }
             }
@@ -1954,6 +1961,8 @@ fn select_tool(
             doc.selection = vec![id];
         }
         actions.push(CanvasAction::ContextNode(id));
+    } else if resp.secondary_clicked() && world.is_some() {
+        actions.push(CanvasAction::ContextCanvas);
     }
     if resp.hovered()
         && ui.input(|i| i.key_pressed(Key::Delete))

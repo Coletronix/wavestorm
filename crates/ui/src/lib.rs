@@ -10,6 +10,7 @@
 )]
 
 pub mod chart;
+pub mod clip;
 pub mod diagram;
 pub mod dialogs;
 pub mod doc;
@@ -68,7 +69,9 @@ pub struct WaveStormApp {
     palette_drag: Option<NodeType>,
     status: String,
     clipboard: Vec<Node>,
-    context_node: Option<(NodeId, Pos2)>,
+    /// Text to put on the system clipboard this frame.
+    clip_out: Option<String>,
+    context: Option<ContextMenu>,
     error: Option<String>,
     styled: bool,
     untitled: usize,
@@ -132,7 +135,8 @@ impl WaveStormApp {
             palette_drag: None,
             status,
             clipboard: Vec::new(),
-            context_node: None,
+            clip_out: None,
+            context: None,
             error: None,
             styled: false,
             untitled: 1,
@@ -933,30 +937,54 @@ impl WaveStormApp {
         doc.selection.clear();
     }
 
+    /// Copies the selected nodes (an empty selection keeps what was copied before).
     fn copy_selection(&mut self) {
         let doc = self.doc();
-        self.clipboard = doc.selection.iter().filter_map(|id| doc.project.node(*id).cloned()).collect();
-        self.status = format!("Copied {} node(s)", self.clipboard.len());
+        let nodes: Vec<Node> = doc.selection.iter().filter_map(|id| doc.project.node(*id).cloned()).collect();
+        if nodes.is_empty() {
+            return;
+        }
+        // Also on the system clipboard, for pasting into another window.
+        self.clip_out = Some(clip::to_text(&nodes));
+        self.status = format!("Copied {} node(s)", nodes.len());
+        self.clipboard = nodes;
     }
 
-    fn paste(&mut self) {
+    fn cut_selection(&mut self) {
+        if !self.doc().selection.is_empty() {
+            self.copy_selection();
+            self.delete_selection();
+        }
+    }
+
+    /// Pastes the copied nodes centred on diagram point `at`, or beside the originals.
+    /// `system` is the system clipboard's text when known: nodes copied in another window win.
+    fn paste(&mut self, at: Option<Pos2>, system: Option<&str>) {
+        if let Some(nodes) = system.and_then(clip::from_text) {
+            self.clipboard = nodes;
+        }
         let nodes = self.clipboard.clone();
         if nodes.is_empty() {
             return;
         }
+        let [dx, dy] = clip::paste_shift(&nodes, at.map(|p| [p.x as f64, p.y as f64]));
         let doc = self.doc();
         let mut ids = Vec::new();
         doc.edit("Node Paste", |p| {
-            let offset = 30.0;
             let mut map = std::collections::HashMap::new();
             for n in &nodes {
-                let id = p.add_node(n.node_type(), [n.pos[0] + offset, n.pos[1] + offset]);
+                // Move a copy, so its drawings (outline, sub-areas, Tc path) keep their places.
+                let mut n = n.clone();
+                diagram::move_node(&mut n, dx, dy);
+                let id = p.add_node(n.node_type(), n.pos);
                 map.insert(n.id, id);
                 if let Some(m) = p.node_mut(id) {
-                    m.data = n.data.clone();
-                    m.name = n.name.clone();
-                    m.notes = n.notes.clone();
-                    m.outline = n.outline.as_ref().map(|o| o.iter().map(|q| [q[0] + offset, q[1] + offset]).collect());
+                    m.data = n.data;
+                    m.name = n.name;
+                    m.notes = n.notes;
+                    m.outline = n.outline;
+                    m.tc_path = n.tc_path;
+                    m.tc_path_breaks = n.tc_path_breaks;
                 }
                 ids.push(id);
             }
@@ -976,6 +1004,18 @@ impl WaveStormApp {
             }
         });
         doc.selection = ids;
+        self.status = format!("Pasted {} node(s)", nodes.len());
+    }
+
+    /// The diagram point under the pointer, when the pointer is on the diagram (not over a
+    /// dialog in front of it).
+    fn pointer_on_diagram(&self, ctx: &egui::Context) -> Option<Pos2> {
+        let p = ctx.pointer_hover_pos()?;
+        let over_window = ctx.layer_id_at(p).is_some_and(|l| l.order != egui::Order::Background);
+        if over_window || !self.canvas_rect.contains(p) {
+            return None;
+        }
+        self.interaction.hover_world
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
@@ -993,7 +1033,13 @@ impl WaveStormApp {
             }
             return;
         }
-        if cmd && pressed(Key::Z) {
+        if let Some(c) = clip::command(ctx) {
+            match c {
+                clip::Command::Copy => self.copy_selection(),
+                clip::Command::Cut => self.cut_selection(),
+                clip::Command::Paste(text) => self.paste(self.pointer_on_diagram(ctx), text.as_deref()),
+            }
+        } else if cmd && pressed(Key::Z) {
             if shift {
                 self.doc().redo()
             } else {
@@ -1007,13 +1053,6 @@ impl WaveStormApp {
             self.platform.pick(Purpose::OpenProject);
         } else if cmd && pressed(Key::N) {
             self.new_project();
-        } else if cmd && pressed(Key::C) {
-            self.copy_selection();
-        } else if cmd && pressed(Key::X) {
-            self.copy_selection();
-            self.delete_selection();
-        } else if cmd && pressed(Key::V) {
-            self.paste();
         } else if pressed(Key::F1) {
             self.open_window(Window::Help(help::HelpState::topic("start")));
         } else if cmd && pressed(Key::A) {
@@ -1274,15 +1313,14 @@ impl WaveStormApp {
                     self.delete_selection();
                 }
                 ui.separator();
-                if ui.add_enabled(sel.is_some(), egui::Button::new("Cut")).clicked() {
-                    self.copy_selection();
-                    self.delete_selection();
+                if ui.add_enabled(sel.is_some(), shortcut_button("Cut", "Ctrl+X")).clicked() {
+                    self.cut_selection();
                 }
-                if ui.add_enabled(sel.is_some(), egui::Button::new("Copy")).clicked() {
+                if ui.add_enabled(sel.is_some(), shortcut_button("Copy", "Ctrl+C")).clicked() {
                     self.copy_selection();
                 }
-                if ui.add_enabled(!self.clipboard.is_empty(), egui::Button::new("Paste")).clicked() {
-                    self.paste();
+                if ui.add_enabled(!self.clipboard.is_empty(), shortcut_button("Paste", "Ctrl+V")).clicked() {
+                    self.paste(None, None);
                 }
                 ui.separator();
                 let doc = self.doc();
@@ -1422,9 +1460,16 @@ impl WaveStormApp {
 
     fn create_node(&mut self, t: NodeType) {
         let canvas = self.canvas_rect;
+        let c = if canvas.is_finite() {
+            diagram::to_world(&self.doc().view, canvas, canvas.center())
+        } else {
+            pos2(200.0, 200.0)
+        };
+        self.create_node_at(t, c);
+    }
+
+    fn create_node_at(&mut self, t: NodeType, c: Pos2) {
         let doc = self.doc();
-        let c =
-            if canvas.is_finite() { diagram::to_world(&doc.view, canvas, canvas.center()) } else { pos2(200.0, 200.0) };
         let mut id = 0;
         doc.edit("Node Create", |p| id = p.add_node(t, [c.x as f64, c.y as f64]));
         doc.selection = vec![id];
@@ -2055,7 +2100,8 @@ impl WaveStormApp {
                 }
                 CanvasAction::OpenEdit(id) => self.open_edit(id),
                 CanvasAction::Delete => self.delete_selection(),
-                CanvasAction::ContextNode(id) => self.context_node = ctx.pointer_hover_pos().map(|p| (id, p)),
+                CanvasAction::ContextNode(id) => self.open_context(ctx, Some(id)),
+                CanvasAction::ContextCanvas => self.open_context(ctx, None),
                 CanvasAction::Calibrated(a, b) => {
                     let doc = self.doc();
                     doc.windows.push(Window::Calibrate(dialogs::misc::CalibrateState::distance(a, b)));
@@ -2148,74 +2194,191 @@ impl WaveStormApp {
         self.doc().windows.retain(|w| w.node() != Some(id));
     }
 
+    /// Opens the diagram's right-click menu at the pointer: for node `node`, or for empty space.
+    fn open_context(&mut self, ctx: &egui::Context, node: Option<NodeId>) {
+        if let (Some(screen), Some(world)) = (ctx.pointer_hover_pos(), self.interaction.hover_world) {
+            self.context = Some(ContextMenu { node, screen, world });
+        }
+    }
+
     fn context_menu(&mut self, ctx: &egui::Context) {
-        let Some((id, pos)) = self.context_node else { return };
-        let Some(n) = self.doc().project.node(id).cloned() else {
-            self.context_node = None;
-            return;
+        let Some(menu) = self.context else { return };
+        let node = match menu.node {
+            Some(id) => match self.doc().project.node(id).cloned() {
+                Some(n) => Some(n),
+                None => {
+                    self.context = None;
+                    return;
+                }
+            },
+            None => None,
         };
         let t = Tokens::get(ctx);
         let mut close = false;
-        let resp = egui::Area::new(egui::Id::new("node-context")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).fill(t.face).show(ui, |ui| {
-                ui.set_min_width(150.0);
-                ui.label(egui::RichText::new(n.title()).strong());
-                ui.separator();
-                if ui.button("Edit...").clicked() {
-                    self.open_edit(id);
+        let resp = egui::Area::new(egui::Id::new("diagram-context"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(menu.screen)
+            .constrain(true)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).fill(t.face).show(ui, |ui| {
+                    ui.set_min_width(170.0);
+                    close = match &node {
+                        Some(n) => self.node_menu_items(ui, n, menu.world, ctx),
+                        None => self.canvas_menu_items(ui, menu.world),
+                    };
+                });
+            });
+        // A press in a submenu (another foreground layer) is not outside the menu.
+        let in_popup = |p: Pos2| ctx.layer_id_at(p).is_some_and(|l| l.order == egui::Order::Foreground);
+        let clicked_elsewhere = ctx.input(|i| i.pointer.any_pressed())
+            && !resp.response.contains_pointer()
+            && !ctx.pointer_interact_pos().is_some_and(in_popup);
+        if close || clicked_elsewhere || ctx.input(|i| i.key_pressed(Key::Escape)) {
+            self.context = None;
+        }
+    }
+
+    /// Paste, with the number of copied nodes in its hover text.
+    fn paste_item(&mut self, ui: &mut Ui, at: Pos2) -> bool {
+        let n = self.clipboard.len();
+        let tip =
+            if n == 0 { "Copy nodes first (Ctrl+C)".to_string() } else { format!("Paste {n} copied node(s) here") };
+        let clicked = ui.add_enabled(n > 0, shortcut_button("Paste", "Ctrl+V")).on_hover_text(tip).clicked();
+        if clicked {
+            self.paste(Some(at), None);
+        }
+        clicked
+    }
+
+    /// The right-click menu on empty diagram space at diagram point `at`; true when an item ran.
+    fn canvas_menu_items(&mut self, ui: &mut Ui, at: Pos2) -> bool {
+        let mut close = false;
+        close |= self.paste_item(ui, at);
+        ui.menu_button("Create Here", |ui| {
+            for t in [NodeType::Subcat, NodeType::Reach, NodeType::Pond, NodeType::Link, NodeType::Text] {
+                if ui.button(t.label()).clicked() {
+                    self.create_node_at(t, at);
                     close = true;
                 }
-                if ui.button("Report...").clicked() {
-                    self.open_report(id);
-                    close = true;
-                }
-                if ui.button("Delete").clicked() {
-                    self.delete_selection();
-                    close = true;
-                }
-                if ui.button("Copy").clicked() {
-                    self.copy_selection();
-                    close = true;
-                }
-                if ui.button("Remove Outflow Routing").clicked() {
-                    self.canvas_actions(vec![CanvasAction::ClearOutflows(id)], ctx);
-                    close = true;
-                }
-                if matches!(n.node_type(), NodeType::Reach | NodeType::Pond | NodeType::Link) {
-                    ui.menu_button("Convert to", |ui| {
-                        for to in [NodeType::Reach, NodeType::Pond, NodeType::Link] {
-                            if to != n.node_type() && ui.button(to.label()).clicked() {
-                                self.convert(id, to);
-                                close = true;
-                            }
-                        }
-                    });
-                }
-                if n.node_type() == NodeType::Subcat {
-                    let has = n.outline.is_some();
-                    if ui.button(if has { "Redraw Outline" } else { "Draw Outline" }).on_hover_text("Trace this subcatchment's outline on the diagram; its areas follow it").clicked() {
-                        self.start_outline(Some(id));
+            }
+        });
+        ui.separator();
+        let doc = self.doc();
+        let (has_nodes, has_sel) = (!doc.project.nodes.is_empty(), !doc.selection.is_empty());
+        if ui.add_enabled(has_nodes, shortcut_button("Select All", "Ctrl+A")).clicked() {
+            let doc = self.doc();
+            doc.selection = doc.project.nodes.iter().map(|n| n.id).collect();
+            close = true;
+        }
+        if ui.add_enabled(has_sel, egui::Button::new("Select None")).clicked() {
+            self.doc().selection.clear();
+            close = true;
+        }
+        if ui.add_enabled(has_nodes, egui::Button::new("Zoom All")).clicked() {
+            self.zoom_all(false);
+            close = true;
+        }
+        ui.separator();
+        let doc = self.doc();
+        let undo_label = doc.undo.last().map(|e| format!("Undo {}", e.label)).unwrap_or_else(|| "Undo".into());
+        let redo_label = doc.redo.last().map(|e| format!("Redo {}", e.label)).unwrap_or_else(|| "Redo".into());
+        let (can_undo, can_redo) = (!doc.undo.is_empty(), !doc.redo.is_empty());
+        if ui.add_enabled(can_undo, shortcut_button(&undo_label, "Ctrl+Z")).clicked() {
+            self.doc().undo();
+            close = true;
+        }
+        if ui.add_enabled(can_redo, shortcut_button(&redo_label, "Ctrl+Y")).clicked() {
+            self.doc().redo();
+            close = true;
+        }
+        ui.separator();
+        if ui.button("Diagram Settings...").clicked() {
+            let st = dialogs::misc::DiagramState::new(&self.doc().project);
+            self.open_window(Window::Diagram(st));
+            close = true;
+        }
+        close
+    }
+
+    /// The right-click menu on node `n` (clicked at diagram point `at`); true when an item ran.
+    fn node_menu_items(&mut self, ui: &mut Ui, n: &Node, at: Pos2, ctx: &egui::Context) -> bool {
+        let id = n.id;
+        let mut close = false;
+        ui.label(egui::RichText::new(n.title()).strong());
+        ui.separator();
+        if ui.button("Edit...").clicked() {
+            self.open_edit(id);
+            close = true;
+        }
+        if ui.button("Report...").clicked() {
+            self.open_report(id);
+            close = true;
+        }
+        ui.separator();
+        if ui.add(shortcut_button("Cut", "Ctrl+X")).clicked() {
+            self.cut_selection();
+            close = true;
+        }
+        if ui.add(shortcut_button("Copy", "Ctrl+C")).clicked() {
+            self.copy_selection();
+            close = true;
+        }
+        close |= self.paste_item(ui, at);
+        if ui.add(shortcut_button("Delete", "Del")).clicked() {
+            self.delete_selection();
+            close = true;
+        }
+        ui.separator();
+        if ui.button("Remove Outflow Routing").clicked() {
+            self.canvas_actions(vec![CanvasAction::ClearOutflows(id)], ctx);
+            close = true;
+        }
+        if matches!(n.node_type(), NodeType::Reach | NodeType::Pond | NodeType::Link) {
+            ui.menu_button("Convert to", |ui| {
+                for to in [NodeType::Reach, NodeType::Pond, NodeType::Link] {
+                    if to != n.node_type() && ui.button(to.label()).clicked() {
+                        self.convert(id, to);
                         close = true;
                     }
-                    if has && ui.button("Draw Sub-Area").on_hover_text("Draw an area of different cover inside the outline; the rest of the outline is the remainder").clicked() {
-                        self.start_subarea(id);
-                        close = true;
-                    }
-                    if has && ui.button("Update Area from Outline").clicked() {
-                        self.area_from_outline(id);
-                        close = true;
-                    }
-                }
-                if n.node_type() == NodeType::Subcat && ui.button("Draw Tc Flow Path").on_hover_text("Measure the Tc segment lengths from a path drawn on the diagram").clicked() {
-                    self.start_tc_path(id);
-                    close = true;
                 }
             });
-        });
-        let clicked_elsewhere = ctx.input(|i| i.pointer.any_pressed()) && !resp.response.contains_pointer();
-        if close || clicked_elsewhere || ctx.input(|i| i.key_pressed(Key::Escape)) {
-            self.context_node = None;
         }
+        if n.node_type() == NodeType::Subcat {
+            let has = n.outline.is_some();
+            if ui
+                .button(if has { "Redraw Outline" } else { "Draw Outline" })
+                .on_hover_text("Trace this subcatchment's outline on the diagram; its areas follow it")
+                .clicked()
+            {
+                self.start_outline(Some(id));
+                close = true;
+            }
+            if has
+                && ui
+                    .button("Draw Sub-Area")
+                    .on_hover_text(
+                        "Draw an area of different cover inside the outline; the rest of the outline is the remainder",
+                    )
+                    .clicked()
+            {
+                self.start_subarea(id);
+                close = true;
+            }
+            if has && ui.button("Update Area from Outline").clicked() {
+                self.area_from_outline(id);
+                close = true;
+            }
+        }
+        if n.node_type() == NodeType::Subcat
+            && ui
+                .button("Draw Tc Flow Path")
+                .on_hover_text("Measure the Tc segment lengths from a path drawn on the diagram")
+                .clicked()
+        {
+            self.start_tc_path(id);
+            close = true;
+        }
+        close
     }
 
     fn area_from_outline(&mut self, id: NodeId) {
@@ -2686,6 +2849,9 @@ impl WaveStormApp {
             self.open_window(Window::Help(help::HelpState::topic(topic)));
         }
         self.error_dialog(&ctx);
+        if let Some(text) = self.clip_out.take() {
+            ctx.copy_text(text);
+        }
         let title = format!("{} - WAVEStorm", self.doc().title());
         self.set_title(&ctx, title);
         let _ = Stroke::NONE;
@@ -2813,6 +2979,20 @@ impl WaveStormApp {
 }
 
 /// Commands behind the toolbar, settings column and glass dock buttons.
+/// An open right-click menu on the diagram: on a node, or on empty space.
+#[derive(Debug, Clone, Copy)]
+struct ContextMenu {
+    node: Option<NodeId>,
+    /// Where it opened, on screen and on the diagram.
+    screen: Pos2,
+    world: Pos2,
+}
+
+/// A menu item with its keyboard shortcut shown at the right.
+fn shortcut_button(label: &str, keys: &str) -> egui::Button<'static> {
+    egui::Button::new(label.to_string()).shortcut_text(keys.to_string())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Cmd {
     ZoomIn,

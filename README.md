@@ -147,6 +147,9 @@ published results where possible (see [Methods and validation](#methods-and-vali
 **Projects and the diagram**
 - Drag-and-drop nodes and routing arrows, undo history, notes, and pop-up field tips
   (switchable in Settings > General).
+- Cut, copy and paste nodes with Ctrl+X/C/V (pasted at the pointer, routing between them
+  kept, and between WAVEStorm windows through the system clipboard). Right-click empty
+  diagram space for Paste, Create Here, Select All, Zoom All and Undo/Redo.
 - A start page (New, Open, Open Sample Project, recent projects) when no project is open.
   Recent projects are also listed under Project > Open….
 - Import legacy TR-20 input decks, CSV import/export of sub-areas and hydrographs, and read

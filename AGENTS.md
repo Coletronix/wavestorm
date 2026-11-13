@@ -463,6 +463,14 @@ Keep this section updated at the end of every session.
   and forgotten. Desktop autosave pref (`autosave`, `autosave_minutes`, off by default) saves
   dirty projects that have a path; the `.bak` timer remains. Timers wake the idle app with
   `request_repaint_after` only while saved projects have unsaved changes.
+- Clipboard (`ui::clip`): on the desktop egui-winit turns Ctrl+X/C/V into `Event::Cut/Copy/
+  Paste` (no `Key` event, and no `Paste` at all when the system clipboard has no text), so
+  `clip::command` reads those events natively and the keys only on wasm (where the clipboard
+  events arrive later). Copy also writes the nodes as `{"wavestorm-nodes": [...]}` JSON to the
+  system clipboard, so Ctrl+V always has text and pastes across windows. Diagram right-click
+  menus are one `ContextMenu` (node or empty space, screen + world point) drawn by
+  `context_menu`; presses in a submenu (another Foreground layer) don't close it.
+  `tests/clipboard.rs`.
 - Arrow grabbing: `diagram::handle_at` hit-tests the whole arrowhead from the press origin
   (egui reports drag starts after the pointer has moved), nearest wins; hovering a handle shows
   a grab cursor. `tests/monkey.rs::arrowheads_are_easy_to_grab` covers both layouts.

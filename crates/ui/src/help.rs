@@ -27,8 +27,8 @@ Choose the rainfall event in the toolbar. Set the storm, depths, time span and m
         body: "Wheel: zoom about the pointer.  Middle-drag or Space+drag: pan.  Shift+wheel: pan sideways.\n\
 Click: select a node.  Ctrl/Shift+click: add to the selection.  Drag on empty space: select with a rectangle.\n\
 Drag a node: move the selection.  Ctrl+drag: clone the selection.\n\
-Drag an arrowhead: reroute.  Double-click: report.  Right-click: node menu.\n\
-Delete: delete the selection.  Ctrl+C / Ctrl+X / Ctrl+V: copy, cut, paste nodes.  Ctrl+Z / Ctrl+Y: undo, redo.\n\
+Drag an arrowhead: reroute.  Double-click: report.  Right-click: node menu, or on empty space paste, create a node there, select or zoom.\n\
+Delete: delete the selection.  Ctrl+C / Ctrl+X / Ctrl+V: copy, cut, paste nodes (pasted at the pointer when it is on the diagram).  Ctrl+Z / Ctrl+Y: undo, redo.\n\
 Ctrl+S: save.  Ctrl+O: open.  Ctrl+N: new project.  Esc: cancel a drawing tool.\n\n\
 In charts, drag down-right to zoom into a region and drag up-left to restore the full view.",
     },
