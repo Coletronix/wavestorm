@@ -2275,11 +2275,8 @@ impl WaveStormApp {
             if let Some(n) = p.node_mut(id) {
                 n.data = NodeData::empty(t);
                 n.number = number;
-                if t.outflow_count() < 3 {
-                    for k in t.outflow_count()..3 {
-                        n.outflows[k] = None;
-                    }
-                }
+                // Outflows the new type does not have are cleared.
+                n.outflows.iter_mut().skip(t.outflow_count()).for_each(|o| *o = None);
             }
         });
         self.doc().windows.retain(|w| w.node() != Some(id));

@@ -358,9 +358,7 @@ mod tests {
         let k = 3600.0;
         let table = StageTable::build(0.0, 100.0, 2000, |e| e * 1000.0, |e| e * 1000.0 / k);
         let mut inflow = Hydrograph::zeros(0.0, 0.1, 400);
-        for i in 10..20 {
-            inflow.q[i] = 10.0;
-        }
+        inflow.q[10..20].fill(10.0);
         let r = level_pool(&table, &inflow, 0.0, &mut |e, _, _| table.outflow_at(e));
         assert!((r.outflow.volume_cf() - inflow.volume_cf()).abs() / inflow.volume_cf() < 1e-3);
         assert!(r.outflow.peak().value < 10.0);
