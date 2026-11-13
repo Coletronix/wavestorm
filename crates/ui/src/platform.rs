@@ -208,8 +208,9 @@ fn download(name: &str, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Small named text values that persist between sessions: files in the user's configuration
-/// folder on the desktop, `localStorage` in the browser. Failures are ignored (best effort).
+/// Named text values that persist between sessions: files in the user's configuration folder on
+/// the desktop; in the browser, IndexedDB (see [`store::load`]), which holds far more than
+/// `localStorage` (about 5 MB per site), so recovery copies keep their background images.
 pub mod store {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn config_file(name: &str) -> Option<std::path::PathBuf> {
@@ -227,7 +228,7 @@ pub mod store {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            web_sys::window()?.local_storage().ok()??.get_item(&format!("wavestorm.{key}")).ok()?
+            web::read(key)
         }
     }
 
@@ -235,7 +236,8 @@ pub mod store {
         let _ = try_write(key, text);
     }
 
-    /// Like [`write`], reporting failure (for example a full browser storage quota).
+    /// Like [`write`], reporting failure. In the browser a write to IndexedDB finishes later:
+    /// its failure (for example a full storage quota) comes from [`take_problem`].
     pub fn try_write(key: &str, text: &str) -> Result<(), String> {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -247,8 +249,7 @@ pub mod store {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            let s = web_sys::window().and_then(|w| w.local_storage().ok().flatten()).ok_or("no local storage")?;
-            s.set_item(&format!("wavestorm.{key}"), text).map_err(|e| format!("{e:?}"))
+            web::write(key, Some(text))
         }
     }
 
@@ -259,8 +260,220 @@ pub mod store {
             let _ = std::fs::remove_file(f);
         }
         #[cfg(target_arch = "wasm32")]
-        if let Some(Ok(Some(s))) = web_sys::window().map(|w| w.local_storage()) {
-            let _ = s.remove_item(&format!("wavestorm.{key}"));
+        {
+            let _ = web::write(key, None);
+        }
+    }
+
+    /// A write that failed since the last call, described for the user (browser only).
+    pub fn take_problem() -> Option<String> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            web::take_problem()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            None
+        }
+    }
+
+    /// Opens the browser's IndexedDB store and reads every value into memory, moving values
+    /// kept in `localStorage` by earlier versions across. Call once before the app starts;
+    /// until then (or if IndexedDB is unavailable) values live in `localStorage` as before.
+    #[cfg(target_arch = "wasm32")]
+    pub async fn load() {
+        web::load().await
+    }
+
+    /// What a failed write of `key` loses, for the message.
+    #[cfg(target_arch = "wasm32")]
+    fn what(key: &str) -> &'static str {
+        match key {
+            "session" => "the copy of your open projects (reopened next time)",
+            "recent" => "the Recent Projects list",
+            _ => "your settings",
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    mod web {
+        use std::cell::RefCell;
+        use std::collections::HashMap;
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen::prelude::*;
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::{IdbDatabase, IdbRequest, IdbTransaction, IdbTransactionMode};
+
+        const DB: &str = "wavestorm";
+        const STORE: &str = "store";
+        /// The prefix of values in `localStorage`.
+        const PREFIX: &str = "wavestorm.";
+
+        thread_local! {
+            /// The database and every value in it, once [`load`] has run.
+            static OPEN: RefCell<Option<(IdbDatabase, HashMap<String, String>)>> = const { RefCell::new(None) };
+            static PROBLEMS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+        }
+
+        fn local() -> Option<web_sys::Storage> {
+            web_sys::window()?.local_storage().ok()?
+        }
+
+        fn js(e: JsValue) -> String {
+            e.dyn_ref::<web_sys::DomException>()
+                .map(|d| format!("{}: {}", d.name(), d.message()))
+                .or_else(|| e.as_string())
+                .unwrap_or_else(|| format!("{e:?}"))
+        }
+
+        pub fn read(key: &str) -> Option<String> {
+            let cached = OPEN.with(|o| o.borrow().as_ref().map(|(_, m)| m.get(key).cloned()));
+            match cached {
+                Some(v) => v,
+                None => local()?.get_item(&format!("{PREFIX}{key}")).ok()?,
+            }
+        }
+
+        pub fn write(key: &str, value: Option<&str>) -> Result<(), String> {
+            let db = OPEN.with(|o| {
+                o.borrow_mut().as_mut().map(|(db, m)| {
+                    match value {
+                        Some(v) => m.insert(key.to_string(), v.to_string()),
+                        None => m.remove(key),
+                    };
+                    db.clone()
+                })
+            });
+            let Some(db) = db else {
+                // No IndexedDB: localStorage, as earlier versions did.
+                let s = local().ok_or("no browser storage")?;
+                let k = format!("{PREFIX}{key}");
+                return match value {
+                    Some(v) => s.set_item(&k, v).map_err(js),
+                    None => s.remove_item(&k).map_err(js),
+                };
+            };
+            let (key, value) = (key.to_string(), value.map(str::to_string));
+            // Transactions run in the order they are created, so the last write wins.
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Err(e) = put(&db, &key, value.as_deref()).await {
+                    PROBLEMS.with(|p| {
+                        p.borrow_mut().push(format!(
+                            "This browser would not store {} ({e}). Your work is not lost while this tab \
+                             stays open: save (download) your projects to keep them.",
+                            super::what(&key)
+                        ))
+                    });
+                }
+            });
+            Ok(())
+        }
+
+        pub fn take_problem() -> Option<String> {
+            PROBLEMS.with(|p| p.borrow_mut().pop())
+        }
+
+        /// A promise settled by `req`: its result, or its error.
+        fn request(req: &IdbRequest) -> js_sys::Promise {
+            let req = req.clone();
+            js_sys::Promise::new(&mut |resolve, reject| {
+                let r = req.clone();
+                let ok = Closure::once_into_js(move || {
+                    let _ = resolve.call1(&JsValue::NULL, &r.result().unwrap_or(JsValue::UNDEFINED));
+                });
+                let r = req.clone();
+                let fail = Closure::once_into_js(move || {
+                    let e = r.error().ok().flatten().map(JsValue::from).unwrap_or(JsValue::UNDEFINED);
+                    let _ = reject.call1(&JsValue::NULL, &e);
+                });
+                req.set_onsuccess(Some(ok.unchecked_ref()));
+                req.set_onerror(Some(fail.unchecked_ref()));
+            })
+        }
+
+        /// A promise settled when `tx` commits (a write is only safe then) or aborts.
+        fn committed(tx: &IdbTransaction) -> js_sys::Promise {
+            let tx = tx.clone();
+            js_sys::Promise::new(&mut |resolve, reject| {
+                let ok = Closure::once_into_js(move || {
+                    let _ = resolve.call0(&JsValue::NULL);
+                });
+                let t = tx.clone();
+                let fail = Closure::once_into_js(move || {
+                    let e = t.error().map(JsValue::from).unwrap_or_else(|| JsValue::from_str("aborted"));
+                    let _ = reject.call1(&JsValue::NULL, &e);
+                });
+                tx.set_oncomplete(Some(ok.unchecked_ref()));
+                tx.set_onabort(Some(fail.unchecked_ref()));
+            })
+        }
+
+        async fn put(db: &IdbDatabase, key: &str, value: Option<&str>) -> Result<(), String> {
+            let tx = db.transaction_with_str_and_mode(STORE, IdbTransactionMode::Readwrite).map_err(js)?;
+            let store = tx.object_store(STORE).map_err(js)?;
+            let k = JsValue::from_str(key);
+            match value {
+                Some(v) => store.put_with_key(&JsValue::from_str(v), &k).map(drop),
+                None => store.delete(&k).map(drop),
+            }
+            .map_err(js)?;
+            JsFuture::from(committed(&tx)).await.map(drop).map_err(js)
+        }
+
+        async fn open() -> Result<(IdbDatabase, HashMap<String, String>), String> {
+            let factory = web_sys::window().ok_or("no window")?.indexed_db().map_err(js)?.ok_or("no IndexedDB")?;
+            let req = factory.open_with_u32(DB, 1).map_err(js)?;
+            let r = req.clone();
+            let upgrade = Closure::once_into_js(move || {
+                if let Ok(db) = r.result() {
+                    let _ = db.unchecked_into::<IdbDatabase>().create_object_store(STORE);
+                }
+            });
+            req.set_onupgradeneeded(Some(upgrade.unchecked_ref()));
+            let db: IdbDatabase = JsFuture::from(request(&req)).await.map_err(js)?.unchecked_into();
+            let tx = db.transaction_with_str(STORE).map_err(js)?;
+            let store = tx.object_store(STORE).map_err(js)?;
+            let keys = JsFuture::from(request(&store.get_all_keys().map_err(js)?)).await.map_err(js)?;
+            let values = JsFuture::from(request(&store.get_all().map_err(js)?)).await.map_err(js)?;
+            let (keys, values): (js_sys::Array, js_sys::Array) = (keys.unchecked_into(), values.unchecked_into());
+            let mut map = HashMap::new();
+            for (k, v) in keys.iter().zip(values.iter()) {
+                if let (Some(k), Some(v)) = (k.as_string(), v.as_string()) {
+                    map.insert(k, v);
+                }
+            }
+            Ok((db, map))
+        }
+
+        pub async fn load() {
+            let (db, mut map) = match open().await {
+                Ok(x) => x,
+                Err(e) => {
+                    log::warn!("IndexedDB unavailable, using localStorage: {e}");
+                    return;
+                }
+            };
+            // Ask the browser not to clear this site's storage when space runs low.
+            if let Some(w) = web_sys::window() {
+                let _ = w.navigator().storage().persist();
+            }
+            // Move what earlier versions kept in localStorage; it is removed once stored here.
+            if let Some(s) = local() {
+                let n = s.length().unwrap_or(0);
+                let keys: Vec<String> = (0..n).filter_map(|i| s.key(i).ok().flatten()).collect();
+                for k in keys.iter().filter_map(|k| k.strip_prefix(PREFIX)) {
+                    let Some(v) = s.get_item(&format!("{PREFIX}{k}")).ok().flatten() else { continue };
+                    if !map.contains_key(k) {
+                        if let Err(e) = put(&db, k, Some(&v)).await {
+                            log::warn!("Could not move {k} to IndexedDB: {e}");
+                            continue;
+                        }
+                        map.insert(k.to_string(), v);
+                    }
+                    let _ = s.remove_item(&format!("{PREFIX}{k}"));
+                }
+            }
+            OPEN.with(|o| *o.borrow_mut() = Some((db, map)));
         }
     }
 }

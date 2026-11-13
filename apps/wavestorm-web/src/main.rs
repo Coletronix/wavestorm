@@ -18,6 +18,8 @@ fn main() {
             log::error!("missing <canvas id=\"wavestorm_canvas\">");
             return;
         };
+        // Stored settings and the last session come from IndexedDB, read before the app starts.
+        wavestorm_ui::platform::store::load().await;
         // One queued frame instead of the default two, so the UI keeps up with the pointer.
         let options = eframe::WebOptions {
             wgpu_options: eframe::WgpuConfiguration {

@@ -104,12 +104,12 @@ impl WaveStormApp {
     fn with(platform: Platform, prefs: Prefs, persist_prefs: bool) -> Self {
         // The projects open at the end of the last session come back (with any unsaved changes);
         // with none to reopen, nothing is open. Automated runs start with the sample project.
-        let (docs, active) = if persist_prefs {
+        let (docs, active, restore_notice) = if persist_prefs {
             recovery::take()
         } else {
             let mut doc = Doc::new(samples::sample_project(), None);
             doc.dirty = false;
-            (vec![doc], 0)
+            (vec![doc], 0, None)
         };
         let unsaved = docs.iter().filter(|d| d.dirty).count();
         let plural = |n: usize| if n == 1 { "" } else { "s" };
@@ -139,7 +139,7 @@ impl WaveStormApp {
             clip_out: None,
             save_prompt: None,
             context: None,
-            error: None,
+            error: restore_notice,
             styled: false,
             untitled: 1,
             canvas_rect: Rect::NOTHING,
@@ -852,10 +852,14 @@ impl WaveStormApp {
     /// `recovery`), and on the desktop the timed backup (`<project>.bak`) and, when turned on in
     /// the General settings, autosave of changed projects to their own files.
     fn autosave(&mut self, ctx: &egui::Context) {
+        // Storage problems risk work, so they get a dialog, not just the status line.
         if self.persist_prefs
             && let Some(problem) = self.recovery.update(ctx, &self.docs, self.active)
         {
-            self.status = problem;
+            self.error = Some(problem);
+        }
+        if let Some(problem) = platform::store::take_problem() {
+            self.error = Some(problem);
         }
         let now = ctx.input(|i| i.time);
         // Timers only matter while a saved project has unsaved changes; then wake up once when

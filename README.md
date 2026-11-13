@@ -245,7 +245,8 @@ trunk build --release  # static site in dist/web, ready for any web server
 ```
 
 In the browser, files are opened and saved through the browser's own file pickers and
-downloads. Preferences and imported rainfall files are kept in local storage.
+downloads. Preferences, imported rainfall files, recent projects and the copy of your open
+projects are kept in the browser's IndexedDB storage, which has room for large background images.
 
 ## Usage
 

@@ -37,6 +37,9 @@ struct Entry {
     /// The project as `.waves` JSON, when it has unsaved changes or no file.
     #[serde(default)]
     project: Option<String>,
+    /// The copy was kept without its background image (it did not fit in storage).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    no_background: bool,
 }
 
 fn yes() -> bool {
@@ -51,6 +54,7 @@ pub fn snapshot(docs: &[Doc], active: usize, strip_background: bool) -> Option<S
         .iter()
         .map(|d| {
             let keep = d.dirty || d.path.is_none();
+            let no_background = keep && strip_background && d.project.diagram.underlay.is_some();
             let project = keep
                 .then(|| {
                     let mut p = d.project.clone();
@@ -60,7 +64,7 @@ pub fn snapshot(docs: &[Doc], active: usize, strip_background: bool) -> Option<S
                     p.to_json().ok()
                 })
                 .flatten();
-            Entry { path: d.path.clone(), hcp: d.hcp, dirty: d.dirty, project }
+            Entry { path: d.path.clone(), hcp: d.hcp, dirty: d.dirty, project, no_background }
         })
         .collect();
     if projects.is_empty() { None } else { serde_json::to_string(&Snapshot { projects, active }).ok() }
@@ -68,15 +72,23 @@ pub fn snapshot(docs: &[Doc], active: usize, strip_background: bool) -> Option<S
 
 /// The projects of a recorded session and the tab to bring to the front. `read` loads a file
 /// for projects recorded by path; unreadable entries and missing files are skipped.
-pub fn restore(json: &str, read: impl Fn(&str) -> Option<Vec<u8>>) -> (Vec<Doc>, usize) {
-    let Ok(snap) = serde_json::from_str::<Snapshot>(json) else { return (Vec::new(), 0) };
+/// The projects of the last session, the front one, and a notice when some came back without
+/// their background image.
+pub fn restore(json: &str, read: impl Fn(&str) -> Option<Vec<u8>>) -> (Vec<Doc>, usize, Option<String>) {
+    let Ok(snap) = serde_json::from_str::<Snapshot>(json) else { return (Vec::new(), 0, None) };
     let mut docs = Vec::new();
+    let mut lost_background = Vec::new();
     let mut active = 0;
     for (i, e) in snap.projects.into_iter().enumerate() {
         let doc = match (e.project, &e.path) {
             (Some(text), _) => Project::open_json(&text).ok().map(|(p, newer)| {
                 let mut d = Doc::new(p, e.path.clone());
-                d.dirty = e.dirty;
+                // A copy without its background is not what was saved: open it as changed, and
+                // say so, so it is not mistaken for the saved project.
+                d.dirty = e.dirty || e.no_background;
+                if e.no_background {
+                    lost_background.push(d.title());
+                }
                 d.hcp = e.hcp;
                 d.newer = newer;
                 d
@@ -97,13 +109,20 @@ pub fn restore(json: &str, read: impl Fn(&str) -> Option<Vec<u8>>) -> (Vec<Doc>,
             docs.push(d);
         }
     }
-    (docs, active)
+    let notice = (!lost_background.is_empty()).then(|| {
+        format!(
+            "{} came back without its background image: browser storage was too full to keep it. \
+             The image is still in the file you last saved; open that file to get it back.",
+            lost_background.join(", ")
+        )
+    });
+    (docs, active, notice)
 }
 
 /// The projects open at the end of the last session (empty when none could be reopened), and
 /// the tab to bring to the front.
-pub fn take() -> (Vec<Doc>, usize) {
-    let Some(text) = store::read(KEY).or_else(|| store::read(OLD_KEY)) else { return (Vec::new(), 0) };
+pub fn take() -> (Vec<Doc>, usize, Option<String>) {
+    let Some(text) = store::read(KEY).or_else(|| store::read(OLD_KEY)) else { return (Vec::new(), 0, None) };
     restore(&text, |path| {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -170,10 +189,15 @@ fn write(docs: &[Doc], active: usize) -> Option<String> {
     }
     match snapshot(docs, active, true).map(|t| store::try_write(KEY, &t)) {
         Some(Ok(())) => Some(
-            "Unsaved changes are kept for recovery without their background image (too large for local storage)."
+            "Browser storage is too full to keep this session's projects with their background images, so \
+             the copy reopened next time will not have them. Save (download) your projects to keep the images."
                 .into(),
         ),
-        _ => Some("Could not keep a recovery copy of unsaved changes (local storage is full or unavailable).".into()),
+        _ => Some(
+            "Browser storage is full or unavailable, so your open projects will not reopen next time. \
+             Save (download) them to keep your work."
+                .into(),
+        ),
     }
 }
 
@@ -199,7 +223,7 @@ mod tests {
         untitled.project.title = "Untitled".into();
         assert!(snapshot(&[], 0, false).is_none(), "nothing open, nothing recorded");
         let json = snapshot(&[gone, saved, changed, untitled], 2, false).unwrap();
-        let (back, active) = restore(&json, files);
+        let (back, active, _) = restore(&json, files);
         // The missing file is skipped; the saved file is read from disk (clean); the changed and
         // untitled projects come from their kept contents.
         let titles: Vec<(&str, bool, Option<&str>)> =
@@ -217,11 +241,39 @@ mod tests {
     }
 
     #[test]
+    fn a_copy_kept_without_its_background_says_so() {
+        let mut p = crate::samples::sample_project();
+        p.diagram.underlay = Some(wavestorm_core::project::Underlay {
+            file_name: "site.png".into(),
+            bytes: vec![1, 2, 3],
+            page: 0,
+            origin: [0.0, 0.0],
+            scale: 1.0,
+            rotation: 0.0,
+            feet_per_unit: None,
+            opacity: 0.5,
+            visible: true,
+            locked: false,
+            geo: None,
+        });
+        let mut d = Doc::new(p, None);
+        d.dirty = false;
+        // Kept whole: reopens unchanged, without a notice.
+        let (back, _, notice) = restore(&snapshot(std::slice::from_ref(&d), 0, false).unwrap(), files);
+        assert!(back[0].project.diagram.underlay.is_some() && !back[0].dirty && notice.is_none());
+        // Kept without the background: reopens as changed, with a notice naming it.
+        let (back, _, notice) = restore(&snapshot(&[d], 0, true).unwrap(), files);
+        assert!(back[0].project.diagram.underlay.is_none());
+        assert!(back[0].dirty, "not mistaken for the saved project");
+        assert!(notice.is_some_and(|n| n.contains("Brookside Commons") && n.contains("background")));
+    }
+
+    #[test]
     fn reads_the_old_recovery_record() {
         let old = r#"{"projects":[{"path":null,"hcp":false,"project":"#.to_string()
             + &serde_json::to_string(&crate::samples::sample_project().to_json().unwrap()).unwrap()
             + "}]}";
-        let (docs, _) = restore(&old, |_| None);
+        let (docs, _, _) = restore(&old, |_| None);
         assert_eq!(docs.len(), 1);
         assert!(docs[0].dirty, "0.3.0 kept only unsaved work");
     }

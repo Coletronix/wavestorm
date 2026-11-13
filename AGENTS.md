@@ -156,7 +156,7 @@ Keep this section updated at the end of every session.
   `noaa::pfds_url` (`cgi-bin/new/fe_text_mean.csv`; no CORS, desktop only), "NOAA for Site" in
   Event Lookup (`Fetch::Noaa`, centre of the georeferenced background). Writers:
   `write_hcr/huh/idf`. Library folder pref (Settings > General, desktop),
-  "Import Rainfall Files..." (desktop and web; web imports persist in localStorage up to 2.5 MB).
+  "Import Rainfall Files..." (desktop and web; web imports persist in browser storage up to 2.5 MB, `IMPORT_LIMIT`).
   Library storms/UHs used by events, the default UH or a subcatchment UH are copied into the
   project (`library::adopt`) so projects stay self-contained. The full-library test runs when
   the folder exists (`WAVESTORM_RAIN_LIB` or `reference_images/expert_reference/Rainfall`);
@@ -471,6 +471,18 @@ Keep this section updated at the end of every session.
   menus are one `ContextMenu` (node or empty space, screen + world point) drawn by
   `context_menu`; presses in a submenu (another Foreground layer) don't close it.
   `tests/clipboard.rs`.
+- Browser storage (`platform::store`, 2026-11-13): IndexedDB database `wavestorm`, object store
+  `store`, one string per key, read whole into memory by `store::load()` (awaited in
+  `apps/wavestorm-web` before the app starts) so `read`/`write` stay synchronous; writes update
+  the memory copy and commit in the background (transactions keep their order), and a failed
+  commit comes back from `store::take_problem()` as an error dialog. `load` moves `wavestorm.*`
+  `localStorage` values from earlier versions across, then deletes them, and asks for
+  persistent storage. Without IndexedDB everything falls back to `localStorage`. localStorage's
+  ~5 MB limit was why web users lost backgrounds: the session copy was stripped of them
+  (`recovery::write`), and restored as if saved. A stripped copy now restores as changed with a
+  notice (`Entry::no_background`), and storage problems are dialogs, not status text. Checked in
+  headless Chromium over the DevTools protocol (migration; a 9.5 MB session restored and
+  re-stored whole); there is no automated browser test.
 - `.hcp` saves (`core::hcp_check::losses`): the project is exported, re-imported and compared
   (JSON paths mapped to plain names, nodes listed), so new WAVEStorm-only data is reported
   without a hand-kept list; the background, soils and terrain are reported up front. Save,
