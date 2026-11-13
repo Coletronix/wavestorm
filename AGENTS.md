@@ -471,6 +471,15 @@ Keep this section updated at the end of every session.
   menus are one `ContextMenu` (node or empty space, screen + world point) drawn by
   `context_menu`; presses in a submenu (another Foreground layer) don't close it.
   `tests/clipboard.rs`.
+- `.hcp` saves (`core::hcp_check::losses`): the project is exported, re-imported and compared
+  (JSON paths mapped to plain names, nodes listed), so new WAVEStorm-only data is reported
+  without a hand-kept list; the background, soils and terrain are reported up front. Save,
+  Save As .hcp and autosave go through `save_format` → `SavePrompt` (list + "Save as
+  .waves..." / "Save as .hcp Anyway" / Cancel); agreed losses go in `Doc::hcp_accepted` and
+  are not asked again; autosave skips such projects. This was the cause of user reports of
+  backgrounds vanishing (2026-11-13): projects opened from `.hcp` were saved back to `.hcp`.
+  Imported `.hcp` files must report no losses (checked in `hcp::tests::round_trip_is_stable`).
+  `tests/save_warnings.rs`.
 - Arrow grabbing: `diagram::handle_at` hit-tests the whole arrowhead from the press origin
   (egui reports drag starts after the pointer has moved), nearest wins; hovering a handle shows
   a grab cursor. `tests/monkey.rs::arrowheads_are_easy_to_grab` covers both layouts.
@@ -537,6 +546,19 @@ Semantic versioning: the single source of truth is `version` in the workspace `C
   minor), run `cargo test`, clippy and the wasm check, commit "Release vX.Y.Z", then
   `git tag -a vX.Y.Z -m "WAVEStorm X.Y.Z" -m "<highlights paragraph>"`. Pushing commits and
   tags is the user's call.
+- Project-file compatibility (user, 2026-11-13): **files from every earlier release must keep
+  opening.** A patch release never changes the `.waves` format (a file saved by X.Y.3 opens
+  silently in X.Y.0). Every save stamps `saved_by` (the writing version, `project::VERSION`);
+  `Project::open_json` reports a newer major/minor release, the app warns on open and asks
+  before saving over it (it would drop what it does not know); a higher `format` number is a
+  hard error, so bump `FORMAT_VERSION` only for changes older readers cannot survive.
+  `crates/core/tests/formats/` holds files written by the released code of every tag
+  (`wavestorm-X.Y.Z.waves` = sample project, `-full` = `examples/format_fixture.rs`: sample +
+  background, drawings, notes, settings); `tests/old_formats.rs` opens, calculates and
+  re-saves each. Never edit or delete them. For every minor or major release run
+  `cargo run -p wavestorm-core --example format_fixture` (with the new version in Cargo.toml)
+  and commit the file: `this_release_has_a_fixture` fails until you do. A field rename or type
+  change needs `#[serde(alias)]` or a migration so the old files still pass.
 - CI (`.github/workflows/ci.yml`): `cargo fmt --check` (the workspace was rustfmt-formatted
   2026-10-25; run `cargo fmt` before committing), clippy (`-D warnings`), `cargo test` on Linux/Windows/macOS,
   wasm checks of core and web, `cargo deny check licenses sources` (`deny.toml`: permissive

@@ -554,6 +554,35 @@ pub struct Project {
 
 pub const FORMAT_VERSION: u32 = 1;
 
+/// This WAVEStorm release, written into saved projects.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+const SAVED_BY: &str = "saved_by";
+
+/// Major and minor parts of a version such as "0.10.2" (pre-release tags ignored).
+fn major_minor(v: &str) -> Option<(u64, u64)> {
+    let mut parts = v.trim().trim_start_matches('v').split(['.', '-', '+']);
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().and_then(|m| m.parse().ok()).unwrap_or(0);
+    Some((major, minor))
+}
+
+/// Whether release `v` is a newer major or minor release than this one.
+pub fn is_newer_release(v: &str) -> bool {
+    matches!((major_minor(v), major_minor(VERSION)), (Some(theirs), Some(ours)) if theirs > ours)
+}
+
+/// The warning for a project saved by release `saved_by`, when that is a newer major or
+/// minor release than this one.
+pub fn newer_release_note(saved_by: &str) -> Option<String> {
+    is_newer_release(saved_by).then(|| {
+        format!(
+            "This project was saved by WAVEStorm {saved_by}, a newer version than this one ({VERSION}). \
+             It may use features this version does not have: they are not shown here, and saving the \
+             project with this version would remove them. Update WAVEStorm before editing it."
+        )
+    })
+}
+
 impl Default for Project {
     fn default() -> Self {
         Project {
@@ -663,16 +692,38 @@ impl Project {
             .or_else(|| crate::uh::builtin_uhs().into_iter().find(|u| u.name == name))
     }
 
+    /// The project as a `.waves` file: JSON stamped with the WAVEStorm version writing it
+    /// (`saved_by`), so an older version opening it can warn (see [`Project::open_json`]).
     pub fn to_json(&self) -> Result<String, String> {
-        serde_json::to_string_pretty(self).map_err(|e| e.to_string())
+        let mut v = serde_json::to_value(self).map_err(|e| e.to_string())?;
+        if let Some(o) = v.as_object_mut() {
+            o.insert(SAVED_BY.into(), VERSION.into());
+        }
+        serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
     }
 
     pub fn from_json(text: &str) -> Result<Project, String> {
-        let p: Project = crate::json::from_str(text).map_err(|e| format!("Cannot read project: {e}"))?;
-        if p.format > FORMAT_VERSION {
-            return Err(format!("This project was saved by a newer version (format {}).", p.format));
+        Project::open_json(text).map(|(p, _)| p)
+    }
+
+    /// Reads a `.waves` project, with the version that saved it when that is a newer WAVEStorm
+    /// release (see [`newer_release_note`]): one whose major or minor version is higher than this
+    /// one's may hold data this version does not know, which would be dropped if it saved the
+    /// project. Patch releases share the file format, so they never count. A higher `format`
+    /// number is an error: the file cannot be read.
+    pub fn open_json(text: &str) -> Result<(Project, Option<String>), String> {
+        let value: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("Cannot read project: {e}"))?;
+        let saved_by = value.get(SAVED_BY).and_then(|v| v.as_str()).map(str::to_string);
+        let format = value.get("format").and_then(|v| v.as_u64()).unwrap_or(0);
+        if format > u64::from(FORMAT_VERSION) {
+            let by = saved_by.as_deref().map(|v| format!(" ({v})")).unwrap_or_default();
+            return Err(format!(
+                "This project was saved by a newer version of WAVEStorm{by} in a file format this \
+                 version ({VERSION}) cannot read. Update WAVEStorm to open it."
+            ));
         }
-        Ok(p)
+        let p: Project = crate::json::from_value(value).map_err(|e| format!("Cannot read project: {e}"))?;
+        Ok((p, saved_by.filter(|v| is_newer_release(v))))
     }
 }
 
@@ -710,5 +761,32 @@ mod tests {
         let q = Project::from_json(&p.to_json().unwrap()).unwrap();
         assert!(matches!(&q.node(id).unwrap().data, NodeData::Reach(r) if r.length.is_nan()));
         assert!(Project::from_json("{").is_err());
+    }
+
+    #[test]
+    fn newer_releases_warn_but_patch_releases_do_not() {
+        let (major, minor) = major_minor(VERSION).unwrap();
+        let text = Project::default().to_json().unwrap();
+        assert!(text.contains(&format!("\"saved_by\": \"{VERSION}\"")));
+        assert_eq!(Project::open_json(&text).unwrap().1, None, "same release");
+        let with = |v: &str| text.replace(&format!("\"saved_by\": \"{VERSION}\""), &format!("\"saved_by\": \"{v}\""));
+        // A later patch of this release, or any older release: no warning.
+        assert_eq!(Project::open_json(&with(&format!("{major}.{minor}.999"))).unwrap().1, None);
+        assert_eq!(Project::open_json(&with("0.1.0")).unwrap().1, None);
+        // A later minor or major release: opens, with a warning naming both versions.
+        for newer in
+            [format!("{major}.{}.0", minor + 1), format!("{}.0.0", major + 1), format!("{major}.{}.0-beta", minor + 1)]
+        {
+            assert_eq!(Project::open_json(&with(&newer)).unwrap().1.as_deref(), Some(newer.as_str()));
+            let note = newer_release_note(&newer).expect("newer release warns");
+            assert!(note.contains(&newer) && note.contains(VERSION), "{note}");
+        }
+        // Files from before the stamp, or with a garbled one, open quietly.
+        let old = text.replace(&format!("\"saved_by\": \"{VERSION}\","), "");
+        assert_eq!(Project::open_json(&old).unwrap().1, None);
+        assert_eq!(Project::open_json(&with("banana")).unwrap().1, None);
+        // A newer file format cannot be read at all.
+        let future = text.replace("\"format\": 1", "\"format\": 99");
+        assert!(Project::open_json(&future).unwrap_err().contains("newer version"));
     }
 }

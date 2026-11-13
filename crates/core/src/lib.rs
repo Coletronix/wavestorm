@@ -23,6 +23,7 @@ pub mod exchange;
 pub mod geo;
 pub mod geometry;
 pub mod hcp;
+pub mod hcp_check;
 pub mod hydrograph;
 pub mod json;
 pub mod landuse;

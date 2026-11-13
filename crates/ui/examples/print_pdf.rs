@@ -8,7 +8,7 @@ fn main() {
     let p = match args.next() {
         Some(path) => {
             let bytes = std::fs::read(&path).expect("read project");
-            wavestorm_ui::project_from_bytes(&path, bytes).expect("parse project").0
+            wavestorm_ui::project_from_bytes(&path, bytes).expect("parse project").project
         }
         None => wavestorm_ui::samples::sample_project(),
     };

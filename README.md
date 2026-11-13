@@ -147,6 +147,10 @@ published results where possible (see [Methods and validation](#methods-and-vali
 **Projects and the diagram**
 - Drag-and-drop nodes and routing arrows, undo history, notes, and pop-up field tips
   (switchable in Settings > General).
+- Saving to the `.hcp` interchange format lists anything that format cannot hold (background,
+  drawings, notes, some settings) and offers to save as `.waves` instead. Opening a project
+  saved by a newer WAVEStorm warns that saving it here would drop what this version does not
+  know; projects from every earlier version keep opening.
 - Cut, copy and paste nodes with Ctrl+X/C/V (pasted at the pointer, routing between them
   kept, and between WAVEStorm windows through the system clipboard). Right-click empty
   diagram space for Paste, Create Here, Select All, Zoom All and Undo/Redo.

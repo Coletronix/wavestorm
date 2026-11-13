@@ -60,6 +60,12 @@ pub struct Doc {
     /// The project was opened from (or last saved as) an interchange `.hcp` file, so Save writes
     /// that format again.
     pub hcp: bool,
+    /// The newer WAVEStorm release that saved this project (see `Project::open_json`): saving
+    /// it here asks first, as this version would drop what it does not know.
+    pub newer: Option<String>,
+    /// What an `.hcp` save would lose that the user already agreed to; Save asks again only
+    /// when something new would be lost.
+    pub hcp_accepted: Vec<String>,
 }
 
 impl Doc {
@@ -86,6 +92,8 @@ impl Doc {
             announced: 0,
             seen_messages: Vec::new(),
             hcp: false,
+            newer: None,
+            hcp_accepted: Vec::new(),
         }
     }
 

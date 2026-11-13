@@ -71,6 +71,7 @@ pub struct WaveStormApp {
     clipboard: Vec<Node>,
     /// Text to put on the system clipboard this frame.
     clip_out: Option<String>,
+    save_prompt: Option<SavePrompt>,
     context: Option<ContextMenu>,
     error: Option<String>,
     styled: bool,
@@ -136,6 +137,7 @@ impl WaveStormApp {
             status,
             clipboard: Vec::new(),
             clip_out: None,
+            save_prompt: None,
             context: None,
             error: None,
             styled: false,
@@ -494,7 +496,8 @@ impl WaveStormApp {
     fn handle_incoming(&mut self, _ctx: &egui::Context, item: Incoming) -> Result<(), String> {
         match item.purpose {
             Purpose::OpenProject => {
-                let (mut project, is_hcp, mut warnings) = project_from_bytes(&item.name, item.bytes)?;
+                let Opened { mut project, hcp: is_hcp, mut warnings, newer } =
+                    project_from_bytes(&item.name, item.bytes)?;
                 // Library storms the events use become part of the project, so a project made
                 // elsewhere (or imported) calculates without first visiting Calculation Settings.
                 let adopted = library::adopt(&mut project);
@@ -514,6 +517,10 @@ impl WaveStormApp {
                 platform::recent::push(&item.name, item.path.as_deref(), &project);
                 let mut doc = Doc::new(project, item.path);
                 doc.hcp = is_hcp;
+                if let Some(v) = &newer {
+                    self.error = wavestorm_core::project::newer_release_note(v);
+                }
+                doc.newer = newer;
                 // An interchange file names its storms instead of storing them, so only a
                 // `.waves` project has changed.
                 doc.dirty |= adopted > 0 && !is_hcp;
@@ -689,7 +696,81 @@ impl WaveStormApp {
         self.save_format(true, true);
     }
 
+    /// Saves, first asking when the save would lose something: what the `.hcp` format cannot
+    /// hold, or what a newer WAVEStorm release put in the project.
     fn save_format(&mut self, save_as: bool, hcp: bool) {
+        let doc = self.doc();
+        let losses = if hcp { new_hcp_losses(doc) } else { Vec::new() };
+        let newer = doc.newer.clone();
+        if !losses.is_empty() || newer.is_some() {
+            self.save_prompt = Some(SavePrompt { save_as, hcp, losses, newer });
+            return;
+        }
+        self.write_project(save_as, hcp);
+    }
+
+    /// The question asked by [`Self::save_format`].
+    fn save_prompt_dialog(&mut self, ctx: &egui::Context) {
+        let Some(sp) = self.save_prompt.clone() else { return };
+        enum Choice {
+            Anyway,
+            Waves,
+            Cancel,
+        }
+        let mut choice = None;
+        crate::frame::Win::new("Save")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_max_width(460.0);
+                if let Some(v) = &sp.newer {
+                    ui.label(format!(
+                        "This project was saved by WAVEStorm {v}, a newer version than this one ({}). \
+                         Saving it with this version removes anything this version does not know.",
+                        wavestorm_core::project::VERSION
+                    ));
+                    ui.add_space(6.0);
+                }
+                if !sp.losses.is_empty() {
+                    ui.label("The .hcp format has no place for the following, so they will not be in the file:");
+                    egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                        for l in &sp.losses {
+                            ui.label(format!("  \u{2022} {l}"));
+                        }
+                    });
+                    ui.add_space(4.0);
+                    ui.label("Save as a WAVEStorm project (.waves) to keep everything.");
+                }
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if sp.hcp && widgets::button(ui, "Save as .waves...", 120.0).clicked() {
+                        choice = Some(Choice::Waves);
+                    }
+                    let anyway = if sp.hcp { "Save as .hcp Anyway" } else { "Save Anyway" };
+                    if widgets::button(ui, anyway, 130.0).clicked() {
+                        choice = Some(Choice::Anyway);
+                    }
+                    if widgets::button(ui, "Cancel", 80.0).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                        choice = Some(Choice::Cancel);
+                    }
+                });
+            });
+        let Some(choice) = choice else { return };
+        self.save_prompt = None;
+        match choice {
+            Choice::Anyway => {
+                let doc = self.doc();
+                doc.hcp_accepted.extend(sp.losses);
+                doc.newer = None;
+                self.write_project(sp.save_as, sp.hcp);
+            }
+            Choice::Waves => self.save_format(true, false),
+            Choice::Cancel => self.status = "Save cancelled".into(),
+        }
+    }
+
+    fn write_project(&mut self, save_as: bool, hcp: bool) {
         let platform = self.platform.clone();
         let doc = self.doc();
         let (bytes, ext) = if hcp {
@@ -822,6 +903,12 @@ impl WaveStormApp {
             let mut saved = 0;
             for d in &mut self.docs {
                 let Some(path) = d.path.clone().filter(|_| d.dirty) else { continue };
+                // Never lose data unasked: such projects wait for the user to save them.
+                if d.newer.is_some() || (d.hcp && !new_hcp_losses(d).is_empty()) {
+                    self.status =
+                        format!("Not autosaved: {} would lose data in its file format; save it yourself", d.title());
+                    continue;
+                }
                 let bytes = if d.hcp {
                     Ok(wavestorm_core::hcp::export_bytes(&d.project))
                 } else {
@@ -2848,6 +2935,7 @@ impl WaveStormApp {
         if let Some(topic) = widgets::take_help_request(&ctx) {
             self.open_window(Window::Help(help::HelpState::topic(topic)));
         }
+        self.save_prompt_dialog(&ctx);
         self.error_dialog(&ctx);
         if let Some(text) = self.clip_out.take() {
             ctx.copy_text(text);
@@ -3130,18 +3218,45 @@ fn separator(ui: &mut Ui) {
     }
 }
 
+/// What an `.hcp` save of `doc` would lose that the user has not yet agreed to.
+fn new_hcp_losses(doc: &Doc) -> Vec<String> {
+    wavestorm_core::hcp_check::losses(&doc.project).into_iter().filter(|l| !doc.hcp_accepted.contains(l)).collect()
+}
+
+/// A save waiting for the user to confirm what it would lose.
+#[derive(Debug, Clone)]
+struct SavePrompt {
+    save_as: bool,
+    hcp: bool,
+    /// What the `.hcp` format would not keep.
+    losses: Vec<String>,
+    /// The newer release that saved the project.
+    newer: Option<String>,
+}
+
+/// A project file as read by [`project_from_bytes`].
+pub struct Opened {
+    pub project: Project,
+    /// It was in the interchange format (`.hcp`).
+    pub hcp: bool,
+    /// Import warnings.
+    pub warnings: Vec<String>,
+    /// The newer WAVEStorm release that saved it, if one did.
+    pub newer: Option<String>,
+}
+
 /// Reads a project file's bytes: a `.waves` project (JSON) or the reference application's
-/// interchange format (`.hcp`, by extension or content). Returns the project, whether it was
-/// `.hcp`, and any import warnings.
-pub fn project_from_bytes(name: &str, bytes: Vec<u8>) -> Result<(Project, bool, Vec<String>), String> {
+/// interchange format (`.hcp`, by extension or content).
+pub fn project_from_bytes(name: &str, bytes: Vec<u8>) -> Result<Opened, String> {
     let is_hcp = name.to_ascii_lowercase().ends_with(".hcp") || wavestorm_core::hcp::looks_like_hcp(&bytes);
     if is_hcp {
-        let (p, w) = wavestorm_core::hcp::import_bytes(&bytes)?;
-        Ok((p, true, w))
+        let (project, warnings) = wavestorm_core::hcp::import_bytes(&bytes)?;
+        Ok(Opened { project, hcp: true, warnings, newer: None })
     } else {
         let text =
             String::from_utf8(bytes).map_err(|_| "The file is not a WAVEStorm project (not text).".to_string())?;
-        Ok((Project::from_json(&text)?, false, Vec::new()))
+        let (project, newer) = Project::open_json(&text)?;
+        Ok(Opened { project, hcp: false, warnings: Vec::new(), newer })
     }
 }
 

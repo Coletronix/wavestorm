@@ -1,0 +1,582 @@
+{
+  "format": 1,
+  "title": "Brookside Commons",
+  "prepared_by": "StormWAVES sample",
+  "notes": "Demonstration project: post-development runoff routed through a swale and a detention basin.",
+  "units": {
+    "system": "English",
+    "large": true,
+    "low_flow": false,
+    "decimals": {
+      "area": null,
+      "volume": null,
+      "flow": null,
+      "rain": null,
+      "elevation": null,
+      "length": null
+    }
+  },
+  "settings": {
+    "runoff": "ScsTr20",
+    "uh": "SCS",
+    "events": [
+      {
+        "name": "2-Year",
+        "storm": "Type II 24-hr",
+        "depth": 3.1,
+        "duration_mode": "Default",
+        "duration": 24.0,
+        "back_to_back": 1,
+        "amc": "II",
+        "rational_intensity": null,
+        "rational_duration": null,
+        "frequency_factor": 1.0
+      },
+      {
+        "name": "10-Year",
+        "storm": "Type II 24-hr",
+        "depth": 4.5,
+        "duration_mode": "Default",
+        "duration": 24.0,
+        "back_to_back": 1,
+        "amc": "II",
+        "rational_intensity": null,
+        "rational_duration": null,
+        "frequency_factor": 1.0
+      },
+      {
+        "name": "25-Year",
+        "storm": "Type II 24-hr",
+        "depth": 5.4,
+        "duration_mode": "Default",
+        "duration": 24.0,
+        "back_to_back": 1,
+        "amc": "II",
+        "rational_intensity": null,
+        "rational_duration": null,
+        "frequency_factor": 1.0
+      },
+      {
+        "name": "100-Year",
+        "storm": "Type II 24-hr",
+        "depth": 7.0,
+        "duration_mode": "Default",
+        "duration": 24.0,
+        "back_to_back": 1,
+        "amc": "II",
+        "rational_intensity": null,
+        "rational_duration": null,
+        "frequency_factor": 1.0
+      }
+    ],
+    "current_event": 2,
+    "span_start": 0.0,
+    "span_end": 30.0,
+    "dt": 0.05,
+    "reach_method": "StorIndTrans",
+    "pond_method": "StorInd",
+    "ia_ratio": 0.2,
+    "cn_weighting": "WeightedCn",
+    "round_cn": true,
+    "min_tc": null,
+    "rational_rise": 1.0,
+    "rational_fall": 1.0,
+    "idf": null,
+    "table_step": 0.0,
+    "report_impervious": true,
+    "resize": {
+      "criterion": "Crown",
+      "sizes": [
+        1.0,
+        1.25,
+        1.5,
+        1.75,
+        2.0,
+        2.25,
+        2.5,
+        2.75,
+        3.0,
+        3.5,
+        4.0,
+        4.5,
+        5.0,
+        5.5,
+        6.0,
+        6.5,
+        7.0,
+        7.5,
+        8.0,
+        8.5,
+        9.0,
+        9.5,
+        10.0,
+        12.0
+      ],
+      "allow_smaller": true
+    }
+  },
+  "diagram": {
+    "symbol_size": 48.0,
+    "show_grid": false,
+    "snap_to_grid": false,
+    "grid": 24.0,
+    "underlay": null
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "number": "1",
+      "name": "Detention Basin",
+      "notes": "",
+      "pos": [
+        520.0,
+        220.0
+      ],
+      "outflows": [
+        3,
+        3,
+        null
+      ],
+      "data": {
+        "Pond": {
+          "storage": {
+            "volumes": [
+              {
+                "description": "Basin",
+                "invert": 100.0,
+                "shape": {
+                  "Custom": {
+                    "kind": "AreaConic",
+                    "elevations": [
+                      100.0,
+                      101.0,
+                      102.0,
+                      103.0,
+                      104.0,
+                      105.0
+                    ],
+                    "values": [
+                      6000.0,
+                      8200.0,
+                      10600.0,
+                      13200.0,
+                      16000.0,
+                      19000.0
+                    ]
+                  }
+                },
+                "voids_pct": 100.0,
+                "multiplier": 1.0,
+                "embedded_in": null
+              }
+            ]
+          },
+          "devices": [
+            {
+              "description": "Outlet Pipe",
+              "invert": 100.0,
+              "routing": "Primary",
+              "multiplier": 1.0,
+              "kind": {
+                "Culvert": {
+                  "shape": "Round",
+                  "width": 1.5,
+                  "height": 1.5,
+                  "length": 60.0,
+                  "outlet_invert": 99.4,
+                  "n": 0.013,
+                  "ke": 0.5,
+                  "cc": 0.9,
+                  "fill": 0.0,
+                  "entrance": "RCP, square edge headwall"
+                }
+              },
+              "auto_size": false
+            },
+            {
+              "description": "Low-Flow Orifice",
+              "invert": 100.0,
+              "routing": {
+                "Device": 0
+              },
+              "multiplier": 1.0,
+              "kind": {
+                "Orifice": {
+                  "shape": {
+                    "Circular": {
+                      "diameter": 0.5
+                    }
+                  },
+                  "plane": "Vertical",
+                  "cd": 0.6,
+                  "columns": 1,
+                  "rows": 1,
+                  "row_spacing": 0.0,
+                  "weir_at_low_head": true,
+                  "grate": null
+                }
+              },
+              "auto_size": false
+            },
+            {
+              "description": "Riser Grate",
+              "invert": 102.8,
+              "routing": {
+                "Device": 0
+              },
+              "multiplier": 1.0,
+              "kind": {
+                "Orifice": {
+                  "shape": {
+                    "Rectangular": {
+                      "width": 3.0,
+                      "height": 3.0
+                    }
+                  },
+                  "plane": "Horizontal",
+                  "cd": 0.6,
+                  "columns": 1,
+                  "rows": 1,
+                  "row_spacing": 0.0,
+                  "weir_at_low_head": true,
+                  "grate": null
+                }
+              },
+              "auto_size": false
+            },
+            {
+              "description": "Emergency Spillway",
+              "invert": 104.0,
+              "routing": "Secondary",
+              "multiplier": 1.0,
+              "kind": {
+                "BroadCrestedWeir": {
+                  "length": 12.0,
+                  "breadth": 8.0,
+                  "side_z": 3.0,
+                  "rise": null
+                }
+              },
+              "auto_size": false
+            }
+          ],
+          "start_elevation": null,
+          "flood_elevation": 105.0,
+          "tailwater": [
+            "Free",
+            "Free",
+            "Free"
+          ],
+          "large_units": false,
+          "chamber": null
+        }
+      },
+      "locked": false,
+      "outline": null,
+      "foreign": []
+    },
+    {
+      "id": 2,
+      "number": "1",
+      "name": "Grass Swale",
+      "notes": "",
+      "pos": [
+        330.0,
+        220.0
+      ],
+      "outflows": [
+        1,
+        null,
+        null
+      ],
+      "data": {
+        "Reach": {
+          "section": {
+            "Trapezoidal": {
+              "bottom": 3.0,
+              "z_left": 3.0,
+              "z_right": 3.0,
+              "depth": 1.5
+            }
+          },
+          "n": 0.03,
+          "length": 420.0,
+          "inlet_invert": 108.0,
+          "outlet_invert": 105.5,
+          "exfiltration": 0.0,
+          "flood_depth": 1.0,
+          "auto_size": false
+        }
+      },
+      "locked": false,
+      "outline": null,
+      "foreign": []
+    },
+    {
+      "id": 3,
+      "number": "1",
+      "name": "Brook Outfall",
+      "notes": "",
+      "pos": [
+        700.0,
+        220.0
+      ],
+      "outflows": [
+        null,
+        null,
+        null
+      ],
+      "data": {
+        "Link": {
+          "source": "Inflows",
+          "adjust": {
+            "threshold": null,
+            "limit": null,
+            "multiplier": 1.0,
+            "time_multiplier": 1.0,
+            "time_lag": 0.0,
+            "start_time": null,
+            "end_time": null,
+            "slice_volume": null
+          },
+          "elevation": "None",
+          "inflow_area": 0.0,
+          "impervious_pct": 0.0
+        }
+      },
+      "locked": false,
+      "outline": null,
+      "foreign": []
+    },
+    {
+      "id": 4,
+      "number": "1",
+      "name": "North Lots",
+      "notes": "",
+      "pos": [
+        120.0,
+        90.0
+      ],
+      "outflows": [
+        2,
+        null,
+        null
+      ],
+      "data": {
+        "Subcat": {
+          "areas": [
+            {
+              "area": 139392.0,
+              "cn": 75.0,
+              "c": null,
+              "description": "1/4 acre lots, 38% imp, HSG B",
+              "hsg": "B",
+              "land_use": null
+            },
+            {
+              "area": 39204.0,
+              "cn": 98.0,
+              "c": null,
+              "description": "Paved roads w/curbs & sewers, HSG B",
+              "hsg": "B",
+              "land_use": null
+            }
+          ],
+          "tc": [
+            {
+              "kind": {
+                "Sheet": {
+                  "length": 100.0,
+                  "slope": 0.02,
+                  "n": 0.24,
+                  "p2": 3.1,
+                  "surface": "Grass: Dense"
+                }
+              },
+              "description": "A-B"
+            },
+            {
+              "kind": {
+                "Shallow": {
+                  "length": 420.0,
+                  "slope": 0.025,
+                  "kv": 20.3282,
+                  "surface": "Paved"
+                }
+              },
+              "description": "B-C"
+            }
+          ],
+          "uh": null,
+          "large_units": true
+        }
+      },
+      "locked": false,
+      "outline": null,
+      "foreign": []
+    },
+    {
+      "id": 5,
+      "number": "2",
+      "name": "Hillside Woods",
+      "notes": "",
+      "pos": [
+        120.0,
+        340.0
+      ],
+      "outflows": [
+        2,
+        null,
+        null
+      ],
+      "data": {
+        "Subcat": {
+          "areas": [
+            {
+              "area": 239580.0,
+              "cn": 55.0,
+              "c": null,
+              "description": "Woods, Good, HSG B",
+              "hsg": "B",
+              "land_use": null
+            },
+            {
+              "area": 47916.00000000001,
+              "cn": 70.0,
+              "c": null,
+              "description": "Woods, Good, HSG C",
+              "hsg": "C",
+              "land_use": null
+            }
+          ],
+          "tc": [
+            {
+              "kind": {
+                "Sheet": {
+                  "length": 100.0,
+                  "slope": 0.06,
+                  "n": 0.4,
+                  "p2": 3.1,
+                  "surface": "Woods: Light underbrush"
+                }
+              },
+              "description": "D-E"
+            },
+            {
+              "kind": {
+                "Shallow": {
+                  "length": 650.0,
+                  "slope": 0.08,
+                  "kv": 5.0,
+                  "surface": "Woodland"
+                }
+              },
+              "description": "E-F"
+            }
+          ],
+          "uh": null,
+          "large_units": true
+        }
+      },
+      "locked": false,
+      "outline": null,
+      "foreign": []
+    },
+    {
+      "id": 6,
+      "number": "3",
+      "name": "Commons Parking",
+      "notes": "",
+      "pos": [
+        520.0,
+        60.0
+      ],
+      "outflows": [
+        1,
+        null,
+        null
+      ],
+      "data": {
+        "Subcat": {
+          "areas": [
+            {
+              "area": 69696.0,
+              "cn": 98.0,
+              "c": null,
+              "description": "Paved parking, HSG B",
+              "hsg": "B",
+              "land_use": null
+            },
+            {
+              "area": 21780.0,
+              "cn": 61.0,
+              "c": null,
+              "description": "Open Space, Good, HSG B",
+              "hsg": "B",
+              "land_use": null
+            }
+          ],
+          "tc": [
+            {
+              "kind": {
+                "Direct": {
+                  "minutes": 6.0,
+                  "length": 0.0,
+                  "velocity": 0.0
+                }
+              },
+              "description": ""
+            }
+          ],
+          "uh": null,
+          "large_units": true
+        }
+      },
+      "locked": false,
+      "outline": null,
+      "foreign": []
+    },
+    {
+      "id": 7,
+      "number": "1",
+      "name": "",
+      "notes": "",
+      "pos": [
+        330.0,
+        400.0
+      ],
+      "outflows": [
+        null,
+        null,
+        null
+      ],
+      "data": {
+        "Text": {
+          "text": "Post-Development",
+          "size": 18.0,
+          "border": true
+        }
+      },
+      "locked": false,
+      "outline": null,
+      "foreign": []
+    }
+  ],
+  "storms": [],
+  "uhs": [],
+  "land_use": {
+    "pollutants": [
+      "TSS",
+      "TP",
+      "TN"
+    ],
+    "uses": [],
+    "annual_rainfall": 42.0,
+    "correction": 0.9,
+    "report_land_use": true,
+    "report_loading": true,
+    "imperviousness": "EntireProject"
+  },
+  "next_id": 8,
+  "foreign": []
+}

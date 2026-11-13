@@ -1595,6 +1595,8 @@ mod tests {
         assert!(text.contains("Method=Future"));
         assert!(text.contains("Type=Gizmo"));
         assert_eq!(export(&p2), text);
+        // So an imported project saves back without a data-loss warning.
+        assert_eq!(crate::hcp_check::losses(&p1), Vec::<String>::new());
         let bytes = export_bytes(&p1);
         assert!(bytes.contains(&0xAE));
         let (p3, _) = import_bytes(&bytes).unwrap();

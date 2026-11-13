@@ -74,20 +74,20 @@ pub fn restore(json: &str, read: impl Fn(&str) -> Option<Vec<u8>>) -> (Vec<Doc>,
     let mut active = 0;
     for (i, e) in snap.projects.into_iter().enumerate() {
         let doc = match (e.project, &e.path) {
-            (Some(text), _) => Project::from_json(&text).ok().map(|p| {
+            (Some(text), _) => Project::open_json(&text).ok().map(|(p, newer)| {
                 let mut d = Doc::new(p, e.path.clone());
                 d.dirty = e.dirty;
                 d.hcp = e.hcp;
+                d.newer = newer;
                 d
             }),
-            (None, Some(path)) => {
-                read(path).and_then(|bytes| crate::project_from_bytes(path, bytes).ok()).map(|(p, hcp, _)| {
-                    let mut d = Doc::new(p, Some(path.clone()));
-                    d.dirty = false;
-                    d.hcp = hcp;
-                    d
-                })
-            }
+            (None, Some(path)) => read(path).and_then(|bytes| crate::project_from_bytes(path, bytes).ok()).map(|o| {
+                let mut d = Doc::new(o.project, Some(path.clone()));
+                d.dirty = false;
+                d.hcp = o.hcp;
+                d.newer = o.newer;
+                d
+            }),
             (None, None) => None,
         };
         if let Some(d) = doc {
