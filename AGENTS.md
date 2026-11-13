@@ -28,7 +28,14 @@ Read this file first. Keep it current: it is the hand-off between sessions.
    that string at runtime from two pieces (`concat!`-style splitting) so the hook never sees it.
 3. **Never panic** on user input or file data. No `unwrap`/`expect`/`panic!`/indexing on
    untrusted values in non-test code (`#![deny(clippy::unwrap_used, …)]` in each crate). Invalid
-   input produces a calculation message, never a crash.
+   input produces a calculation message, never a crash. A cleared number box holds **NaN**:
+   write guards NaN-safe (`if !(w > 0.0)`, not `if w <= 0.0`), never `f64::clamp` with a bound
+   that can be NaN or below the minimum, and cap any loop count or allocation that comes from a
+   number (`project::MAX_STEPS`; dialog ranges re-applied in the core for values read from
+   files). Projects are read with `core::json` so a saved blank (`null`) reopens as NaN.
+   `crates/ui/tests/bad_numbers.rs` puts blank, zero, negative and huge values into every
+   numeric field and draws every edit dialog and report tab: the quick variant runs with
+   `cargo test`, the full sweep with `--ignored` (≈10 min); run it after adding fields.
 4. **The core never depends on the UI** and must compile for `wasm32-unknown-unknown`.
 5. **Tests are the gate.** Every algorithm ships with tests; reproduce published reference
    results where they exist (see §4). Run `cargo fmt` and `cargo test` before every commit.
@@ -67,6 +74,7 @@ gitignored.
 | `storage` | Pond storage volumes, voids, multipliers, embedding, surface and wetted area |
 | `outlets` | Culverts, orifices/grates, weirs, exfiltration, special, constant-flow, pump; compound device routing |
 | `routing` | Level-pool solver (ponds and reaches), translation, Muskingum-Cunge, detention times |
+| `json` | Lenient JSON reading: `null` (how NaN is saved) reads back as NaN for plain numbers |
 | `link` | Link nodes: manual/CSV hydrographs, thresholds/limits/multipliers/lag/slices, tailwater elevation |
 | `units` | English/metric, large/small display units, formatting |
 | `project` | Project model: nodes, outflows, settings, diagram, background underlay; JSON I/O |
@@ -499,6 +507,7 @@ done
 ```sh
 cargo test -p wavestorm-core           # engine tests (fast)
 cargo test                             # everything
+cargo test -p wavestorm-ui --test bad_numbers -- --ignored   # full bad-input sweep (slow)
 cargo check -p wavestorm-core --target wasm32-unknown-unknown
 ```
 

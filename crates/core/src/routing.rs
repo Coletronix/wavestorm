@@ -108,7 +108,8 @@ fn interp(xs: &[f64], ys: &[f64], x: f64) -> f64 {
     if n == 0 {
         return 0.0;
     }
-    if x <= xs[0] {
+    // A single point, or a NaN `x` (which passes neither end test), takes the first value.
+    if n == 1 || x.is_nan() || x <= xs[0] {
         return ys[0];
     }
     if x >= xs[n - 1] {

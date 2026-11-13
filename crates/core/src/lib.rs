@@ -24,6 +24,7 @@ pub mod geo;
 pub mod geometry;
 pub mod hcp;
 pub mod hydrograph;
+pub mod json;
 pub mod landuse;
 pub mod link;
 pub mod listings;

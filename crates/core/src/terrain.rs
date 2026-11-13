@@ -156,7 +156,7 @@ impl Terrain {
         if !(gx >= -0.5 && gy >= -0.5 && gx <= w - 0.5 && gy <= h - 0.5) {
             return None;
         }
-        let (gx, gy) = (gx.clamp(0.0, w - 1.0), gy.clamp(0.0, h - 1.0));
+        let (gx, gy) = (gx.clamp(0.0, (w - 1.0).max(0.0)), gy.clamp(0.0, (h - 1.0).max(0.0)));
         let (x0, y0) = (gx.floor(), gy.floor());
         let (fx, fy) = (gx - x0, gy - y0);
         let (c, r) = (x0 as usize, y0 as usize);

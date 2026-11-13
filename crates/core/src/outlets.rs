@@ -548,7 +548,8 @@ pub fn culvert_flow(
     tw: Option<f64>,
 ) -> DeviceFlow {
     let head = hw - inlet_invert;
-    if head <= 0.0 || width <= 0.0 || height <= 0.0 {
+    // Negated so that blank (NaN) values also give no flow.
+    if !(head > 0.0 && width > 0.0 && height > 0.0) {
         return DeviceFlow::ZERO;
     }
     if let Some(t) = tw
@@ -955,7 +956,10 @@ fn orifice_flow(
     if head <= 0.0 {
         return DeviceFlow::ZERO;
     }
-    let count = (columns.max(1) * rows.max(1)) as f64;
+    // The edit dialog's 1-1000 range, enforced for counts read from files: rows are summed one
+    // by one below, and a product of two large counts would overflow.
+    let (columns, rows) = (columns.clamp(1, 1000), rows.clamp(1, 1000));
+    let count = (columns * rows) as f64;
     let area = shape.area();
     let angle = match plane {
         Plane::Horizontal => 0.0,

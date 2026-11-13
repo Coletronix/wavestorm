@@ -557,27 +557,31 @@ fn hydro_chart(
     let grid = Rgb::from_u8(190, 190, 190);
     page.dashed(1.5, 1.5);
     let tstep = nice((t1 - t0) / 15.0);
-    let mut t = (t0 / tstep).ceil() * tstep;
-    while t <= t1 + 1e-9 {
+    // At most 100 ticks: at huge values adding the step may not move the tick.
+    let ticks = |start: f64, end: f64, step: f64| {
+        let mut out = Vec::new();
+        let mut v = start;
+        while v <= end + 1e-9 && out.len() < 100 {
+            out.push(v);
+            v += step;
+        }
+        out
+    };
+    let tticks = ticks((t0 / tstep).ceil() * tstep, t1, tstep);
+    let qticks = ticks(0.0, ymax, step);
+    for &t in &tticks {
         page.line(sx(t), plot.1, sx(t), plot.3, 0.4, grid);
-        t += tstep;
     }
-    let mut q = 0.0;
-    while q <= ymax + 1e-9 {
+    for &q in &qticks {
         page.line(plot.0, sy(q), plot.2, sy(q), 0.4, grid);
-        q += step;
     }
     page.solid();
     page.rect(plot.0, plot.1, plot.2 - plot.0, plot.3 - plot.1, None, Some((0.8, Rgb::BLACK)));
-    let mut t = (t0 / tstep).ceil() * tstep;
-    while t <= t1 + 1e-9 {
+    for &t in &tticks {
         page.text(sx(t), plot.3 + 10.0, 7.0, Font::Sans, Align::Center, Rgb::BLACK, &trim(t, tstep));
-        t += tstep;
     }
-    let mut q = 0.0;
-    while q <= ymax + 1e-9 {
+    for &q in &qticks {
         page.text(plot.0 - 3.0, sy(q) + 2.5, 7.0, Font::Sans, Align::Right, Rgb::BLACK, &trim(q, step));
-        q += step;
     }
     page.text((plot.0 + plot.2) / 2.0, plot.3 + 22.0, 8.5, Font::SansBold, Align::Center, Rgb::BLACK, "Time (hours)");
     page.text_vertical(

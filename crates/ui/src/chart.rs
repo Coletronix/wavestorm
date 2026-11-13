@@ -194,7 +194,8 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
         }
     } else {
         let mut x = (x0 / xstep).ceil() * xstep;
-        while x <= x1 + 1e-9 {
+        // Capped: at huge values adding the step may not change x.
+        while x <= x1 + 1e-9 && xticks.len() < 100 {
             xticks.push((x, fmt_tick(x, xstep)));
             x += xstep;
         }
@@ -208,7 +209,9 @@ pub fn chart(ui: &mut Ui, spec: &ChartSpec, view: &mut ChartView, size: Vec2) {
         p.text(pos2(px, plot.max.y + 4.0), Align2::CENTER_TOP, label, font.clone(), t.text);
     }
     let mut y = (y0 / ystep).ceil() * ystep;
-    while y <= y1 + 1e-9 {
+    let mut yticks = 0;
+    while y <= y1 + 1e-9 && yticks < 100 {
+        yticks += 1;
         let py = sy(y);
         grid(pos2(plot.min.x, py) + depth, pos2(plot.max.x, py) + depth);
         if spec.three_d {

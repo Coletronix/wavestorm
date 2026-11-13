@@ -378,7 +378,17 @@ fn time_span(ui: &mut Ui, s: &mut CalcSettings) {
         conv_field(ui, "dt", "Time Step (dt):", "hours", &mut s.dt, |x| x, |x| x.clamp(0.001, 1.0), 3, 130.0);
     });
     let n = s.steps();
-    ui.label(format!("{n} calculation points"));
+    if n > wavestorm_core::project::MAX_STEPS {
+        ui.label(
+            RichText::new(format!(
+                "{n} calculation points: too many (the most is {})",
+                wavestorm_core::project::MAX_STEPS
+            ))
+            .color(Tokens::get(ui.ctx()).error),
+        );
+    } else {
+        ui.label(format!("{n} calculation points"));
+    }
     ui.add_space(4.0);
     ui.label(RichText::new("For 24-hour storms a span of 0-30 hours captures the full runoff volume. Use a dt no more than half the shortest Tc.").color(Tokens::get(ui.ctx()).text_dim));
 }

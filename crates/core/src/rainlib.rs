@@ -357,7 +357,7 @@ fn build_storm(name: &str, c: &Curve, tu: f64, du: f64) -> Result<Storm, String>
     // IDF-type coefficients ("Chicago" storm): depth = t a / (b + t)^c.
     if let Some([a, b, cc]) = c.coef1 {
         let duration = c.duration.ok_or("coef1 needs a duration")?;
-        let peak = c.peaktime.map(|p| p.clamp(0.0, duration));
+        let peak = c.peaktime.map(|p| p.clamp(0.0, duration.max(0.0)));
         let step = duration / 240.0;
         let shape = Storm::chicago(name, duration, if a > 0.0 { a } else { 1.0 }, b, cc, peak, step)
             .ok_or("invalid IDF coefficients")?;

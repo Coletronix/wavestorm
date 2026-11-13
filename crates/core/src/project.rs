@@ -459,14 +459,22 @@ impl CalcSettings {
     pub fn event(&self) -> Option<&RainEvent> {
         self.events.get(self.current_event).or(self.events.first())
     }
+    /// Calculation points for the time span and dt (0 when they are invalid). Above
+    /// [`MAX_STEPS`] the calculation refuses to run.
     pub fn steps(&self) -> usize {
         if self.dt > 0.0 && self.span_end > self.span_start {
-            (((self.span_end - self.span_start) / self.dt).round() as usize + 1).min(2_000_001)
+            // `as` saturates, so an absurd span cannot wrap around.
+            (((self.span_end - self.span_start) / self.dt).round() as usize).saturating_add(1)
         } else {
             0
         }
     }
 }
+
+/// The most calculation points (time span / dt + 1) a calculation runs with. Every node keeps
+/// several hydrographs of this length, so a mistyped span (say 1,000,000 hours) would otherwise
+/// exhaust memory.
+pub const MAX_STEPS: usize = 200_001;
 
 /// A calibrated background image or PDF page behind the routing diagram.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -660,7 +668,7 @@ impl Project {
     }
 
     pub fn from_json(text: &str) -> Result<Project, String> {
-        let p: Project = serde_json::from_str(text).map_err(|e| format!("Cannot read project: {e}"))?;
+        let p: Project = crate::json::from_str(text).map_err(|e| format!("Cannot read project: {e}"))?;
         if p.format > FORMAT_VERSION {
             return Err(format!("This project was saved by a newer version (format {}).", p.format));
         }
@@ -695,6 +703,12 @@ mod tests {
         let text = p.to_json().unwrap();
         let q = Project::from_json(&text).unwrap();
         assert_eq!(p, q);
+        // A cleared number box (NaN) is saved as null and opens again blank.
+        if let Some(NodeData::Reach(r)) = p.node_mut(id).map(|n| &mut n.data) {
+            r.length = f64::NAN;
+        }
+        let q = Project::from_json(&p.to_json().unwrap()).unwrap();
+        assert!(matches!(&q.node(id).unwrap().data, NodeData::Reach(r) if r.length.is_nan()));
         assert!(Project::from_json("{").is_err());
     }
 }

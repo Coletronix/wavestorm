@@ -198,7 +198,8 @@ fn add_node(
             let w = pond_width;
             let xr = x0 + w;
             if let Some(Detail::Pond(d)) = res.map(|r| &r.detail) {
-                let peak = d.peak_elevation.clamp(bottom, top.max(d.peak_elevation));
+                // max/min rather than clamp: blank (NaN) bounds must not panic.
+                let peak = d.peak_elevation.max(bottom).min(top.max(d.peak_elevation));
                 if peak > bottom {
                     out.fill(Ink::Water, vec![[x0, bottom], [xr, bottom], [xr, peak], [x0, peak]]);
                 }

@@ -216,8 +216,11 @@ fn layout_sketch(ui: &mut Ui, f: &Field, size: egui::Vec2) {
     let rows = f.rows.max(1);
     let per = f.per_row.max(1);
     // Draw at most a readable number of chambers; larger fields keep their outline.
-    let detailed = rows * per <= 4000;
-    for r in 0..rows {
+    let detailed = u64::from(rows) * u64::from(per) <= 4000;
+    // Rows are drawn one by one only while they stay a readable number (a field read from a
+    // file may hold any count).
+    let drawn_rows = if rows <= 1000 { rows } else { 0 };
+    for r in 0..drawn_rows {
         let x = bed.min.x + ((side + r as f64 * (m.outside_width + spacing)) * s) as f32;
         let cw = (m.outside_width * s) as f32;
         let run =
@@ -236,7 +239,7 @@ fn layout_sketch(ui: &mut Ui, f: &Field, size: egui::Vec2) {
     p.rect_stroke(strip, 0.0, Stroke::new(1.0, ink), egui::StrokeKind::Inside);
     let sx = strip.width() / l.base_width.max(1e-6) as f32;
     let ch = strip.height() * (m.outside_height / l.height.max(1e-6)) as f32;
-    for r in 0..rows {
+    for r in 0..drawn_rows {
         let x0 = strip.min.x + ((side + r as f64 * (m.outside_width + spacing)) as f32) * sx;
         let cw = m.outside_width as f32 * sx;
         let base_y = strip.max.y - 2.0;

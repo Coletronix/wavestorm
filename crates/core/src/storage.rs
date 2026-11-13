@@ -229,6 +229,10 @@ fn interp_clamped(xs: &[f64], ys: &[f64], x: f64) -> f64 {
     if x >= xs[n - 1] {
         return ys[n - 1];
     }
+    // Only NaN (in `x` or the table) gets here with a single point.
+    if n == 1 {
+        return 0.0;
+    }
     let i = xs[..n].partition_point(|v| *v <= x).saturating_sub(1).min(n - 2);
     let (x0, x1) = (xs[i], xs[i + 1]);
     if x1 <= x0 { ys[i] } else { ys[i] + (ys[i + 1] - ys[i]) * (x - x0) / (x1 - x0) }

@@ -632,7 +632,8 @@ pub fn device_text(dev: &crate::outlets::OutletDevice, u: &Units) -> Vec<String>
                 OpeningShape::Circular { diameter } => inch(*diameter),
                 OpeningShape::Rectangular { width, height } => format!("{} W x {} H", inch(*width), inch(*height)),
             };
-            let grid = if columns * rows > 1 { format!(" X {columns} cols X {rows} rows") } else { String::new() };
+            let grid =
+                if *columns > 1 || *rows > 1 { format!(" X {columns} cols X {rows} rows") } else { String::new() };
             vec![format!("{size}{grid}{mult}{dir} {} C= {cd:.3}", name("Orifice/Grate"))]
         }
         DeviceKind::SharpCrestedWeir { length, end_contractions, .. } => {

@@ -233,6 +233,18 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
         r.messages.push(Message::new(500, Severity::Error, None, "Invalid Time Span or dt"));
         return r;
     }
+    if n > crate::project::MAX_STEPS {
+        r.messages.push(Message::new(
+            500,
+            Severity::Error,
+            None,
+            format!(
+                "Time Span and dt give {n} calculation points; the most is {}. Shorten the span or use a larger dt.",
+                crate::project::MAX_STEPS
+            ),
+        ));
+        return r;
+    }
     r.n = n;
     let order = match topological_order(project) {
         Ok(o) => o,

@@ -286,7 +286,8 @@ fn pipe_width_at(shape: PipeShape, w: f64, h: f64, z: f64) -> f64 {
 }
 
 fn pipe_props(shape: PipeShape, w: f64, h: f64, fill: f64, y: f64) -> SectionProps {
-    if w <= 0.0 || h <= 0.0 {
+    // Negated so that a blank (NaN) size also counts as no pipe.
+    if !(w > 0.0 && h > 0.0) {
         return SectionProps::default();
     }
     let fill = fill.clamp(0.0, h);

@@ -130,10 +130,12 @@ impl Storm {
         peak_time: Option<f64>,
         step: f64,
     ) -> Option<Storm> {
-        if duration <= 0.0 || step <= 0.0 || !(a.is_finite() && b.is_finite() && c.is_finite()) {
+        // Written so that NaN fails every test (a blank box is NaN).
+        let valid = duration > 0.0 && duration.is_finite() && step > 0.0 && step >= duration / 1.0e6;
+        if !valid || !(a.is_finite() && b.is_finite() && c.is_finite()) {
             return None;
         }
-        let tp = peak_time.unwrap_or(duration / 2.0).clamp(0.0, duration);
+        let tp = peak_time.filter(|p| p.is_finite()).unwrap_or(duration / 2.0).clamp(0.0, duration);
         let r = if duration > 0.0 { tp / duration } else { 0.5 };
         let depth = |t: f64| if t <= 0.0 { 0.0 } else { t * a / (b + t).powf(c) };
         let total = depth(duration);
@@ -178,10 +180,12 @@ impl Storm {
         };
         let j = (i + 1).min(self.times.len() - 1);
         let (t0, t1) = (self.times[i], self.times[j]);
-        let (f0, f1) = (self.fractions[i], self.fractions[j]);
+        // A storm read from a file may have fewer fractions than times.
+        let (Some(&f0), Some(&f1)) = (self.fractions.get(i), self.fractions.get(j)) else { return 0.0 };
         let h = t1 - t0;
-        if h <= 0.0 {
-            return f0;
+        let usable = h > 0.0 && f0.is_finite() && f1.is_finite();
+        if !usable {
+            return if f0.is_finite() { f0 } else { 0.0 };
         }
         let s = (t - t0) / h;
         let value = if self.smooth {
@@ -209,7 +213,8 @@ impl Storm {
         let n = self.times.len();
         let secant = |a: usize| {
             let h = self.times[a + 1] - self.times[a];
-            if h > 0.0 { (self.fractions[a + 1] - self.fractions[a]) / h } else { 0.0 }
+            let df = self.fractions.get(a + 1).zip(self.fractions.get(a)).map_or(0.0, |(f1, f0)| f1 - f0);
+            if h > 0.0 { df / h } else { 0.0 }
         };
         if k == 0 {
             return secant(0);

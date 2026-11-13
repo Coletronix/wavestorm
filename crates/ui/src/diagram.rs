@@ -1331,9 +1331,11 @@ fn draw_nodes(p: &egui::Painter, doc: &Doc, canvas: Rect, it: &Interaction, t: &
         let sel = doc.is_selected(n.id);
         match &n.data {
             NodeData::Text(tx) => {
-                let size = tx.size * doc.view.zoom;
-                let galley =
-                    p.layout(tx.text.clone(), FontId::proportional(size.max(4.0)), t.label_text, f32::INFINITY);
+                // The dialog's 4-120 pt range, enforced here for sizes read from files: the glyph
+                // rasteriser panics on enormous fonts.
+                let pt = if tx.size.is_finite() { tx.size.clamp(4.0, 120.0) } else { 12.0 };
+                let size = (pt * doc.view.zoom).clamp(4.0, 2000.0);
+                let galley = p.layout(tx.text.clone(), FontId::proportional(size), t.label_text, f32::INFINITY);
                 let r = Rect::from_center_size(c, galley.size() + vec2(8.0, 6.0));
                 if t.glass {
                     // A glass plaque (when bordered) and lettering with a cast shadow.
