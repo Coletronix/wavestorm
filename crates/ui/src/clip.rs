@@ -6,7 +6,7 @@
 
 use egui::Event;
 use serde::{Deserialize, Serialize};
-use wavestorm_core::project::Node;
+use wavestorm_core::project::{Node, NodeData};
 
 /// Gap between copies pasted without a target point and their originals (diagram units).
 pub const PASTE_OFFSET: f64 = 30.0;
@@ -41,6 +41,21 @@ pub fn paste_shift(nodes: &[Node], at: Option<[f64; 2]>) -> [f64; 2] {
             [at[0] - cx, at[1] - cy]
         }
         _ => [PASTE_OFFSET, PASTE_OFFSET],
+    }
+}
+
+/// Drops what was drawn on the diagram for a node (outline, Tc path, drawn sub-areas), keeping
+/// its data: a pasted copy is a new node, not a second drawing over the same ground. Sub-area
+/// rows keep their areas and become ordinary typed rows.
+pub fn strip_drawings(n: &mut Node) {
+    n.outline = None;
+    n.tc_path = None;
+    n.tc_path_breaks.clear();
+    if let NodeData::Subcat(sc) = &mut n.data {
+        for a in &mut sc.areas {
+            a.outline = None;
+            a.remainder = false;
+        }
     }
 }
 

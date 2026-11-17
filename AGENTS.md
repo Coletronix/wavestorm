@@ -467,7 +467,9 @@ Keep this section updated at the end of every session.
   Paste` (no `Key` event, and no `Paste` at all when the system clipboard has no text), so
   `clip::command` reads those events natively and the keys only on wasm (where the clipboard
   events arrive later). Copy also writes the nodes as `{"wavestorm-nodes": [...]}` JSON to the
-  system clipboard, so Ctrl+V always has text and pastes across windows. Diagram right-click
+  system clipboard, so Ctrl+V always has text and pastes across windows. Paste runs
+  `clip::strip_drawings`: copies keep data but no outline, Tc path or drawn sub-area polygons
+  (issue #5; rows keep their areas, `remainder` cleared). Diagram right-click
   menus are one `ContextMenu` (node or empty space, screen + world point) drawn by
   `context_menu`; presses in a submenu (another Foreground layer) don't close it.
   `tests/clipboard.rs`.

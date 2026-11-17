@@ -152,7 +152,8 @@ published results where possible (see [Methods and validation](#methods-and-vali
   saved by a newer WAVEStorm warns that saving it here would drop what this version does not
   know; projects from every earlier version keep opening.
 - Cut, copy and paste nodes with Ctrl+X/C/V (pasted at the pointer, routing between them
-  kept, and between WAVEStorm windows through the system clipboard). Right-click empty
+  kept, and between WAVEStorm windows through the system clipboard). A pasted copy takes the
+  node and its data, not the outline, sub-areas or Tc path drawn for it. Right-click empty
   diagram space for Paste, Create Here, Select All, Zoom All and Undo/Redo.
 - A start page (New, Open, Open Sample Project, recent projects) when no project is open.
   Recent projects are also listed under Project > Open….

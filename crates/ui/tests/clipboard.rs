@@ -168,23 +168,29 @@ fn clicking_elsewhere_closes_the_menu() {
 }
 
 #[test]
-fn pasted_subcatchment_keeps_its_drawings_in_place() {
+fn pasted_subcatchment_and_pond_leave_their_drawings_behind() {
     use wavestorm_core::cn::SubArea;
     use wavestorm_core::project::NodeData;
     let mut h = harness();
     let doc = h.state_mut().doc();
-    let mut id = 0;
+    let (mut id, mut pond) = (0, 0);
     doc.edit("Node Create", |p| {
         id = p.add_node(NodeType::Subcat, [150.0, 150.0]);
         let n = p.node_mut(id).unwrap();
         n.outline = Some(vec![[100.0, 100.0], [200.0, 100.0], [200.0, 200.0], [100.0, 200.0]]);
         n.tc_path = Some(vec![[110.0, 110.0], [190.0, 190.0]]);
+        n.tc_path_breaks = vec![0, 1];
         let NodeData::Subcat(sc) = &mut n.data else { panic!() };
         let mut drawn = SubArea::new(1000.0, 98.0, "Paved");
         drawn.outline = Some(vec![[120.0, 120.0], [140.0, 120.0], [140.0, 140.0]]);
         sc.areas.push(drawn);
+        if let Some(r) = sc.areas.first_mut() {
+            r.remainder = true;
+        }
+        pond = p.add_node(NodeType::Pond, [300.0, 150.0]);
+        p.node_mut(pond).unwrap().outline = Some(vec![[280.0, 130.0], [320.0, 130.0], [320.0, 170.0]]);
     });
-    doc.selection = vec![id];
+    doc.selection = vec![id, pond];
     h.run_steps(2);
     h.state_mut().doc().windows.clear();
     h.run_steps(2);
@@ -201,14 +207,20 @@ fn pasted_subcatchment_keeps_its_drawings_in_place() {
     let (a, b) = (subs[0], subs[1]);
     let (dx, dy) = (b.pos[0] - a.pos[0], b.pos[1] - a.pos[1]);
     assert!(dx > 200.0 && dy > 150.0, "pasted elsewhere: moved by {dx}, {dy}");
-    let moved =
-        |o: &Option<Vec<[f64; 2]>>| o.as_ref().unwrap().iter().map(|q| [q[0] + dx, q[1] + dy]).collect::<Vec<_>>();
-    assert_eq!(b.outline.clone().unwrap(), moved(&a.outline));
-    assert_eq!(b.tc_path.clone().unwrap(), moved(&a.tc_path));
-    let drawn = |n: &wavestorm_core::project::Node| match &n.data {
-        NodeData::Subcat(sc) => sc.areas.iter().find_map(|r| r.outline.clone()),
-        _ => None,
-    };
-    let (da, db) = (drawn(a), drawn(b));
-    assert_eq!(db.unwrap(), moved(&da), "sub-area moved with its subcatchment");
+    // The original keeps its drawings; the copy has none, but keeps the data.
+    assert!(a.outline.is_some() && a.tc_path.is_some());
+    assert!(b.outline.is_none() && b.tc_path.is_none() && b.tc_path_breaks.is_empty());
+    let (NodeData::Subcat(sa), NodeData::Subcat(sb)) = (&a.data, &b.data) else { panic!() };
+    assert_eq!(sb.areas.len(), sa.areas.len());
+    assert!(sa.areas.iter().any(|r| r.outline.is_some()));
+    assert!(sb.areas.iter().all(|r| r.outline.is_none() && !r.remainder), "sub-areas are plain rows");
+    assert_eq!(
+        sb.areas.iter().map(|r| (r.area, r.cn)).collect::<Vec<_>>(),
+        sa.areas.iter().map(|r| (r.area, r.cn)).collect::<Vec<_>>()
+    );
+
+    let ponds: Vec<_> = doc.project.nodes.iter().filter(|n| n.node_type() == NodeType::Pond).collect();
+    assert_eq!(ponds.len(), 2);
+    assert!(ponds[0].outline.is_some(), "original pond keeps its footprint");
+    assert!(ponds[1].outline.is_none(), "pasted pond has no footprint");
 }

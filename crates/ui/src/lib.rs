@@ -1064,18 +1064,16 @@ impl WaveStormApp {
         doc.edit("Node Paste", |p| {
             let mut map = std::collections::HashMap::new();
             for n in &nodes {
-                // Move a copy, so its drawings (outline, sub-areas, Tc path) keep their places.
+                // Only the node and its data: drawings (outline, sub-areas, Tc path) stay with
+                // the original.
                 let mut n = n.clone();
-                diagram::move_node(&mut n, dx, dy);
-                let id = p.add_node(n.node_type(), n.pos);
+                clip::strip_drawings(&mut n);
+                let id = p.add_node(n.node_type(), [n.pos[0] + dx, n.pos[1] + dy]);
                 map.insert(n.id, id);
                 if let Some(m) = p.node_mut(id) {
                     m.data = n.data;
                     m.name = n.name;
                     m.notes = n.notes;
-                    m.outline = n.outline;
-                    m.tc_path = n.tc_path;
-                    m.tc_path_breaks = n.tc_path_breaks;
                 }
                 ids.push(id);
             }
