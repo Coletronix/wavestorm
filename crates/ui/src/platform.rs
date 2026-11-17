@@ -170,10 +170,7 @@ impl Platform {
                     None => return Ok(None),
                 },
             };
-            // Write to a temporary file first so a failed save never truncates the project.
-            let tmp = target.with_extension(format!("{ext}.tmp"));
-            std::fs::write(&tmp, bytes).map_err(|e| format!("Cannot write {}: {e}", tmp.display()))?;
-            std::fs::rename(&tmp, &target).map_err(|e| format!("Cannot save {}: {e}", target.display()))?;
+            write_replacing(&target, bytes, ext)?;
             Ok(Some(target.to_string_lossy().into_owned()))
         }
         #[cfg(target_arch = "wasm32")]
@@ -211,6 +208,18 @@ fn download(name: &str, bytes: &[u8]) -> Result<(), String> {
 /// Named text values that persist between sessions: files in the user's configuration folder on
 /// the desktop; in the browser, IndexedDB (see [`store::load`]), which holds far more than
 /// `localStorage` (about 5 MB per site), so recovery copies keep their background images.
+/// Writes `bytes` to `target` through a temporary file next to it, so a failed or interrupted
+/// write (crash, full disk) never truncates the existing file. Desktop only.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn write_replacing(target: &std::path::Path, bytes: &[u8], ext: &str) -> Result<(), String> {
+    let tmp = target.with_extension(format!("{ext}.tmp"));
+    std::fs::write(&tmp, bytes).map_err(|e| format!("Cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, target).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("Cannot save {}: {e}", target.display())
+    })
+}
+
 pub mod store {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn config_file(name: &str) -> Option<std::path::PathBuf> {
@@ -568,5 +577,26 @@ pub mod recent {
             }
             v.pop();
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::write_replacing;
+
+    #[test]
+    fn a_failed_write_keeps_the_old_file() {
+        let dir = std::env::temp_dir().join(format!("wavestorm-write-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("site.waves");
+        write_replacing(&target, b"first", "waves").unwrap();
+        write_replacing(&target, b"second", "waves").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"second");
+        // A directory where the temporary file goes makes the write fail.
+        std::fs::create_dir_all(target.with_extension("waves.tmp")).unwrap();
+        assert!(write_replacing(&target, b"third", "waves").is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"second", "old contents kept");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

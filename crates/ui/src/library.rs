@@ -11,8 +11,9 @@ use wavestorm_core::rainlib::RainLibrary;
 use wavestorm_core::uh::{UnitHydrograph, builtin_uhs};
 
 const IMPORT_KEY: &str = "rainfall_imports";
-/// Imported files are kept for later sessions only while they stay below this many bytes.
-const IMPORT_LIMIT: usize = 2_500_000;
+/// Imported files are kept for later sessions only while they stay below this many bytes (a
+/// whole rainfall library folder is a few MB; browser storage is IndexedDB, which has room).
+const IMPORT_LIMIT: usize = 25_000_000;
 
 #[derive(Default)]
 struct State {
@@ -75,14 +76,15 @@ pub fn rescan() {
     rebuild(&mut st);
 }
 
-/// Adds one imported file. Returns a status message.
-pub fn import(name: &str, bytes: &[u8]) -> String {
+/// Adds one imported file. Returns a status message, or a problem to show the user: the file
+/// could not be read, or it is imported for this session but could not be kept for later ones.
+pub fn import(name: &str, bytes: &[u8]) -> Result<String, String> {
     let mut probe = RainLibrary::default();
     if !probe.add_file(name, bytes) {
-        return match probe.problems.first() {
+        return Err(match probe.problems.first() {
             Some(p) => format!("Cannot read {p}"),
             None => format!("{name} is not a rainfall file (.hcr, .huh, .hci or *-Rain.txt)"),
-        };
+        });
     }
     let mut st = lock();
     st.imports.retain(|(n, _)| n != name);
@@ -90,13 +92,27 @@ pub fn import(name: &str, bytes: &[u8]) -> String {
     rebuild(&mut st);
     if st.persist {
         let total: usize = st.imports.iter().map(|(_, t)| t.len()).sum();
-        if total <= IMPORT_LIMIT
-            && let Ok(json) = serde_json::to_string(&st.imports)
-        {
-            store::write(IMPORT_KEY, &json);
-        }
+        let kept = if total > IMPORT_LIMIT {
+            Err(format!("imported rainfall files are limited to {} MB in all", IMPORT_LIMIT / 1_000_000))
+        } else {
+            serde_json::to_string(&st.imports)
+                .map_err(|e| e.to_string())
+                .and_then(|json| store::try_write(IMPORT_KEY, &json))
+                .map_err(|e| format!("they could not be stored ({e})"))
+        };
+        kept.map_err(|why| not_kept(name, &why))?;
     }
-    format!("Imported {name}")
+    Ok(format!("Imported {name}"))
+}
+
+/// The problem shown when an import works for this session only.
+fn not_kept(name: &str, why: &str) -> String {
+    let fix = if cfg!(target_arch = "wasm32") {
+        "Use Forget Imports and import only the files your projects use."
+    } else {
+        "To keep a large library, choose its folder as the rainfall library folder in Settings > General instead of importing it."
+    };
+    format!("{name} is imported for this session only and will be gone when WAVEStorm restarts: {why}. {fix}")
 }
 
 /// Forgets the imported files.
@@ -305,9 +321,9 @@ mod tests {
     fn imported_storms_are_offered_and_adopted() {
         init("", false);
         let msg = import("Mine 3-hr.hcr", b"name=Mine 3-hr\nduration=3\ndepth= 0 .1 .5 1\n");
-        assert!(msg.starts_with("Imported"), "{msg}");
-        assert!(import("x.hcr", b"name=x\n").starts_with("Cannot read"));
-        assert!(import("notes.md", b"hello").contains("not a rainfall file"));
+        assert_eq!(msg, Ok("Imported Mine 3-hr.hcr".to_string()));
+        assert!(import("x.hcr", b"name=x\n").is_err_and(|e| e.starts_with("Cannot read")));
+        assert!(import("notes.md", b"hello").is_err_and(|e| e.contains("not a rainfall file")));
         let mut p = Project::default();
         assert!(storm_names(&p).contains(&"Mine 3-hr".to_string()));
         assert!(find_storm(&p, "Mine 3-hr").is_some());
@@ -318,11 +334,20 @@ mod tests {
         assert!(p.storm("Mine 3-hr").is_some());
         // A curve of a multi-curve file whose name is padded is found by the event's spelling.
         let fam = b"name=Fam  24-hr\nduration=24\ncurve=A\ndepth= 0 .5 1\ncurve=B\ndepth= 0 .2 1\n";
-        assert!(import("Fam.hcr", fam).starts_with("Imported"));
+        assert!(import("Fam.hcr", fam).is_ok());
         p.settings.events.push(RainEvent::new("10-Year", "Fam 24-hr B", 4.0));
         assert_eq!(adopt(&mut p), 1);
         assert!(p.storm("Fam 24-hr B").is_some());
         clear_imports();
         assert!(!storm_names(&Project::default()).contains(&"Mine 3-hr".to_string()));
+    }
+
+    #[test]
+    fn imports_that_cannot_be_kept_say_so() {
+        let m = not_kept("NRCS2-Rain.txt", "imported rainfall files are limited to 25 MB in all");
+        assert!(m.contains("this session only") && m.contains("restarts"), "{m}");
+        assert!(m.contains("Settings > General"), "{m}");
+        // A whole rainfall library folder (a few MB) stays under the limit.
+        const { assert!(IMPORT_LIMIT >= 10_000_000) };
     }
 }

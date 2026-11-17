@@ -599,7 +599,7 @@ impl WaveStormApp {
                 }
                 self.status = format!("Loaded {}", item.name);
             }
-            Purpose::RainLib => self.status = library::import(&item.name, &item.bytes),
+            Purpose::RainLib => self.status = library::import(&item.name, &item.bytes)?,
             Purpose::ImportSubareas => {
                 let text = String::from_utf8_lossy(&item.bytes).into_owned();
                 let mut result = Ok((0, 0));
@@ -944,7 +944,10 @@ impl WaveStormApp {
                 } else {
                     d.project.to_json().map(String::into_bytes)
                 };
-                match bytes.map(|b| std::fs::write(&path, b).map_err(|e| e.to_string())) {
+                // Like Save: through a temporary file, so an interrupted autosave never
+                // truncates the project.
+                let ext = if d.hcp { "hcp" } else { "waves" };
+                match bytes.map(|b| platform::write_replacing(std::path::Path::new(&path), &b, ext)) {
                     Ok(Ok(())) => {
                         d.dirty = false;
                         saved += 1;

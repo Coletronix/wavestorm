@@ -156,7 +156,11 @@ Keep this section updated at the end of every session.
   `noaa::pfds_url` (`cgi-bin/new/fe_text_mean.csv`; no CORS, desktop only), "NOAA for Site" in
   Event Lookup (`Fetch::Noaa`, centre of the georeferenced background). Writers:
   `write_hcr/huh/idf`. Library folder pref (Settings > General, desktop),
-  "Import Rainfall Files..." (desktop and web; web imports persist in browser storage up to 2.5 MB, `IMPORT_LIMIT`).
+  "Import Rainfall Files..." (desktop and web; imports persist in the config folder / IndexedDB up to 25 MB, `IMPORT_LIMIT`;
+  `library::import` returns `Err` when a file is unreadable or cannot be kept for later
+  sessions, and the app shows it in the error dialog rather than the status bar).
+  Saving and autosave both go through `platform::write_replacing` (temporary file + rename),
+  so an interrupted write never truncates a project.
   Open projects re-run `library::adopt` whenever the library changes (`library::generation`,
   checked each frame by `adopt_library_changes`; issue #6: importing a missing storm after
   opening an `.hcp` left error 595 until the project was reopened).
