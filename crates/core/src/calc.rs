@@ -267,7 +267,10 @@ pub fn calculate_event(project: &Project, event: &RainEvent) -> Results {
                 595,
                 Severity::Error,
                 None,
-                format!("Rainfall distribution \"{}\" not found", event.storm),
+                format!(
+                    "Rainfall distribution \"{}\" not found: import its rainfall file (.hcr) or choose the rainfall library folder (Settings > General)",
+                    event.storm
+                ),
             ));
             return r;
         }

@@ -82,6 +82,8 @@ pub struct WaveStormApp {
     recovery: recovery::Recovery,
     /// The window title last sent to the platform.
     window_title: String,
+    /// The rainfall library generation open projects last adopted storms from.
+    library_seen: u64,
 }
 
 impl Default for WaveStormApp {
@@ -122,6 +124,13 @@ impl WaveStormApp {
             ),
         };
         library::init(&prefs.rainfall_folder, persist_prefs);
+        // Projects reopened from the last session get library storms like freshly opened ones.
+        let mut docs = docs;
+        for d in &mut docs {
+            if library::adopt(&mut d.project) > 0 {
+                d.recalc();
+            }
+        }
         WaveStormApp {
             docs,
             active,
@@ -147,6 +156,23 @@ impl WaveStormApp {
             last_autosave: 0.0,
             recovery: recovery::Recovery::default(),
             window_title: String::new(),
+            library_seen: library::generation(),
+        }
+    }
+
+    /// After the rainfall library changes (files imported, folder chosen or rescanned), open
+    /// projects copy in the library storms and unit hydrographs they use but lacked, so a
+    /// "rainfall not found" project calculates without being reopened (issue #6).
+    fn adopt_library_changes(&mut self) {
+        let generation = library::generation();
+        if generation == self.library_seen {
+            return;
+        }
+        self.library_seen = generation;
+        for d in &mut self.docs {
+            d.edit("Rainfall Library", |p| {
+                library::adopt(p);
+            });
         }
     }
 
@@ -2908,6 +2934,7 @@ impl WaveStormApp {
         widgets::set_tips_enabled(&ctx, self.prefs.show_tips);
         let t = Tokens::get(&ctx);
         self.receive(&ctx);
+        self.adopt_library_changes();
         self.sync_underlay(&ctx);
         if !self.docs.is_empty() {
             diagram::sync_soil_layer(self.doc());

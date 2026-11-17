@@ -160,6 +160,11 @@ pub fn event_lookup(ctx: &egui::Context, doc: &mut Doc, st: &mut EventLookup, ac
                 ui.vertical(|ui| {
                     ui.add_space(16.0);
                     ui.label(RichText::new("No lookup tables available").color(t.text_dim));
+                    ui.label(
+                        RichText::new("Load a county table (*-Rain.txt), an IDF file (.hci) or a NOAA Atlas 14 CSV,\nor choose the rainfall library folder in Settings > General.")
+                            .small()
+                            .color(t.text_dim),
+                    );
                 });
             } else if widgets::combo_field(ui, "lk-src", "Event Lookup File:", &mut cur, &sources, 250.0) {
                 st.source = Some(cur);

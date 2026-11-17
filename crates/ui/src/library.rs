@@ -22,6 +22,8 @@ struct State {
     imports: Vec<(String, String)>,
     merged: Arc<RainLibrary>,
     persist: bool,
+    /// Bumped on every rebuild (see [`generation`]).
+    generation: u64,
 }
 
 fn state() -> &'static Mutex<State> {
@@ -141,6 +143,13 @@ fn rebuild(st: &mut State) {
     merged.idfs.sort_by_key(|i| i.name.to_ascii_lowercase());
     merged.tables.sort_by_key(|t| t.name.to_ascii_lowercase());
     st.merged = Arc::new(merged);
+    st.generation += 1;
+}
+
+/// Counts library changes (scans and imports), so open projects can pick up storms that were
+/// missing when they were opened.
+pub fn generation() -> u64 {
+    lock().generation
 }
 
 /// The current library (cheap to clone).

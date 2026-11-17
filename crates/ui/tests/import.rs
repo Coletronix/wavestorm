@@ -159,3 +159,36 @@ fn county_lookup_and_library_storms_join_the_project() {
     assert_eq!(doc.project.settings.events.first().map(|e| e.storm.as_str()), Some("Zed 3-hr"));
     h.run_steps(2);
 }
+
+/// Issue #6: a project opened before its storm is in the library reports "rainfall not found";
+/// importing the storm file afterwards must fix the open project without reopening it.
+#[test]
+fn importing_a_missing_storm_fixes_the_open_project() {
+    let _serial = serial();
+    let mut h = egui_kittest::Harness::builder()
+        .with_size(vec2(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless());
+    h.run_steps(2);
+    let mut project = wavestorm_core::project::Project::default();
+    project.settings.events = vec![wavestorm_core::rainfall::RainEvent::new("10-Year", "Later 3-hr", 3.0)];
+    project.settings.current_event = 0;
+    h.state_mut().platform.push(Incoming {
+        purpose: Purpose::OpenProject,
+        name: "site.waves".into(),
+        path: None,
+        bytes: project.to_json().unwrap().into_bytes(),
+    });
+    h.run_steps(3);
+    let has_595 = |app: &mut WaveStormApp| app.doc().results.messages.iter().any(|m| m.code == 595);
+    assert!(has_595(h.state_mut()), "storm not in the library yet");
+    h.state_mut().platform.push(Incoming {
+        purpose: Purpose::RainLib,
+        name: "Later 3-hr.hcr".into(),
+        path: None,
+        bytes: b"name=Later 3-hr\nduration=3\ndepth= 0 .1 .5 1\n".to_vec(),
+    });
+    h.run_steps(3);
+    let app = h.state_mut();
+    assert!(app.doc().project.storms.iter().any(|s| s.name == "Later 3-hr"), "storm adopted");
+    assert!(!has_595(app), "{:?}", app.doc().results.messages);
+}

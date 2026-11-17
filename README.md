@@ -142,6 +142,8 @@ published results where possible (see [Methods and validation](#methods-and-vali
 - Rainfall Event Lookup from county rainfall tables, NOAA Atlas 14 CSV downloads and IDF files.
 - A rainfall library folder of storm distribution (`.hcr`), unit hydrograph (`.huh`) and IDF
   (`.hci`) files. Storms a project uses are copied into it, so project files stay self-contained.
+  A project that opened with a storm missing calculates as soon as that storm's file is
+  imported or the library folder is chosen, without reopening it.
 - Storm distribution, unit hydrograph and IDF viewers.
 
 **Projects and the diagram**

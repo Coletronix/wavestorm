@@ -207,7 +207,7 @@ Measure Length reports the length of a clicked path.",
         body: "Notes describe the calculation. Hints point out conditions worth checking. Warnings indicate results that may not be reliable. Errors stop the calculation.\n\n\
 Common messages: [37] longer time span advised; [40] node not described; [43] pond has no inflow; [45] no runoff; [47] subcatchment peak exceeds a Tc segment's capacity; \
 [49] Tc less than 2 dt; [55] reach inflow above Manning capacity; [73] peak may fall outside the time span; [76] pipe reach detained water; [82] early inflow needs an earlier time span; \
-[92] outlet device above the storage; [93] storage range exceeded (add a higher stage); [520] routing loop; [595] rainfall not found.\n\n\
+[92] outlet device above the storage; [93] storage range exceeded (add a higher stage); [520] routing loop; [595] rainfall not found (import its .hcr file or choose the rainfall library folder in Settings > General).\n\n\
 Click a message to select its node; double-click to open its report.",
     },
     Topic {

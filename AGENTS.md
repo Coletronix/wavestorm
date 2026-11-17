@@ -157,6 +157,9 @@ Keep this section updated at the end of every session.
   Event Lookup (`Fetch::Noaa`, centre of the georeferenced background). Writers:
   `write_hcr/huh/idf`. Library folder pref (Settings > General, desktop),
   "Import Rainfall Files..." (desktop and web; web imports persist in browser storage up to 2.5 MB, `IMPORT_LIMIT`).
+  Open projects re-run `library::adopt` whenever the library changes (`library::generation`,
+  checked each frame by `adopt_library_changes`; issue #6: importing a missing storm after
+  opening an `.hcp` left error 595 until the project was reopened).
   Library storms/UHs used by events, the default UH or a subcatchment UH are copied into the
   project (`library::adopt`) so projects stay self-contained. The full-library test runs when
   the folder exists (`WAVESTORM_RAIN_LIB` or `reference_images/expert_reference/Rainfall`);
