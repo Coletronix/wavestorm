@@ -154,6 +154,15 @@ pub fn event_lookup(ctx: &egui::Context, doc: &mut Doc, st: &mut EventLookup, ac
         if let Some((name, _)) = &st.noaa {
             sources.push((Source::Noaa, format!("{name} (NOAA Atlas 14)")));
         }
+        // Tables imported while the window is open (or a choice that went away) select one
+        // instead of leaving the pane empty.
+        if !st.source.as_ref().is_some_and(|s| sources.iter().any(|x| &x.0 == s)) {
+            let preferred = sources.iter().find(|x| x.0 == Source::Table("NRCS2-Rain".into())).or(sources.first());
+            if let Some((s, _)) = preferred {
+                st.source = Some(s.clone());
+                st.county = None;
+            }
+        }
         ui.horizontal(|ui| {
             let mut cur = st.source.clone().unwrap_or(Source::Noaa);
             if sources.is_empty() {

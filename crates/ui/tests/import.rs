@@ -160,6 +160,34 @@ fn county_lookup_and_library_storms_join_the_project() {
     h.run_steps(2);
 }
 
+/// Issue #6: tables imported while the lookup is open (it said "No lookup tables available")
+/// are shown at once, not left unselected.
+#[test]
+fn tables_imported_into_an_open_lookup_are_shown() {
+    let _serial = serial();
+    let mut h = egui_kittest::Harness::builder()
+        .with_size(vec2(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut WaveStormApp| app.draw(ui), WaveStormApp::headless());
+    h.run_steps(2);
+    wavestorm_ui::script(h.state_mut(), "lookup-open");
+    h.run_steps(2);
+    h.state_mut().platform.push(Incoming {
+        purpose: Purpose::RainLib,
+        name: "Open-Rain.txt".into(),
+        path: None,
+        bytes: COUNTY_TABLE.as_bytes().to_vec(),
+    });
+    h.run_steps(3);
+    let source = h
+        .state_mut()
+        .doc()
+        .windows
+        .iter()
+        .find_map(|w| if let Window::EventLookup(s) = w { Some(s.source.clone()) } else { None })
+        .expect("lookup window");
+    assert_eq!(source, Some(wavestorm_ui::dialogs::lookup::Source::Table("Open-Rain".into())));
+}
+
 /// Issue #6: a project opened before its storm is in the library reports "rainfall not found";
 /// importing the storm file afterwards must fix the open project without reopening it.
 #[test]
